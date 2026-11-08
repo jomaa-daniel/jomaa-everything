@@ -212,6 +212,9 @@ class CloudflareTest(unittest.TestCase):
 
     def test_cli_reads_hostname_from_env(self):
         out = io.StringIO()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.enterContext(mock.patch.object(cloudflare, "HUB_DIR", Path(tmp.name)))
         with mock.patch.dict(os.environ, {"CLOUDFLARE_HOSTNAME": "", "CLOUDFLARE_API_TOKEN": ""}), redirect_stdout(out):
             self.assertEqual(cloudflare.main(["deploy", "--if-configured"]), 0)
         self.assertIn("CLOUDFLARE_HOSTNAME isn't set", out.getvalue())

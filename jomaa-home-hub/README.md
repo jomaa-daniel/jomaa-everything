@@ -26,7 +26,43 @@ The hub doesn't speak Matter itself. It uses the
 (the one Home Assistant uses) for pairing and device sessions, and talks to it
 over a local WebSocket.
 
-## Run it
+## Run it on Linux without Docker
+
+The native setup installs the Matter server and builds the hub, then creates
+user-level systemd services. It needs Linux x86-64 or arm64, Python 3.12+,
+Node.js 22.13+, npm, systemd and an internet connection. If Go is missing, the
+setup downloads a verified Go release. A Thread border router is also needed
+for Thread devices.
+
+```bash
+python3 scripts/setup_native.py
+python3 scripts/hubctl.py status
+```
+
+The first run creates an empty `config.json` and a private `.env` with a
+generated `HUB_PASSWORD`. Add your devices and rooms to `config.json` and, if
+using Govee, set `GOVEE_API_KEY` in `.env`. Existing files and Matter pairing
+data are preserved. `config.example.json` shows the format; its Matter node is
+an example, not a paired device.
+
+The setup enables user lingering so services start at boot without a login.
+Systemd runs `scripts/setup_native.py --boot` to check the installation, then
+`scripts/boot_native.py` to launch each service. Boot never downloads software
+or creates Cloudflare resources. To inspect or restart the services:
+
+```bash
+systemctl --user status jomaa-matter jomaa-hub jomaa-cloudflared
+systemctl --user restart jomaa-hub
+journalctl --user -u jomaa-matter -u jomaa-hub -f
+```
+
+The tunnel service exists only if configured below. After changing `.env` or
+`config.json`, restart the hub. Backup `data/native/matter-data` to preserve
+the Matter fabric; losing it means re-pairing devices. Bluetooth pairing uses
+adapter 0 over D-Bus; set `MATTER_BLUETOOTH_ADAPTER` in `.env` for another
+adapter. The Bluetooth service and adapter must be enabled on the host.
+
+## Run it with Docker
 
 Needs a machine on your home network that stays on (a Pi, NAS or mini PC) with
 Docker and Python 3. Thread devices also need a Thread border router on the
@@ -42,7 +78,28 @@ python3 scripts/hubctl.py status
 `hubctl.py dev` runs the Matter server in Docker and the hub from source, for
 working on the hub.
 
-## Reach it from anywhere
+## Reach it from anywhere with native services
+
+For a domain on Cloudflare, run:
+
+```bash
+python3 scripts/setup_native.py --tunnel hub.yourdomain.com
+```
+
+The setup downloads a verified `cloudflared` binary if necessary, prompts for
+Cloudflare browser authorization, creates a locally managed tunnel and DNS
+record, and enables a user service. Use `--tunnel-name NAME` to choose a name
+or reuse an existing locally managed tunnel whose credentials are on this
+machine. Existing `data/native/tunnel.yml` settings are not overwritten. Keep
+`~/.cloudflared` private and back it up with the Matter data.
+
+The tunnel serves the hub over HTTPS at the chosen hostname. Find the hub
+password in the private `.env` file. The hub remains on loopback and the
+Matter server is not exposed. Cloudflare account API tokens are not required
+for this native tunnel. The existing `cloudflare.py deploy` and GitHub workflow
+manage a different kind of tunnel and must not be used to manage this one.
+
+## Reach it from anywhere with Docker
 
 A Cloudflare Tunnel serves the hub at `https://hub.yourdomain.com` without
 opening ports on your router. `cloudflared` runs next to the hub and connects
