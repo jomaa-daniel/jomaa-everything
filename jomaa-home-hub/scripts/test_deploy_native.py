@@ -183,6 +183,18 @@ class DeploymentTest(unittest.TestCase):
         self.assertEqual(config.read_text(), old.replace("^/__deployment$", "^/deploy$"))
         self.assertEqual(run.call_count, 2)
 
+    def test_conflicting_existing_deployment_route_is_preserved(self):
+        config = self.source / "data/native/tunnel.yml"
+        original = ('ingress:\n  # jomaa-deployment-webhook\n'
+                    '  - hostname: "another.example.org"\n    path: ^/__deployment$\n'
+                    '    service: http://127.0.0.1:8091\n  - service: http_status:404\n')
+        config.write_text(original)
+        with mock.patch.object(deploy, "run") as run:
+            with self.assertRaisesRegex(deploy.DeployError, "differs from requested"):
+                deploy.configure_tunnel(self.source, "hub.example.org")
+        self.assertEqual(config.read_text(), original)
+        run.assert_not_called()
+
     def test_old_verified_run_cannot_roll_back_newer_deployment(self):
         deploy.make_release(self.repo, self.first, self.source, self.deploy_dir)
         new = deploy.make_release(self.repo, self.second, self.source, self.deploy_dir)
