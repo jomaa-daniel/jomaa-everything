@@ -1,22 +1,19 @@
 """Deployment checks use temporary repositories and mocked service restarts."""
 
-import io
+import hashlib
+import hmac
 import json
 import subprocess
 import tempfile
+import threading
+import time
 import unittest
+import urllib.error
+import urllib.request
 from pathlib import Path
 from unittest import mock
 
 import deploy_native as deploy
-
-
-class Response(io.BytesIO):
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        self.close()
 
 
 class DeploymentTest(unittest.TestCase):
@@ -38,7 +35,7 @@ class DeploymentTest(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-qm", "initial")
         self.first = self.git("rev-parse", "HEAD")
-        (self.source / ".env").write_text("HUB_PASSWORD=secret\n")
+        (self.source / ".env").write_text("HUB_PASSWORD=secret\nCLOUDFLARE_HOSTNAME=hub.example.org\n")
         (self.source / "config.json").write_text('{"devices": []}\n')
         binary = self.source / "data/native/hub"
         binary.parent.mkdir(parents=True)
@@ -101,42 +98,95 @@ class DeploymentTest(unittest.TestCase):
         self.assertEqual((self.deploy_dir / "current").resolve(), new)
         self.assertEqual((new / "bin/hub").read_text(), "new binary")
         self.assertEqual((self.source / "data/native/hub").read_text(), "old binary")
-        self.assertEqual((self.source / ".env").read_text(), "HUB_PASSWORD=secret\n")
+        self.assertIn("HUB_PASSWORD=secret", (self.source / ".env").read_text())
 
-    def test_only_successful_main_push_run_is_selected(self):
-        response = Response(json.dumps({"workflow_runs": [{"head_sha": "a" * 40, "event": "push",
-                                                          "head_branch": "main", "conclusion": "success"}]}).encode())
-        with mock.patch.object(deploy.urllib.request, "urlopen", return_value=response) as request:
-            self.assertEqual(deploy.latest_success("example/hub"), "a" * 40)
-        url = request.call_args.args[0].full_url
-        self.assertIn("branch=main", url)
-        self.assertIn("event=push", url)
-        self.assertIn("status=success", url)
-        self.assertIn("hub-deploy-native.yml", url)
+    def test_verifies_main_push_and_successful_job(self):
+        info = {"head_sha": self.first, "event": "push", "head_branch": "main", "run_attempt": 1,
+                "status": "in_progress", "conclusion": None,
+                "repository": {"full_name": "example/hub"}, "path": ".github/workflows/hub-deploy-native.yml"}
+        with mock.patch.object(deploy, "github_json", side_effect=[info, {"jobs": [{"name": "verify", "conclusion": "success"}]}]):
+            deploy.verify_run("example/hub", self.first, 12, 1)
+        with mock.patch.object(deploy, "github_json", side_effect=[info, {"jobs": [{"name": "verify", "conclusion": "failure"}]}]):
+            with self.assertRaisesRegex(deploy.DeployError, "successful verification"):
+                deploy.verify_run("example/hub", self.first, 12, 1)
 
-    def test_rejects_a_run_that_did_not_pass(self):
-        response = Response(json.dumps({"workflow_runs": [{"head_sha": "a" * 40, "event": "push",
-                                                          "head_branch": "main", "conclusion": "failure"}]}).encode())
-        with mock.patch.object(deploy.urllib.request, "urlopen", return_value=response):
-            with self.assertRaisesRegex(deploy.DeployError, "not a successful main push"):
-                deploy.latest_success("example/hub")
+    def test_rejects_bad_signature_and_expired_requests(self):
+        key = b"fixture-secret-for-a-test-at-least-32"
+        body = json.dumps({"repo": "example/hub", "sha": self.first, "run_id": 12, "attempt": 1,
+                           "timestamp": 1000}).encode()
+        signature = "sha256=" + hmac.new(key, body, hashlib.sha256).hexdigest()
+        self.assertEqual(deploy.authenticate(body, signature, key, "example/hub", 1001)["sha"], self.first)
+        with self.assertRaisesRegex(deploy.DeployError, "signature"):
+            deploy.authenticate(body, "sha256=" + "0" * 64, key, "example/hub", 1001)
+        with self.assertRaisesRegex(deploy.DeployError, "expired"):
+            deploy.authenticate(body, signature, key, "example/hub", 1301)
+
+    def test_http_receiver_rejects_unauthorized_and_accepts_signed_request(self):
+        secret = b"a-fixture-secret-with-at-least-32-bytes"
+        (self.deploy_dir / "webhook-secret").write_bytes(secret)
+        ready = threading.Event()
+        servers = []
+        original_server = deploy.HTTPServer
+
+        def create_server(address, handler):
+            server = original_server((address[0], 0), handler)
+            servers.append(server)
+            ready.set()
+            return server
+
+        with mock.patch.object(deploy, "HTTPServer", side_effect=create_server), \
+                mock.patch.object(deploy, "verify_run") as verified, \
+                mock.patch.object(deploy, "deploy_revision", return_value="deployed") as applied:
+            thread = threading.Thread(target=deploy.serve, args=(self.source, self.deploy_dir, "example/hub"), daemon=True)
+            thread.start()
+            self.assertTrue(ready.wait(3))
+            url = f"http://127.0.0.1:{servers[0].server_port}{deploy.WEBHOOK_PATH}"
+            body = json.dumps({"repo": "example/hub", "sha": self.second, "run_id": 12, "attempt": 1,
+                               "timestamp": int(time.time())}).encode()
+            bad = urllib.request.Request(url, data=body, headers={"X-Jomaa-Signature": "bad"})
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                urllib.request.urlopen(bad, timeout=5)
+            self.assertEqual(error.exception.code, 403)
+            verified.assert_not_called()
+            signature = "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest()
+            good = urllib.request.Request(url, data=body, headers={"X-Jomaa-Signature": signature})
+            with urllib.request.urlopen(good, timeout=5) as response:
+                self.assertEqual(json.load(response)["status"], "deployed")
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive())
+        verified.assert_called_once_with("example/hub", self.second, 12, 1)
+        applied.assert_called_once_with(self.source, self.deploy_dir, "example/hub", self.second)
+
+    def test_tunnel_rule_is_added_once_without_replacing_existing_ingress(self):
+        config = self.source / "data/native/tunnel.yml"
+        original = 'tunnel: fixture\ningress:\n  - hostname: "hub.example.org"\n    service: http://127.0.0.1:8080\n  - service: http_status:404\n'
+        config.write_text(original)
+        with mock.patch.object(deploy, "run") as run:
+            deploy.configure_tunnel(self.source, "hub.example.org")
+            updated = config.read_text()
+            deploy.configure_tunnel(self.source, "hub.example.org")
+        self.assertEqual(config.read_text(), updated)
+        self.assertIn("path: ^/__deployment$", updated)
+        self.assertIn('service: http://127.0.0.1:8080', updated)
+        self.assertLess(updated.index("/__deployment"), updated.index("http://127.0.0.1:8080"))
+        self.assertEqual(run.call_count, 2)
 
     def test_old_verified_run_cannot_roll_back_newer_deployment(self):
-        old = deploy.make_release(self.repo, self.first, self.source, self.deploy_dir)
+        deploy.make_release(self.repo, self.first, self.source, self.deploy_dir)
         new = deploy.make_release(self.repo, self.second, self.source, self.deploy_dir)
         deploy.switch_link(self.deploy_dir / "current", new)
-        with mock.patch.object(deploy, "latest_success", return_value=self.first), \
-                mock.patch.object(deploy, "run"), \
+        with mock.patch.object(deploy, "run"), \
                 mock.patch.object(deploy, "is_ancestor", side_effect=[True, True]), \
                 mock.patch.object(deploy, "activate") as activate:
-            deploy.poll(self.source, self.deploy_dir, "example/hub")
+            result = deploy.deploy_revision(self.source, self.deploy_dir, "example/hub", self.first)
+        self.assertEqual(result, "older-revision-ignored")
         activate.assert_not_called()
         self.assertEqual((self.deploy_dir / "current").resolve(), new)
 
     def test_install_can_be_repeated_without_replacing_a_live_release(self):
         unit_dir = self.root / "units"
         unit_dir.mkdir()
-        for name in ("jomaa-setup", "jomaa-matter", "jomaa-hub"):
+        for name in ("jomaa-setup", "jomaa-matter", "jomaa-hub", "jomaa-cloudflared"):
             (unit_dir / f"{name}.service").write_text("[Service]\nExecStart=/bin/true\n")
         original_run = deploy.run
 
@@ -149,14 +199,17 @@ class DeploymentTest(unittest.TestCase):
             return original_run(*args, **kwargs)
 
         with mock.patch.object(deploy, "UNIT_DIR", unit_dir), \
-                mock.patch.object(deploy, "run", side_effect=run_or_mock_systemctl):
+                mock.patch.object(deploy, "run", side_effect=run_or_mock_systemctl), \
+                mock.patch.object(deploy, "configure_tunnel"), \
+                mock.patch.object(deploy, "wait_health", return_value=True):
             deploy.install(self.source, self.deploy_dir, "example/hub")
             release = (self.deploy_dir / "current").resolve()
             (release / "bin/hub").write_text("deployed binary")
             deploy.install(self.source, self.deploy_dir, "example/hub")
         self.assertEqual((release / "bin/hub").read_text(), "deployed binary")
         self.assertIn("current/bin/hub", (unit_dir / "jomaa-hub.service.d/deployment.conf").read_text())
-        self.assertIn("OnUnitActiveSec=5min", (unit_dir / "jomaa-deploy.timer").read_text())
+        self.assertIn("serve", (unit_dir / "jomaa-deploy.service").read_text())
+        self.assertFalse((unit_dir / "jomaa-deploy.timer").exists())
 
 
 if __name__ == "__main__":

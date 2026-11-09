@@ -1,13 +1,13 @@
-name: Verify native hub deployment
+name: Deploy native home hub
 
-# The home machine polls this workflow's successful main-branch push runs.
-# GitHub-hosted runners never need access to the home network or hub secrets.
+# A signed HTTPS request triggers the local deployment only after verification.
 on:
   push:
     branches: [main]
     paths:
       - 'jomaa-home-hub/**'
       - '.github/workflows/hub-deploy-native.yml'
+      - '.github/scripts/notify_hub.py'
   workflow_dispatch:
 
 permissions:
@@ -35,3 +35,16 @@ jobs:
         with:
           python-version: '3.12'
       - run: python3 scripts/verify.py
+
+  deploy:
+    if: github.event_name == 'push'
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trigger signed deployment
+        env:
+          HUB_DEPLOY_SECRET: ${{ secrets.HUB_DEPLOY_SECRET }}
+          HUB_DEPLOY_URL: ${{ vars.HUB_DEPLOY_URL || 'https://hub.jomaa.org/__deployment' }}
+        run: python3 .github/scripts/notify_hub.py
