@@ -128,6 +128,8 @@ the Matter server and tunnel are not restarted for a hub deployment. A newer
 revision is never replaced by an older successful workflow run. The secret
 file is private and must match the GitHub Actions secret. Changes take effect
 after the GitHub verification job succeeds and its deployment request returns.
+Unsigned requests to `/__deployment` are rejected; the normal hub routes still
+go to the hub service. The receiver listens only on this machine's loopback.
 
 Only successful `push` runs for `main`, including merges, deploy; a manually
 dispatched run only verifies. A failed verification, unreachable GitHub,
