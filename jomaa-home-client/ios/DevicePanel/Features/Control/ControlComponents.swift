@@ -4,9 +4,14 @@ import SwiftUI
 struct ConnectionStatusView: View {
     let phase: ConnectionPhase
     let observedAt: Date?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        HStack(spacing: 10) {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(spacing: 10))
+
+        layout {
             Image(systemName: icon)
                 .foregroundStyle(color)
                 .symbolEffect(.pulse, isActive: phase == .applying || phase == .loading)
@@ -19,8 +24,12 @@ struct ConnectionStatusView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Spacer()
+            .fixedSize(horizontal: false, vertical: true)
+            if !dynamicTypeSize.isAccessibilitySize {
+                Spacer()
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .appSurface()
         .accessibilityIdentifier("connectionStatus")
