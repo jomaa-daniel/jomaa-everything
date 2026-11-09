@@ -171,10 +171,7 @@ final class DevicePanelUITests: XCTestCase {
         serverField.typeText(hub)
         app.keyboards.descendants(matching: .any)
             .matching(NSPredicate(format: "label ==[c] %@", "next")).firstMatch.tap()
-        let passwordField = app.secureTextFields["passwordField"]
-        reveal(passwordField, in: app)
-        passwordField.tap()
-        passwordField.typeText(password)
+        app.typeText(password)
         let signInButton = app.buttons["signInButton"]
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: signInButton)
         XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed, "Both credentials must be entered before submitting")
