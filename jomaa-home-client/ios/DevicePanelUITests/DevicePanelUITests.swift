@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// Runs against the real hub and a fake Govee cloud. Start them first with:
@@ -72,6 +73,37 @@ final class DevicePanelUITests: XCTestCase {
         attach(app, name: "Single lamp")
     }
 
+    func testPowerRemainsReadableAndOperableAtLargestTextSize() async throws {
+        try await resetLamps()
+        let app = makeApp()
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+        defer { app.terminate() }
+
+        signIn(app, password: "device-panel-test")
+        XCTAssertTrue(
+            app.navigationBars["Living Room"].waitForExistence(timeout: 15),
+            "Sign-in didn't reach the Living Room. Screen:\n\(app.debugDescription)"
+        )
+        waitForPower(on: true, in: "Living Room", app: app)
+
+        let power = app.buttons["powerControl"]
+        reveal(power, in: app)
+        let title = power.staticTexts["Power"]
+        XCTAssertTrue(title.exists)
+        let traits = UITraitCollection(preferredContentSizeCategory: .accessibilityExtraExtraExtraLarge)
+        let lineHeight = UIFont.preferredFont(forTextStyle: .headline, compatibleWith: traits).lineHeight
+        let defaultTraits = UITraitCollection(preferredContentSizeCategory: .large)
+        let defaultLineHeight = UIFont.preferredFont(forTextStyle: .headline, compatibleWith: defaultTraits).lineHeight
+        XCTAssertGreaterThan(title.frame.height, defaultLineHeight * 1.5, "The test must actually use enlarged text")
+        XCTAssertLessThanOrEqual(title.frame.height, lineHeight + 2, "Power should fit on one line at the largest text size")
+        attach(app, name: "Largest text power control")
+
+        power.tap()
+        try await waitForLamps { $0["powerSwitch"] == 0 }
+        waitForPower(on: false, in: "Living Room", app: app)
+    }
+
     func testMatterPairingExplainsAMissingMatterServer() async throws {
         try await resetLamps()
         let app = launchAndSignIn()
@@ -91,6 +123,9 @@ final class DevicePanelUITests: XCTestCase {
         let app = makeApp()
         defer { app.terminate() }
         app.launch()
+
+        XCTAssertTrue(app.textFields["serverURLField"].waitForExistence(timeout: 10))
+        attach(app, name: "Sign-in placeholders")
 
         signIn(app, password: "wrong-password")
 
@@ -131,12 +166,28 @@ final class DevicePanelUITests: XCTestCase {
     private func signIn(_ app: XCUIApplication, password: String) {
         let serverField = app.textFields["serverURLField"]
         XCTAssertTrue(serverField.waitForExistence(timeout: 10))
+        reveal(serverField, in: app)
         serverField.tap()
         serverField.typeText(hub)
+        app.keyboards.descendants(matching: .any)
+            .matching(NSPredicate(format: "label ==[c] %@", "next")).firstMatch.tap()
         let passwordField = app.secureTextFields["passwordField"]
+        reveal(passwordField, in: app)
         passwordField.tap()
         passwordField.typeText(password)
-        app.buttons["signInButton"].tap()
+        let signInButton = app.buttons["signInButton"]
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: signInButton)
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed, "Both credentials must be entered before submitting")
+        app.keyboards.descendants(matching: .any)
+            .matching(NSPredicate(format: "label ==[c] %@", "go")).firstMatch.tap()
+    }
+
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        for _ in 0 ..< 6 {
+            if element.isHittable { return }
+            app.scrollViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(element.isHittable, "Expected \(element) to be reachable by scrolling")
     }
 
     private func waitForPower(on: Bool, in name: String, app: XCUIApplication) {

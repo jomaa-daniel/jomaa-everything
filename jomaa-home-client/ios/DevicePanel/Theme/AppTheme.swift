@@ -8,6 +8,7 @@ enum AppTheme {
     static let failure = Color(red: 1.0, green: 0.33, blue: 0.33)
     static let surface = Color.white.opacity(0.08)
     static let border = Color.white.opacity(0.18)
+    static let inputPlaceholder = Color.white.opacity(0.65)
 }
 
 struct AppBackground: View {

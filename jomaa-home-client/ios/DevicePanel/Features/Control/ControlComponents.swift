@@ -58,32 +58,33 @@ struct PowerControl: View {
     let isOn: Bool
     let isBusy: Bool
     let action: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 16) {
-                Image(systemName: "power")
-                    .font(.title2.bold())
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Power")
-                        .font(.headline)
-                    Text(isOn ? "\(name) is on" : "\(name) is off")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if isBusy {
-                    ProgressView()
-                        .tint(.white)
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            powerIcon
+                            Spacer()
+                            stateIndicator
+                        }
+                        powerDescription
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 } else {
-                    Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
-                        .font(.title2)
-                        .foregroundStyle(isOn ? AppTheme.success : .secondary)
+                    HStack(spacing: 16) {
+                        powerIcon
+                        powerDescription
+                        Spacer()
+                        stateIndicator
+                    }
                 }
             }
             .contentShape(Rectangle())
             .padding(20)
-            .frame(maxWidth: .infinity, minHeight: 76)
+            .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
             .appSurface()
         }
         .buttonStyle(.plain)
@@ -92,6 +93,33 @@ struct PowerControl: View {
         .accessibilityValue(isOn ? "On" : "Off")
         .accessibilityHint(isBusy ? "Applying the power change" : "Double tap to turn \(isOn ? "off" : "on")")
         .accessibilityIdentifier("powerControl")
+    }
+
+    private var powerIcon: some View {
+        Image(systemName: "power")
+            .font(.title2.bold())
+    }
+
+    private var powerDescription: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Power")
+                .font(.headline)
+            Text(isOn ? "\(name) is on" : "\(name) is off")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var stateIndicator: some View {
+        if isBusy {
+            ProgressView()
+                .tint(.white)
+        } else {
+            Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                .font(.title2)
+                .foregroundStyle(isOn ? AppTheme.success : .secondary)
+        }
     }
 }
 
