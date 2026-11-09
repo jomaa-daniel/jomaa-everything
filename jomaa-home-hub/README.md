@@ -103,7 +103,7 @@ manage a different kind of tunnel and must not be used to manage this one.
 
 `.github/workflows/hub-deploy-native.yml` verifies hub changes pushed or merged
 to `main` on GitHub-hosted runners, then sends a signed HTTPS request to
-`https://hub.jomaa.org/__deployment`. Cloudflare routes that path to a local
+`https://hub.jomaa.org/deploy`. Cloudflare routes that path to a local
 deployment receiver; no inbound router port or self-hosted GitHub runner is
 needed. The receiver checks the signature, timestamp, repository, commit, and
 GitHub verification job before fetching the exact revision. The installer
@@ -128,7 +128,7 @@ the Matter server and tunnel are not restarted for a hub deployment. A newer
 revision is never replaced by an older successful workflow run. The secret
 file is private and must match the GitHub Actions secret. Changes take effect
 after the GitHub verification job succeeds and its deployment request returns.
-Unsigned requests to `/__deployment` are rejected; the normal hub routes still
+Unsigned requests to `/deploy` are rejected; the normal hub routes still
 go to the hub service. The receiver listens only on this machine's loopback.
 
 Only successful `push` runs for `main`, including merges, deploy; a manually
@@ -136,7 +136,7 @@ dispatched run only verifies. A failed verification, unreachable GitHub,
 non-fast-forward history, or an unhealthy Matter server prevents or rolls back
 deployment and is reported in the deployment service journal. Rerun a failed
 push workflow after correcting the issue. To use a different public hostname,
-set the `HUB_DEPLOY_URL` GitHub Actions variable to its `/__deployment` URL.
+set the `HUB_DEPLOY_URL` GitHub Actions variable to its `/deploy` URL.
 
 ## Reach it from anywhere with Docker
 

@@ -166,9 +166,21 @@ class DeploymentTest(unittest.TestCase):
             updated = config.read_text()
             deploy.configure_tunnel(self.source, "hub.example.org")
         self.assertEqual(config.read_text(), updated)
-        self.assertIn("path: ^/__deployment$", updated)
+        self.assertIn("path: ^/deploy$", updated)
         self.assertIn('service: http://127.0.0.1:8080', updated)
-        self.assertLess(updated.index("/__deployment"), updated.index("http://127.0.0.1:8080"))
+        self.assertLess(updated.index("/deploy"), updated.index("http://127.0.0.1:8080"))
+        self.assertEqual(run.call_count, 2)
+
+    def test_existing_deployment_route_is_migrated(self):
+        config = self.source / "data/native/tunnel.yml"
+        old = ('tunnel: fixture\ningress:\n  # jomaa-deployment-webhook\n'
+               '  - hostname: "hub.example.org"\n    path: ^/__deployment$\n'
+               '    service: http://127.0.0.1:8091\n  - hostname: "hub.example.org"\n'
+               '    service: http://127.0.0.1:8080\n  - service: http_status:404\n')
+        config.write_text(old)
+        with mock.patch.object(deploy, "run") as run:
+            deploy.configure_tunnel(self.source, "hub.example.org")
+        self.assertEqual(config.read_text(), old.replace("^/__deployment$", "^/deploy$"))
         self.assertEqual(run.call_count, 2)
 
     def test_old_verified_run_cannot_roll_back_newer_deployment(self):

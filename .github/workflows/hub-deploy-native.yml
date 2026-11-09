@@ -46,5 +46,5 @@ jobs:
       - name: Trigger signed deployment
         env:
           HUB_DEPLOY_SECRET: ${{ secrets.HUB_DEPLOY_SECRET }}
-          HUB_DEPLOY_URL: ${{ vars.HUB_DEPLOY_URL || 'https://hub.jomaa.org/__deployment' }}
+          HUB_DEPLOY_URL: ${{ vars.HUB_DEPLOY_URL || 'https://hub.jomaa.org/deploy' }}
         run: python3 .github/scripts/notify_hub.py

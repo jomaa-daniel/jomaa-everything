@@ -27,7 +27,7 @@ import hubctl
 SOURCE = Path(__file__).resolve().parent.parent
 DEPLOY_DIR = Path.home() / ".local/share/jomaa-home-deploy"
 UNIT_DIR = Path.home() / ".config/systemd/user"
-WEBHOOK_PATH = "/__deployment"
+WEBHOOK_PATH = "/deploy"
 WEBHOOK_PORT = 8091
 
 
@@ -185,12 +185,16 @@ def configure_tunnel(source: Path, hostname: str) -> None:
     rule = (f"ingress:\n  {marker}\n  - hostname: {json.dumps(settings.hostname)}\n"
             f"    path: ^{WEBHOOK_PATH}$\n    service: http://127.0.0.1:{WEBHOOK_PORT}\n")
     if marker in original:
-        if rule not in original:
+        if rule in original:
+            return
+        old_rule = rule.replace(f"path: ^{WEBHOOK_PATH}$", "path: ^/__deployment$")
+        if old_rule not in original:
             raise DeployError("existing deployment tunnel rule differs from requested settings")
-        return
-    if WEBHOOK_PATH in original or original.count("ingress:\n") != 1:
-        raise DeployError("tunnel configuration needs manual review before adding the deployment route")
-    updated = original.replace("ingress:\n", rule, 1)
+        updated = original.replace(old_rule, rule, 1)
+    else:
+        if WEBHOOK_PATH in original or original.count("ingress:\n") != 1:
+            raise DeployError("tunnel configuration needs manual review before adding the deployment route")
+        updated = original.replace("ingress:\n", rule, 1)
     with tempfile.NamedTemporaryFile(mode="w", dir=config.parent, prefix=".tunnel-", delete=False) as f:
         temp = Path(f.name)
         f.write(updated)

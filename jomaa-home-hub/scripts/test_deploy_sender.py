@@ -38,7 +38,7 @@ class SenderTest(unittest.TestCase):
                 mock.patch.object(notify.urllib.request, "build_opener", return_value=opener), \
                 contextlib.redirect_stdout(output):
             self.assertEqual(notify.main(), 0)
-        self.assertEqual(opener.assert_url, "https://hub.jomaa.org/__deployment")
+        self.assertEqual(opener.assert_url, "https://hub.jomaa.org/deploy")
         self.assertNotIn(key, output.getvalue())
 
     def test_sender_requires_secret(self):

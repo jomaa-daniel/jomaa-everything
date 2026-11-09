@@ -22,7 +22,7 @@ def main() -> int:
         key = os.environ.get("HUB_DEPLOY_SECRET", "")
         if len(key) < 32:
             raise ValueError("HUB_DEPLOY_SECRET is not configured")
-        url = os.environ.get("HUB_DEPLOY_URL", "https://hub.jomaa.org/__deployment")
+        url = os.environ.get("HUB_DEPLOY_URL", "https://hub.jomaa.org/deploy")
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
             raise ValueError("deployment URL must be HTTPS without credentials or fragment")
