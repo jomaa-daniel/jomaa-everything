@@ -143,6 +143,9 @@ class DeploymentTest(unittest.TestCase):
         def run_or_mock_systemctl(*args, **kwargs):
             if args[0] == "systemctl":
                 return ""
+            if "build" in args:
+                Path(args[args.index("-o") + 1]).write_text("built binary")
+                return ""
             return original_run(*args, **kwargs)
 
         with mock.patch.object(deploy, "UNIT_DIR", unit_dir), \

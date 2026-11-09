@@ -121,10 +121,8 @@ def wait_health(timeout: float = 60) -> bool:
     return False
 
 
-def activate(release: Path, source: Path, deploy_dir: Path) -> None:
-    """Build an isolated release, then switch its single current pointer."""
-    current = deploy_dir / "current"
-    previous = current.resolve(strict=True)
+def build_release(release: Path, source: Path) -> None:
+    """Build the binary from the exact source recorded in the release."""
     go = source / "data/native/go/bin/go"
     if not go.is_file():
         found = shutil.which("go")
@@ -139,20 +137,27 @@ def activate(release: Path, source: Path, deploy_dir: Path) -> None:
         run(str(go), "build", "-trimpath", "-o", str(candidate), "./cmd/hub", cwd=release,
             env={**os.environ, "CGO_ENABLED": "0"})
         os.replace(candidate, binary_dir / "hub")
+
+
+def activate(release: Path, source: Path, deploy_dir: Path) -> None:
+    """Build an isolated release, then switch its single current pointer."""
+    current = deploy_dir / "current"
+    previous = current.resolve(strict=True)
+    build_release(release, source)
+    try:
+        switch_link(current, release)
+        run("systemctl", "--user", "restart", "jomaa-hub.service")
+        if not wait_health():
+            raise DeployError("new hub did not become healthy")
+    except Exception:
+        switch_link(current, previous)
         try:
-            switch_link(current, release)
             run("systemctl", "--user", "restart", "jomaa-hub.service")
             if not wait_health():
-                raise DeployError("new hub did not become healthy")
-        except Exception:
-            switch_link(current, previous)
-            try:
-                run("systemctl", "--user", "restart", "jomaa-hub.service")
-                if not wait_health():
-                    print("warning: restored hub is not healthy", file=sys.stderr)
-            except (OSError, subprocess.SubprocessError) as e:
-                print(f"warning: could not restart restored hub: {e}", file=sys.stderr)
-            raise
+                print("warning: restored hub is not healthy", file=sys.stderr)
+        except (OSError, subprocess.SubprocessError) as e:
+            print(f"warning: could not restart restored hub: {e}", file=sys.stderr)
+        raise
 
 
 def install(source: Path, deploy_dir: Path, repo: str) -> None:
@@ -177,11 +182,7 @@ def install(source: Path, deploy_dir: Path, repo: str) -> None:
         release = make_release(root, sha, source, deploy_dir)
         if not (release / "scripts/deploy_native.py").is_file():
             raise DeployError("commit the deployment script before installing the timer")
-        existing_binary = source / "data/native/hub"
-        if not existing_binary.is_file():
-            raise DeployError(f"current hub binary is missing: {existing_binary}")
-        (release / "bin").mkdir(exist_ok=True)
-        shutil.copy2(existing_binary, release / "bin/hub")
+        build_release(release, source)
         switch_link(current, release)
     UNIT_DIR.mkdir(parents=True, exist_ok=True)
     script = deploy_dir / "current/scripts/deploy_native.py"
