@@ -1,0 +1,37 @@
+name: Verify native hub deployment
+
+# The home machine polls this workflow's successful main-branch push runs.
+# GitHub-hosted runners never need access to the home network or hub secrets.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'jomaa-home-hub/**'
+      - '.github/workflows/hub-deploy-native.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-hub-verify
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: jomaa-home-hub
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: jomaa-home-hub/tools/go.mod
+          cache-dependency-path: |
+            jomaa-home-hub/go.sum
+            jomaa-home-hub/tools/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 scripts/verify.py

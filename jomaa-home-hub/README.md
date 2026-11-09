@@ -99,6 +99,39 @@ Matter server is not exposed. Cloudflare account API tokens are not required
 for this native tunnel. The existing `cloudflare.py deploy` and GitHub workflow
 manage a different kind of tunnel and must not be used to manage this one.
 
+## Deploy native hub changes from GitHub
+
+`.github/workflows/hub-deploy-native.yml` verifies hub changes pushed or merged
+to `main` on GitHub-hosted runners. The hub machine checks for successful
+push runs every five minutes and fetches the exact verified commit over HTTPS;
+GitHub does not connect to the machine and no inbound port or GitHub token is
+needed. This works for a public repository; the installer defaults to
+`jomaa-daniel/jomaa-everything` and accepts `--repo OWNER/REPOSITORY`.
+
+After committing the deployment scripts and running the native setup, install
+the timer once from the hub checkout:
+
+```bash
+python3 scripts/deploy_native.py install --repo jomaa-daniel/jomaa-everything
+systemctl --user status jomaa-deploy.timer
+journalctl --user -u jomaa-deploy.service -n 50 --no-pager
+```
+
+Each verified revision is built in a separate release directory under
+`~/.local/share/jomaa-home-deploy`. Deployment switches the hub service to the
+new release and waits for both hub health and the Matter connection. On a
+failed restart or health check it restores the prior release. It preserves the
+working checkout, `.env`, `config.json`, Matter data, and Cloudflare tunnel;
+the Matter server and tunnel are not restarted for a hub deployment. A newer
+revision is never replaced by an older successful workflow run. Changes only
+take effect after the GitHub workflow succeeds and the next timer check.
+
+`systemctl --user start jomaa-deploy.service` checks immediately. The timer
+only follows successful `push` runs for `main`, including merges; a manually
+dispatched run alone does not deploy. A failed verification, unreachable
+GitHub, non-fast-forward history, or an unhealthy Matter server prevents or
+rolls back deployment and is reported in the deployment service journal.
+
 ## Reach it from anywhere with Docker
 
 A Cloudflare Tunnel serves the hub at `https://hub.yourdomain.com` without

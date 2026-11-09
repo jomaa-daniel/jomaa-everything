@@ -18,7 +18,7 @@ def main() -> None:
         "matter": [str(DATA / "matter/node_modules/.bin/matter-server"),
                    "--storage-path", str(DATA / "matter-data"), "--listen-address", "127.0.0.1",
                    "--bluetooth-adapter", os.environ.get("MATTER_BLUETOOTH_ADAPTER", "0")],
-        "hub": [str(DATA / "hub"), "-config", str(ROOT / "config.json")],
+        "hub": [os.environ.get("JOMAA_HUB_BINARY", str(DATA / "hub")), "-config", str(ROOT / "config.json")],
         "tunnel": [str(DATA / "cloudflared"), "--config", str(DATA / "tunnel.yml"),
                    "tunnel", "--no-autoupdate", "run"],
     }
