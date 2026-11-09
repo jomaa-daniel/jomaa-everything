@@ -1,0 +1,4 @@
+interface:
+  display_name: "Operate Home Hub"
+  short_description: "Control rooms and Matter devices through the hub"
+  default_prompt: "Use $operate-home-hub to check or control my home devices."
