@@ -111,7 +111,26 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     const landing = await fetch(origin + "/", { redirect: "manual" });
     assert.equal(landing.status, 302);
     assert.equal(landing.headers.get("location"), "/devices");
+    const homeRedirect = await new Promise<{ status: number; location: string }>((resolve, reject) => {
+      const req = httpRequest(
+        { hostname: "127.0.0.1", port: httpPort, path: "/", headers: { Host: "jomaa.org" } },
+        (res) => {
+          res.resume();
+          res.on("end", () => {
+            resolve({ status: res.statusCode ?? 0, location: res.headers.location ?? "" });
+          });
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+    assert.equal(homeRedirect.status, 302);
+    assert.equal(homeRedirect.location, "/home");
     for (const [path, contentType] of [
+      ["/home", "text/html"],
+      ["/home/", "text/html"],
+      ["/home/base.css", "text/css"],
+      ["/home/style.css", "text/css"],
       ["/devices", "text/html"],
       ["/devices/app.js", "text/javascript"],
       ["/devices/style.css", "text/css"],
@@ -121,6 +140,9 @@ await test("HTTPS API separates admin and device auth and persists authenticated
       assert.ok(response.headers.get("content-type")?.startsWith(contentType));
       assert.ok((await response.text()).length > 0);
     }
+    const homeHead = await fetch(origin + "/home", { method: "HEAD" });
+    assert.equal(homeHead.status, 200);
+    assert.equal(await homeHead.text(), "");
     const admin = sessionToken("test-hub-password");
     assert.equal((await call("/api/devices")).status, 401);
     const issued = await call("/api/devices/enroll", "POST", { id: "pico-api", name: "API Pico" }, admin);
