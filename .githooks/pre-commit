@@ -1,5 +1,5 @@
 #!/bin/sh
-# Blocks commits that break the hub's format, vet, lint or build.
+# Blocks commits that break the hub's format, types or lint.
 # Enabled per clone with: git config core.hooksPath .githooks
 if git diff --cached --name-only | grep -q '^jomaa-home-hub/'; then
 	python3 jomaa-home-hub/scripts/verify.py --fast || {

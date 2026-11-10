@@ -1,17 +1,96 @@
 {
   "listen": ":8080",
-  "matterServerUrl": "ws://127.0.0.1:5580/ws",
   "devices": [
-    { "id": "floor-lamp-2", "name": "Floor Lamp 2", "driver": "govee", "sku": "H607C", "device": "3F:3C:F4:8E:EA:B6:72:0B", "minKelvin": 2200, "maxKelvin": 6500 },
-    { "id": "right-floor-lamp", "name": "Right Floor Lamp", "driver": "govee", "sku": "H607C", "device": "69:BA:C1:EB:AC:2B:02:57", "minKelvin": 2200, "maxKelvin": 6500 },
-    { "id": "kitchen", "name": "Kitchen", "driver": "govee", "sku": "H61A0", "device": "F1:B3:60:74:F4:E4:7B:29", "minKelvin": 2000, "maxKelvin": 9000 },
-    { "id": "living-room-orb", "name": "Living Room Orb", "driver": "govee", "sku": "H6006", "device": "4D:9A:60:74:F4:F2:75:DE", "minKelvin": 2000, "maxKelvin": 9000 },
-    { "id": "leather-shade-bulb-1", "name": "Leather Shade Bulb 1", "driver": "govee", "sku": "H6006", "device": "C9:3B:60:74:F4:D8:18:68", "minKelvin": 2000, "maxKelvin": 9000 },
-    { "id": "leather-lamp-bulb-2", "name": "Leather Lamp Bulb 2", "driver": "govee", "sku": "H6006", "device": "D7:2F:60:74:F4:DF:49:18", "minKelvin": 2000, "maxKelvin": 9000 },
-    { "id": "credenza-lamp", "name": "Credenza Lamp", "driver": "govee", "sku": "H600B", "device": "F3:F7:A8:46:74:06:CC:84", "minKelvin": 2700, "maxKelvin": 6500 },
-    { "id": "monitor-bulb-1", "name": "Monitor Bulb 1", "driver": "govee", "sku": "H600B", "device": "09:38:A8:46:74:06:BB:00", "minKelvin": 2700, "maxKelvin": 6500 },
-    { "id": "under-monitor-bulb-2", "name": "Under Monitor Bulb 2", "driver": "govee", "sku": "H600B", "device": "9B:A3:98:88:E0:FB:1A:FC", "minKelvin": 2700, "maxKelvin": 6500 },
-    { "id": "monitor-bulb-3", "name": "Monitor Bulb 3", "driver": "govee", "sku": "H600B", "device": "16:84:A8:46:74:11:49:F0", "minKelvin": 2700, "maxKelvin": 6500 },
+    {
+      "id": "floor-lamp-2",
+      "name": "Floor Lamp 2",
+      "driver": "govee",
+      "sku": "H607C",
+      "device": "3F:3C:F4:8E:EA:B6:72:0B",
+      "minKelvin": 2200,
+      "maxKelvin": 6500
+    },
+    {
+      "id": "right-floor-lamp",
+      "name": "Right Floor Lamp",
+      "driver": "govee",
+      "sku": "H607C",
+      "device": "69:BA:C1:EB:AC:2B:02:57",
+      "minKelvin": 2200,
+      "maxKelvin": 6500
+    },
+    {
+      "id": "kitchen",
+      "name": "Kitchen",
+      "driver": "govee",
+      "sku": "H61A0",
+      "device": "F1:B3:60:74:F4:E4:7B:29",
+      "minKelvin": 2000,
+      "maxKelvin": 9000
+    },
+    {
+      "id": "living-room-orb",
+      "name": "Living Room Orb",
+      "driver": "govee",
+      "sku": "H6006",
+      "device": "4D:9A:60:74:F4:F2:75:DE",
+      "minKelvin": 2000,
+      "maxKelvin": 9000
+    },
+    {
+      "id": "leather-shade-bulb-1",
+      "name": "Leather Shade Bulb 1",
+      "driver": "govee",
+      "sku": "H6006",
+      "device": "C9:3B:60:74:F4:D8:18:68",
+      "minKelvin": 2000,
+      "maxKelvin": 9000
+    },
+    {
+      "id": "leather-lamp-bulb-2",
+      "name": "Leather Lamp Bulb 2",
+      "driver": "govee",
+      "sku": "H6006",
+      "device": "D7:2F:60:74:F4:DF:49:18",
+      "minKelvin": 2000,
+      "maxKelvin": 9000
+    },
+    {
+      "id": "credenza-lamp",
+      "name": "Credenza Lamp",
+      "driver": "govee",
+      "sku": "H600B",
+      "device": "F3:F7:A8:46:74:06:CC:84",
+      "minKelvin": 2700,
+      "maxKelvin": 6500
+    },
+    {
+      "id": "monitor-bulb-1",
+      "name": "Monitor Bulb 1",
+      "driver": "govee",
+      "sku": "H600B",
+      "device": "09:38:A8:46:74:06:BB:00",
+      "minKelvin": 2700,
+      "maxKelvin": 6500
+    },
+    {
+      "id": "under-monitor-bulb-2",
+      "name": "Under Monitor Bulb 2",
+      "driver": "govee",
+      "sku": "H600B",
+      "device": "9B:A3:98:88:E0:FB:1A:FC",
+      "minKelvin": 2700,
+      "maxKelvin": 6500
+    },
+    {
+      "id": "monitor-bulb-3",
+      "name": "Monitor Bulb 3",
+      "driver": "govee",
+      "sku": "H600B",
+      "device": "16:84:A8:46:74:11:49:F0",
+      "minKelvin": 2700,
+      "maxKelvin": 6500
+    },
     { "id": "matter-desk-light", "name": "Desk Light (Matter example)", "driver": "matter", "nodeId": 1, "endpoint": 1 }
   ],
   "rooms": [
@@ -19,8 +98,16 @@
       "id": "living-room",
       "name": "Living Room",
       "members": [
-        "floor-lamp-2", "right-floor-lamp", "kitchen", "living-room-orb", "leather-shade-bulb-1",
-        "leather-lamp-bulb-2", "credenza-lamp", "monitor-bulb-1", "under-monitor-bulb-2", "monitor-bulb-3"
+        "floor-lamp-2",
+        "right-floor-lamp",
+        "kitchen",
+        "living-room-orb",
+        "leather-shade-bulb-1",
+        "leather-lamp-bulb-2",
+        "credenza-lamp",
+        "monitor-bulb-1",
+        "under-monitor-bulb-2",
+        "monitor-bulb-3"
       ]
     },
     { "id": "office", "name": "Office", "members": ["matter-desk-light"] },

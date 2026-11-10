@@ -133,29 +133,30 @@ def wait_health(timeout: float = 60) -> bool:
     return False
 
 
-def build_release(release: Path, source: Path) -> None:
-    """Build the binary from the exact source recorded in the release."""
-    go = source / "data/native/go/bin/go"
-    if not go.is_file():
-        found = shutil.which("go")
-        if not found:
-            raise DeployError("Go is not installed")
-        go = Path(found)
-    binary_dir = release / "bin"
-    binary_dir.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix=".deploy-", dir=binary_dir) as tmp:
-        tmpdir = Path(tmp)
-        candidate = tmpdir / "hub"
-        run(str(go), "build", "-trimpath", "-o", str(candidate), "./cmd/hub", cwd=release,
-            env={**os.environ, "CGO_ENABLED": "0"})
-        os.replace(candidate, binary_dir / "hub")
+def build_release(release: Path) -> None:
+    """Install the pinned dependencies and build the hub from the exact source in the release."""
+    if not shutil.which("npm"):
+        raise DeployError("npm is not installed")
+    run("npm", "ci", "--no-audit", "--no-fund", cwd=release)
+    run("npm", "run", "build", cwd=release)
 
 
-def activate(release: Path, source: Path, deploy_dir: Path) -> None:
+def prune_releases(deploy_dir: Path, keep: int = 3) -> None:
+    """Delete all but the newest releases, never the current one. Each holds its own node_modules."""
+    releases = deploy_dir / "releases"
+    current = (deploy_dir / "current").resolve()
+    built = sorted((r for r in releases.iterdir() if (r / ".revision").is_file()),
+                   key=lambda r: r.stat().st_mtime, reverse=True)
+    for old in built[keep:]:
+        if old.resolve() != current:
+            shutil.rmtree(old, ignore_errors=True)
+
+
+def activate(release: Path, deploy_dir: Path) -> None:
     """Build an isolated release, then switch its single current pointer."""
     current = deploy_dir / "current"
     previous = current.resolve(strict=True)
-    build_release(release, source)
+    build_release(release)
     try:
         switch_link(current, release)
         run("systemctl", "--user", "restart", "jomaa-hub.service")
@@ -214,7 +215,7 @@ def configure_tunnel(source: Path, hostname: str) -> None:
 def install(source: Path, deploy_dir: Path, repo: str) -> None:
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repo):
         raise DeployError("repo must be OWNER/REPOSITORY")
-    for name in ("jomaa-setup", "jomaa-matter", "jomaa-hub", "jomaa-cloudflared"):
+    for name in ("jomaa-setup", "jomaa-hub", "jomaa-cloudflared"):
         if not (UNIT_DIR / (name + ".service")).is_file():
             raise DeployError(f"missing {name}.service; run native tunnel setup first")
     root = source.parent
@@ -243,7 +244,7 @@ def install(source: Path, deploy_dir: Path, repo: str) -> None:
     if not (release / "scripts/deploy_native.py").is_file():
         raise DeployError("commit the deployment script before installing the receiver")
     if fresh:
-        build_release(release, source)
+        build_release(release)
         switch_link(current, release)
     UNIT_DIR.mkdir(parents=True, exist_ok=True)
     script = current / "scripts/deploy_native.py"
@@ -255,22 +256,22 @@ def install(source: Path, deploy_dir: Path, repo: str) -> None:
             f"ExecStart={quote(sys.executable)} {quote(str(script))} serve\n"
             f"Restart=always\nRestartSec=2\n[Install]\nWantedBy=default.target\n")
     (UNIT_DIR / "jomaa-deploy.service").write_text(unit)
-    for name, args in (("jomaa-setup", "setup_native.py --boot"), ("jomaa-matter", "boot_native.py matter"),
-                       ("jomaa-hub", "boot_native.py hub"), ("jomaa-cloudflared", "boot_native.py tunnel")):
+    # Each service runs the current release's scripts, so the hub starts from
+    # that release's build.
+    for name, args in (("jomaa-setup", "setup_native.py --boot"), ("jomaa-hub", "boot_native.py hub"),
+                       ("jomaa-cloudflared", "boot_native.py tunnel")):
         script_name, arg = args.split()
         directory = UNIT_DIR / (name + ".service.d")
         directory.mkdir(parents=True, exist_ok=True)
-        binary_env = (f"Environment={quote('JOMAA_HUB_BINARY=' + str(current / 'bin/hub'))}\n"
-                      if name == "jomaa-hub" else "")
         (directory / "deployment.conf").write_text(
-            f"[Service]\n{binary_env}ExecStart=\nExecStart={quote(sys.executable)} "
+            f"[Service]\nExecStart=\nExecStart={quote(sys.executable)} "
             f"{quote(str(current / 'scripts' / script_name))} {arg}\n")
     if (UNIT_DIR / "jomaa-deploy.timer").exists():
         run("systemctl", "--user", "disable", "--now", "jomaa-deploy.timer")
         (UNIT_DIR / "jomaa-deploy.timer").unlink()
     run("systemctl", "--user", "daemon-reload")
     if not fresh and deployed != sha:
-        activate(release, source, deploy_dir)
+        activate(release, deploy_dir)
     elif fresh:
         run("systemctl", "--user", "restart", "jomaa-hub.service")
         if not wait_health():
@@ -297,7 +298,8 @@ def deploy_revision(source: Path, deploy_dir: Path, repo_name: str, candidate: s
     if not is_ancestor(cache, deployed, candidate):
         raise DeployError("main does not descend from the deployed revision; manual intervention required")
     release = make_release(cache, candidate, source, deploy_dir)
-    activate(release, source, deploy_dir)
+    activate(release, deploy_dir)
+    prune_releases(deploy_dir)
     return "deployed"
 
 

@@ -56,11 +56,14 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-node@v4
         with:
-          go-version-file: jomaa-home-hub/go.mod
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: jomaa-home-hub/package-lock.json
       - name: Start the hub with a fake Govee cloud for the UI tests
         run: |
+          npm ci --prefix jomaa-home-hub --no-audit --no-fund
           python3 jomaa-home-client/scripts/test_hub.py > test_hub.log 2>&1 &
           for i in $(seq 60); do curl -sf http://127.0.0.1:8797/healthz && exit 0; sleep 1; done
           cat test_hub.log; exit 1

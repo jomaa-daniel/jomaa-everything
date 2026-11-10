@@ -1,42 +1,33 @@
-# Two services on the host network. Matter finds and talks to devices over the
+# The hub on the host network. Matter finds and talks to devices over the
 # local network (mDNS, IPv6), which doesn't work through Docker's bridge.
 services:
-  matter-server:
-    # Open Home Foundation Matter server. Owns pairing and the Matter fabric.
-    image: ghcr.io/matter-js/matterjs-server:stable
-    container_name: jomaa-matter-server
-    read_only: true
-    network_mode: host
-    restart: unless-stopped
-    environment:
-      # Only the hub, on the same machine, may talk to it.
-      LISTEN_ADDRESS: 127.0.0.1
-      # Bluetooth pairing for brand-new Wi-Fi/Thread devices: uncomment these
-      # and the dbus volume below. Without it, pair with networkOnly.
-      # BLUETOOTH_ADAPTER: "0"
-      # NOBLE_BINDINGS: dbus
-    volumes:
-      # Matter fabric keys live here. Back it up; losing it means re-pairing.
-      - ./data/matter:/data
-      # - /run/dbus:/run/dbus:ro
-
   hub:
+    # Runs the HTTP API and the Matter controller in one process. The
+    # controller owns pairing and the Matter fabric.
     build: .
     container_name: jomaa-home-hub
     network_mode: host
+    read_only: true
+    tmpfs: [/tmp]
     restart: unless-stopped
-    depends_on: [matter-server]
     environment:
       HUB_PASSWORD: ${HUB_PASSWORD:?set HUB_PASSWORD in .env}
       GOVEE_API_KEY: ${GOVEE_API_KEY:-}
+      # Bluetooth pairing for brand-new Wi-Fi/Thread devices: uncomment these,
+      # the command and the dbus volume below. Without it, pair with networkOnly.
+      # NOBLE_BINDINGS: dbus
+    # command: ["--bluetooth-adapter", "0"]
     volumes:
       - ./config.json:/etc/jomaa-home-hub/config.json:ro
+      # Matter fabric keys live here (the same folder the separate Matter
+      # server container used). Back it up; losing it means re-pairing.
+      - ./data/matter:/data
+      # - /run/dbus:/run/dbus:ro
 
   cloudflared:
     # Cloudflare Tunnel: serves the hub at CLOUDFLARE_HOSTNAME
     # without opening router ports. Started by scripts/cloudflare.py run,
-    # which supplies the tunnel token; only the hub is exposed, never the
-    # Matter server.
+    # which supplies the tunnel token; only the hub is exposed.
     image: cloudflare/cloudflared:2026.10.7
     container_name: jomaa-cloudflared
     profiles: [tunnel]
@@ -46,4 +37,3 @@ services:
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
-

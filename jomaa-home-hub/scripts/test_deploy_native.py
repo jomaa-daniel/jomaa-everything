@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import json
+import os
 import subprocess
 import tempfile
 import threading
@@ -20,7 +21,7 @@ class DeploymentTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()  # macOS: /var is a symlink to /private/var
         self.repo = self.root / "repo"
         self.repo.mkdir()
         self.source = self.repo / "jomaa-home-hub"
@@ -37,18 +38,23 @@ class DeploymentTest(unittest.TestCase):
         self.first = self.git("rev-parse", "HEAD")
         (self.source / ".env").write_text("HUB_PASSWORD=secret\nCLOUDFLARE_HOSTNAME=hub.example.org\n")
         (self.source / "config.json").write_text('{"devices": []}\n')
-        binary = self.source / "data/native/hub"
-        binary.parent.mkdir(parents=True)
-        binary.write_text("old binary")
-        go = self.source / "data/native/go/bin/go"
-        go.parent.mkdir(parents=True)
-        go.touch()
+        (self.source / "data/native").mkdir(parents=True)
+        # The checkout's own build, which deployments must leave alone.
+        (self.source / "dist").mkdir()
+        (self.source / "dist/main.js").write_text("checkout build")
         (self.source / "cmd/test.txt").write_text("second")
         self.git("add", "jomaa-home-hub/cmd/test.txt")
         self.git("commit", "-qm", "second")
         self.second = self.git("rev-parse", "HEAD")
         self.deploy_dir = self.root / "deploy"
         self.deploy_dir.mkdir()
+
+    @staticmethod
+    def fake_npm(args, kwargs, built="new build"):
+        """Stands in for npm: npm run build writes the release's dist/main.js."""
+        if args[:3] == ("npm", "run", "build"):
+            (kwargs["cwd"] / "dist").mkdir(exist_ok=True)
+            (kwargs["cwd"] / "dist/main.js").write_text(built)
 
     def git(self, *args):
         return subprocess.run(["git", "-C", str(self.repo), *args], check=True, text=True,
@@ -70,16 +76,17 @@ class DeploymentTest(unittest.TestCase):
 
         def fake_run(*args, **kwargs):
             calls.append(args)
-            if "build" in args:
-                Path(args[args.index("-o") + 1]).write_text("new binary")
+            self.fake_npm(args, kwargs)
             return ""
 
         with mock.patch.object(deploy, "run", side_effect=fake_run), \
+                mock.patch.object(deploy.shutil, "which", return_value="/usr/bin/npm"), \
                 mock.patch.object(deploy, "wait_health", side_effect=[False, True]):
             with self.assertRaisesRegex(deploy.DeployError, "did not become healthy"):
-                deploy.activate(new, self.source, self.deploy_dir)
+                deploy.activate(new, self.deploy_dir)
         self.assertEqual((self.deploy_dir / "current").resolve(), old)
-        self.assertEqual((self.source / "data/native/hub").read_text(), "old binary")
+        self.assertEqual((self.source / "dist/main.js").read_text(), "checkout build")
+        self.assertIn(("npm", "ci", "--no-audit", "--no-fund"), calls)
         self.assertEqual(sum("restart" in call for call in calls), 2)
 
     def test_success_switches_only_current_release(self):
@@ -88,16 +95,16 @@ class DeploymentTest(unittest.TestCase):
         deploy.switch_link(self.deploy_dir / "current", old)
 
         def fake_run(*args, **kwargs):
-            if "build" in args:
-                Path(args[args.index("-o") + 1]).write_text("new binary")
+            self.fake_npm(args, kwargs)
             return ""
 
         with mock.patch.object(deploy, "run", side_effect=fake_run), \
+                mock.patch.object(deploy.shutil, "which", return_value="/usr/bin/npm"), \
                 mock.patch.object(deploy, "wait_health", return_value=True):
-            deploy.activate(new, self.source, self.deploy_dir)
+            deploy.activate(new, self.deploy_dir)
         self.assertEqual((self.deploy_dir / "current").resolve(), new)
-        self.assertEqual((new / "bin/hub").read_text(), "new binary")
-        self.assertEqual((self.source / "data/native/hub").read_text(), "old binary")
+        self.assertEqual((new / "dist/main.js").read_text(), "new build")
+        self.assertEqual((self.source / "dist/main.js").read_text(), "checkout build")
         self.assertIn("HUB_PASSWORD=secret", (self.source / ".env").read_text())
 
     def test_verifies_main_push_and_successful_job(self):
@@ -210,30 +217,44 @@ class DeploymentTest(unittest.TestCase):
     def test_install_can_be_repeated_without_replacing_a_live_release(self):
         unit_dir = self.root / "units"
         unit_dir.mkdir()
-        for name in ("jomaa-setup", "jomaa-matter", "jomaa-hub", "jomaa-cloudflared"):
+        for name in ("jomaa-setup", "jomaa-hub", "jomaa-cloudflared"):
             (unit_dir / f"{name}.service").write_text("[Service]\nExecStart=/bin/true\n")
         original_run = deploy.run
 
         def run_or_mock_systemctl(*args, **kwargs):
-            if args[0] == "systemctl":
-                return ""
-            if "build" in args:
-                Path(args[args.index("-o") + 1]).write_text("built binary")
+            if args[0] in ("systemctl", "npm"):
+                self.fake_npm(args, kwargs, built="built")
                 return ""
             return original_run(*args, **kwargs)
 
         with mock.patch.object(deploy, "UNIT_DIR", unit_dir), \
                 mock.patch.object(deploy, "run", side_effect=run_or_mock_systemctl), \
+                mock.patch.object(deploy.shutil, "which", return_value="/usr/bin/npm"), \
                 mock.patch.object(deploy, "configure_tunnel"), \
                 mock.patch.object(deploy, "wait_health", return_value=True):
             deploy.install(self.source, self.deploy_dir, "example/hub")
             release = (self.deploy_dir / "current").resolve()
-            (release / "bin/hub").write_text("deployed binary")
+            (release / "dist/main.js").write_text("deployed build")
             deploy.install(self.source, self.deploy_dir, "example/hub")
-        self.assertEqual((release / "bin/hub").read_text(), "deployed binary")
-        self.assertIn("current/bin/hub", (unit_dir / "jomaa-hub.service.d/deployment.conf").read_text())
+        self.assertEqual((release / "dist/main.js").read_text(), "deployed build")
+        conf = (unit_dir / "jomaa-hub.service.d/deployment.conf").read_text()
+        self.assertIn("current/scripts/boot_native.py", conf)
+        self.assertNotIn("JOMAA_HUB_BINARY", conf)
         self.assertIn("serve", (unit_dir / "jomaa-deploy.service").read_text())
         self.assertFalse((unit_dir / "jomaa-deploy.timer").exists())
+
+    def test_prune_keeps_newest_releases_and_current(self):
+        releases = self.deploy_dir / "releases"
+        made = []
+        for i in range(5):
+            r = releases / f"r{i}"
+            r.mkdir(parents=True)
+            (r / ".revision").write_text(f"r{i}\n")
+            os.utime(r, (1000 + i, 1000 + i))
+            made.append(r)
+        deploy.switch_link(self.deploy_dir / "current", made[0])
+        deploy.prune_releases(self.deploy_dir, keep=3)
+        self.assertEqual(sorted(p.name for p in releases.iterdir()), ["r0", "r2", "r3", "r4"])
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
-"""Tests for hubctl.py. The end-to-end test builds the real Go hub, points it
-at a fake Govee API, and drives it through hubctl.
+"""Tests for hubctl.py. The end-to-end test builds the real hub, points it at a
+fake Govee API, and drives it through hubctl.
 
 Run from jomaa-home-hub/:  python3 -m unittest discover -s scripts
 """
@@ -102,13 +102,12 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-@unittest.skipUnless(shutil.which("go"), "needs Go to build the hub")
+@unittest.skipUnless((hubctl.HUB_DIR / "node_modules").is_dir(), "needs npm ci in jomaa-home-hub to build the hub")
 class EndToEndTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = Path(tempfile.mkdtemp())
-        binary = cls.tmp / "hub"
-        subprocess.run(["go", "build", "-o", str(binary), "./cmd/hub"], cwd=hubctl.HUB_DIR, check=True)
+        subprocess.run(["npm", "run", "build"], cwd=hubctl.HUB_DIR, check=True, capture_output=True)
 
         cls.govee = ThreadingHTTPServer(("127.0.0.1", 0), FakeGovee)
         threading.Thread(target=cls.govee.serve_forever, daemon=True).start()
@@ -116,8 +115,6 @@ class EndToEndTest(unittest.TestCase):
         port = free_port()
         config = {
             "listen": f"127.0.0.1:{port}",
-            # Nothing listens here, so the hub runs with Matter disconnected.
-            "matterServerUrl": f"ws://127.0.0.1:{free_port()}/ws",
             "devices": [
                 {"id": "lamp-a", "name": "Lamp A", "driver": "govee", "sku": "H607C", "device": "AA", "minKelvin": 2200, "maxKelvin": 6500},
                 {"id": "lamp-b", "name": "Lamp B", "driver": "govee", "sku": "H6006", "device": "BB", "minKelvin": 2000, "maxKelvin": 9000},
@@ -127,7 +124,8 @@ class EndToEndTest(unittest.TestCase):
         (cls.tmp / "config.json").write_text(json.dumps(config))
         cls.env = {"HUB_PASSWORD": "test-pw", "GOVEE_API_KEY": "fake-key", "HUB_URL": f"http://127.0.0.1:{port}"}
         cls.proc = subprocess.Popen(
-            [str(binary), "-config", str(cls.tmp / "config.json")],
+            # Without Matter, so pairing reports that it's unavailable.
+            ["node", str(hubctl.HUB_DIR / "dist/main.js"), "--config", str(cls.tmp / "config.json"), "--no-matter"],
             env={**os.environ, **cls.env, "GOVEE_BASE_URL": f"http://127.0.0.1:{cls.govee.server_port}"},
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -174,7 +172,7 @@ class EndToEndTest(unittest.TestCase):
 
     def test_status_lists_rooms_and_reports_matter_down(self):
         out = self.run_hubctl("status")
-        self.assertIn("matter server: NOT connected", out)
+        self.assertIn("matter: NOT ready", out)
         self.assertIn("living-room", out)
         self.assertIn("[lamp-a, lamp-b]", out)
 
@@ -185,7 +183,7 @@ class EndToEndTest(unittest.TestCase):
 
     def test_commission_without_matter_is_an_error(self):
         hub = hubctl.hub_from_env(self.env)
-        with self.assertRaisesRegex(hubctl.HubError, "not connected"):
+        with self.assertRaisesRegex(hubctl.HubError, "not running"):
             hub.call("POST", "/api/matter/commission", {"code": "34970112332"})
 
 

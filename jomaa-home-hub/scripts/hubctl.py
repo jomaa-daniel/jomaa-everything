@@ -2,15 +2,15 @@
 """Start, stop and talk to the home hub.
 
     hubctl.py check                 make sure config, secrets and Docker are ready
-    hubctl.py up                    start the Matter server and the hub, wait until healthy, and
+    hubctl.py up                    start the hub in Docker, wait until it and Matter are ready, and
                                     bring up the Cloudflare tunnel if CLOUDFLARE_HOSTNAME is set
-    hubctl.py dev                   start the Matter server in Docker, run the hub from source
+    hubctl.py dev                   build and run the hub from source, without Docker
     hubctl.py down                  stop everything
     hubctl.py status                show health, devices, rooms and Matter nodes
-    hubctl.py logs [service]        follow logs (matter-server or hub)
+    hubctl.py logs [service]        follow logs (hub or cloudflared)
     hubctl.py commission CODE       pair a Matter device (QR "MT:..." or manual code)
-    hubctl.py wifi SSID             give the Matter server Wi-Fi credentials for pairing
-    hubctl.py thread DATASET        give the Matter server a Thread dataset for pairing
+    hubctl.py wifi SSID             give the hub Wi-Fi credentials for pairing Matter devices
+    hubctl.py thread DATASET        give the hub a Thread dataset for pairing Matter devices
     hubctl.py on|off TARGET         quick test: switch a device or room
 
 Standard library only, so it runs on a fresh Pi without pip.
@@ -23,7 +23,6 @@ import getpass
 import json
 import os
 import shutil
-import socket
 import subprocess
 import sys
 import time
@@ -34,8 +33,7 @@ from pathlib import Path
 import cloudflare
 
 HUB_DIR = Path(__file__).resolve().parent.parent
-MATTER_PORT = 5580
-MATTER_UID = 1000  # the Matter server container runs as this user
+HUB_UID = 1000  # the hub container runs as this user and keeps Matter data in data/matter
 
 
 class HubError(Exception):
@@ -116,21 +114,13 @@ def wait_for(what: str, ready, timeout: float, interval: float = 1.0) -> None:
     raise HubError(f"{what} did not come up within {int(timeout)}s (try: hubctl.py logs)")
 
 
-def port_open(host: str, port: int) -> bool:
-    try:
-        with socket.create_connection((host, port), timeout=1):
-            return True
-    except OSError:
-        return False
-
-
 def prepare_data_dir(hub_dir: Path) -> None:
     data = hub_dir / "data" / "matter"
     data.mkdir(parents=True, exist_ok=True)
-    if hasattr(os, "getuid") and data.stat().st_uid != MATTER_UID:
+    if hasattr(os, "getuid") and data.stat().st_uid != HUB_UID:
         print(
-            f"  note: the Matter server runs as uid {MATTER_UID}; if it can't write its data, run\n"
-            f"        sudo chown -R {MATTER_UID}:{MATTER_UID} {data}"
+            f"  note: the hub container runs as uid {HUB_UID}; if it can't write its Matter data, run\n"
+            f"        sudo chown -R {HUB_UID}:{HUB_UID} {data}"
         )
 
 
@@ -182,6 +172,13 @@ class Hub:
         except HubError:
             return False
 
+    def matter_ready(self) -> bool:
+        try:
+            status, health = self.request("GET", "/healthz", timeout=2)
+            return status == 200 and bool(health.get("matterConnected"))
+        except HubError:
+            return False
+
 
 def hub_from_env(env: dict[str, str]) -> Hub:
     return Hub(env.get("HUB_URL", "http://127.0.0.1:8080"), env.get("HUB_PASSWORD", ""))
@@ -204,9 +201,9 @@ def cmd_up(env: dict[str, str], args) -> None:
     prepare_data_dir(HUB_DIR)
     print("starting...")
     compose("up", "-d", "--build", env=env)
-    wait_for("matter server", lambda: port_open("127.0.0.1", MATTER_PORT), timeout=90)
     hub = hub_from_env(env)
     wait_for("hub", hub.healthy, timeout=60)
+    wait_for("matter", hub.matter_ready, timeout=90)
     if tunnel_wanted(env):
         print("cloudflare tunnel...")
         cf = cloudflare.Cloudflare(env["CLOUDFLARE_API_TOKEN"])
@@ -224,14 +221,16 @@ def cmd_dev(env: dict[str, str], args) -> None:
     problems = check_setup(HUB_DIR, env)
     if problems:
         raise HubError("not ready:\n  - " + "\n  - ".join(problems))
-    if not shutil.which("go"):
-        raise HubError("go is not installed")
-    prepare_data_dir(HUB_DIR)
-    compose("up", "-d", "matter-server", env=env)
-    wait_for("matter server", lambda: port_open("127.0.0.1", MATTER_PORT), timeout=90)
-    print("running the hub from source (Ctrl-C to stop; the Matter server keeps running)")
+    if not shutil.which("npm"):
+        raise HubError("node and npm are not installed")
+    (HUB_DIR / "data" / "matter").mkdir(parents=True, exist_ok=True)
+    for step in (["npm", "ci", "--no-audit", "--no-fund"], ["npm", "run", "build"]):
+        if subprocess.run(step, cwd=HUB_DIR).returncode != 0:
+            raise HubError(f"{' '.join(step)} failed")
+    print("running the hub from source (Ctrl-C to stop)")
     try:
-        subprocess.run(["go", "run", "./cmd/hub", "-config", "config.json"], cwd=HUB_DIR, env={**os.environ, **env})
+        subprocess.run(["node", "dist/main.js", "--config", "config.json", "--matter-storage", "data/matter"],
+                       cwd=HUB_DIR, env={**os.environ, **env})
     except KeyboardInterrupt:
         pass
 
@@ -249,7 +248,7 @@ def cmd_status(env: dict[str, str], args) -> None:
     status, health = hub.request("GET", "/healthz", timeout=5)
     if status != 200:
         raise HubError(f"hub is unhealthy (HTTP {status})")
-    print(f"hub: up at {hub.url}  matter server: {'connected' if health.get('matterConnected') else 'NOT connected'}")
+    print(f"hub: up at {hub.url}  matter: {'ready' if health.get('matterConnected') else 'NOT ready'}")
     for t in hub.call("GET", "/api/targets")["targets"]:
         members = f"  [{', '.join(t['members'])}]" if t.get("members") else ""
         print(f"  {t['kind']:<7} {t['id']:<24} {t['name']}{members}")
@@ -295,7 +294,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("down").set_defaults(fn=cmd_down)
     sub.add_parser("status").set_defaults(fn=cmd_status)
     logs = sub.add_parser("logs")
-    logs.add_argument("service", nargs="?", choices=["matter-server", "hub"])
+    logs.add_argument("service", nargs="?", choices=["hub", "cloudflared"])
     logs.set_defaults(fn=cmd_logs)
     com = sub.add_parser("commission")
     com.add_argument("code")

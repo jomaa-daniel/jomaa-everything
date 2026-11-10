@@ -9,14 +9,19 @@ pass that fixes lights that didn't change.
 
 ## Decisions
 
-- **Go for the hub, Python for startup and control.** The user picked these.
-- **The hub hands Matter to the Open Home Foundation Matter server.** Go has no
-  mature Matter library. The Matter server is certified, used by Home Assistant,
-  ships as a Docker image, and has a stable WebSocket API. The hub keeps a live
-  copy of each node's attributes from that connection, so reading state costs
-  nothing.
+- **TypeScript for the hub, Python for startup and control.** The user picked
+  these. The hub started in Go; it moved to TypeScript (2026-11-09) so it could
+  share a process with the Matter controller, which is a TypeScript library.
+- **The hub runs the Open Home Foundation Matter server's controller
+  in-process.** That controller is certified and used by Home Assistant. The
+  hub imports its library (`@matter-server/ws-controller`) and calls it
+  directly, instead of running the server separately and talking to it over a
+  WebSocket. The controller keeps a live copy of each node's attributes, so
+  reading state costs nothing. It opens the storage the standalone server
+  created, so devices stay paired across the move.
 - **It runs at home, not in the cloud.** Matter only works on the local network.
-  Both services use host networking. The Matter server listens on localhost only.
+  The hub uses host networking and listens on localhost; only the tunnel
+  exposes it.
 - **One `Device` interface. Rooms implement it too.** A room sends each command
   to all members at once. A failing bulb doesn't block the others, and failures
   are reported per device. Rooms can contain rooms.

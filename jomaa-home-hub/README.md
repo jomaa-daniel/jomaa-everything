@@ -10,29 +10,26 @@ and speaking Matter.
 phone / web / hubctl.py
         │  HTTP (one API for every brand)
         ▼
-   hub (Go) ── rooms, fan-out, sync
-     │                    │
-     │ WebSocket          │ HTTPS
-     ▼                    ▼
- Matter server        Govee cloud
- (Docker)                 │
-     │ Matter              ▼
-     ▼                 Govee lights
- Matter devices
+   hub (TypeScript, one process)
+   ├─ rooms, fan-out, sync
+   ├─ Matter controller ──── Matter ───▶ Matter devices
+   └─ Govee client ───────── HTTPS ───▶ Govee cloud ──▶ Govee lights
 ```
 
-The hub doesn't speak Matter itself. It uses the
+The hub runs the controller library from the
 [Open Home Foundation Matter server](https://github.com/matter-js/matterjs-server)
-(the one Home Assistant uses) for pairing and device sessions, and talks to it
-over a local WebSocket.
+(the one Home Assistant uses) inside its own process. The hub and the
+controller call each other directly: commands go straight to the controller,
+and the controller's live copy of each device's attributes is what the hub
+reads for state. There is no separate Matter server or WebSocket.
 
 ## Run it on Linux without Docker
 
-The native setup installs the Matter server and builds the hub, then creates
-user-level systemd services. It needs Linux x86-64 or arm64, Python 3.12+,
-Node.js 22.13+, npm, systemd and an internet connection. If Go is missing, the
-setup downloads a verified Go release. A Thread border router is also needed
-for Thread devices.
+The native setup installs the hub's dependencies at the versions
+`package-lock.json` pins, builds it, then creates user-level systemd services.
+It needs Linux x86-64 or arm64, Python 3.12+, Node.js 22.13+, npm, systemd and
+an internet connection. A Thread border router is also needed for Thread
+devices.
 
 ```bash
 python3 scripts/setup_native.py
@@ -51,32 +48,52 @@ Systemd runs `scripts/setup_native.py --boot` to check the installation, then
 or creates Cloudflare resources. To inspect or restart the services:
 
 ```bash
-systemctl --user status jomaa-matter jomaa-hub jomaa-cloudflared
+systemctl --user status jomaa-hub jomaa-cloudflared
 systemctl --user restart jomaa-hub
-journalctl --user -u jomaa-matter -u jomaa-hub -f
+journalctl --user -u jomaa-hub -f
 ```
 
 The tunnel service exists only if configured below. After changing `.env` or
-`config.json`, restart the hub. Backup `data/native/matter-data` to preserve
+`config.json`, restart the hub. Restarting the hub restarts its Matter
+controller too; devices reconnect within seconds. Backup `data/native/matter-data` to preserve
 the Matter fabric; losing it means re-pairing devices. Bluetooth pairing uses
 adapter 0 over D-Bus; set `MATTER_BLUETOOTH_ADAPTER` in `.env` for another
-adapter. The Bluetooth service and adapter must be enabled on the host.
+adapter. The Bluetooth service and adapter must be enabled on the host. Set
+`MATTER_LOG_LEVEL` (`debug`, `info`, `notice`, `warn`, `error`; default
+`notice`) for more or less Matter detail in the journal.
+
+### Upgrading from the Go hub
+
+Earlier versions ran the hub in Go next to a separate `jomaa-matter` service.
+Pull, then run the setup and reinstall the deployment receiver:
+
+```bash
+python3 scripts/setup_native.py
+python3 scripts/deploy_native.py install --repo jomaa-daniel/jomaa-everything
+```
+
+The setup stops and removes `jomaa-matter` and its npm install, and the hub
+opens the same `data/native/matter-data`, so paired devices stay paired. A
+`matterServerUrl` left in `config.json` is ignored. Until the receiver is
+reinstalled, the services run from the checkout.
 
 ## Run it with Docker
 
 Needs a machine on your home network that stays on (a Pi, NAS or mini PC) with
 Docker and Python 3. Thread devices also need a Thread border router on the
-network (an Apple TV, HomePod mini or Nest hub).
+network (an Apple TV, HomePod mini or Nest hub). One container runs the hub
+and its Matter controller; Matter data stays in `data/matter`, where the
+separate Matter server container used to keep it.
 
 ```bash
 cp config.example.json config.json   # list your devices and rooms
 cp .env.example .env                 # set HUB_PASSWORD and GOVEE_API_KEY
-python3 scripts/hubctl.py up         # starts both services, waits until healthy
+python3 scripts/hubctl.py up         # starts the hub, waits until it and Matter are ready
 python3 scripts/hubctl.py status
 ```
 
-`hubctl.py dev` runs the Matter server in Docker and the hub from source, for
-working on the hub.
+`hubctl.py dev` builds and runs the hub from source without Docker, for
+working on the hub. It keeps Matter data in `data/matter`.
 
 ## Reach it from anywhere with native services
 
@@ -94,8 +111,7 @@ machine. Existing `data/native/tunnel.yml` settings are not overwritten. Keep
 `~/.cloudflared` private and back it up with the Matter data.
 
 The tunnel serves the hub over HTTPS at the chosen hostname. Find the hub
-password in the private `.env` file. The hub remains on loopback and the
-Matter server is not exposed. Cloudflare account API tokens are not required
+password in the private `.env` file. The hub remains on loopback. Cloudflare account API tokens are not required
 for this native tunnel. The existing `cloudflare.py deploy` and GitHub workflow
 manage a different kind of tunnel and must not be used to manage this one.
 
@@ -120,11 +136,13 @@ journalctl --user -u jomaa-deploy.service -n 50 --no-pager
 ```
 
 Each verified revision is built in a separate release directory under
-`~/.local/share/jomaa-home-deploy`. Deployment switches the hub service to the
-new release and waits for both hub health and the Matter connection. On a
-failed restart or health check it restores the prior release. It preserves the
+`~/.local/share/jomaa-home-deploy`, with its own `npm ci` and build; the three
+newest releases are kept. Deployment switches the hub service to the new
+release and waits for both hub health and the Matter controller. On a failed
+restart or health check it restores the prior release. It preserves the
 working checkout, `.env`, `config.json`, Matter data, and Cloudflare tunnel;
-the Matter server and tunnel are not restarted for a hub deployment. A newer
+the tunnel is not restarted for a hub deployment, but the Matter controller
+restarts with the hub. A newer
 revision is never replaced by an older successful workflow run. The secret
 file is private and must match the GitHub Actions secret. Changes take effect
 after the GitHub verification job succeeds and its deployment request returns.
@@ -133,7 +151,7 @@ go to the hub service. The receiver listens only on this machine's loopback.
 
 Only successful `push` runs for `main`, including merges, deploy; a manually
 dispatched run only verifies. A failed verification, unreachable GitHub,
-non-fast-forward history, or an unhealthy Matter server prevents or rolls back
+non-fast-forward history, or a Matter controller that doesn't start prevents or rolls back
 deployment and is reported in the deployment service journal. Rerun a failed
 push workflow after correcting the issue. To use a different public hostname,
 set the `HUB_DEPLOY_URL` GitHub Actions variable to its `/deploy` URL.
@@ -143,7 +161,7 @@ set the `HUB_DEPLOY_URL` GitHub Actions variable to its `/deploy` URL.
 A Cloudflare Tunnel serves the hub at `https://hub.yourdomain.com` without
 opening ports on your router. `cloudflared` runs next to the hub and connects
 out to Cloudflare, and Cloudflare provides the HTTPS certificate. Only the hub
-is exposed, never the Matter server.
+is exposed.
 
 1. Your domain must be on Cloudflare.
 2. Create an API token with **Account > Cloudflare Tunnel > Edit**,
@@ -188,27 +206,32 @@ python3 scripts/hubctl.py commission MT:Y.K9042C00KA0648G00
 It prints the node id. Add the device to `config.json` with
 `"driver": "matter", "nodeId": <id>`, put it in a room, and restart.
 
-Brand-new Wi-Fi and Thread devices pair over Bluetooth; turn that on in
-`docker-compose.yml`. Without Bluetooth, use `--network-only` for devices already
-on your network, for example one shared from Apple Home or Google Home.
+Brand-new Wi-Fi and Thread devices pair over Bluetooth, which the native setup
+turns on; with Docker, turn it on in `docker-compose.yml`. Without Bluetooth,
+use `--network-only` for devices already on your network, for example one
+shared from Apple Home or Google Home.
 
 ## API
 
 Every request except `/healthz` and `/api/login` needs
 `Authorization: Bearer <token>` or the login cookie.
 
-| Method | Path | Body | Does |
-|---|---|---|---|
-| POST | `/api/login` | `{"password"}` | returns `{"token"}` and sets a cookie |
-| GET | `/api/targets` | | every device and room, with what each can do |
-| GET | `/api/targets/{id}/state` | | room summary plus each device's state |
-| POST | `/api/targets/{id}/command` | `{"on","brightness","colorTemperaturePct","color","clientId","revision"}` | 200 when every device took it, 502 with `failed` per device otherwise |
-| POST | `/api/targets/{id}/sync` | `{"on","brightness","colorTemperaturePct","clientId","revision"}` | fixes devices that drifted, returns `synchronized` |
-| GET | `/api/matter/nodes` | | paired Matter devices |
-| POST | `/api/matter/commission` | `{"code","networkOnly"}` | pair a device |
-| POST | `/api/matter/wifi` | `{"ssid","password"}` | Wi-Fi credentials for pairing |
-| POST | `/api/matter/thread` | `{"dataset"}` | Thread dataset for pairing |
-| DELETE | `/api/matter/nodes/{nodeId}` | | unpair |
+| Method | Path                         | Body                                                                      | Does                                                                  |
+| ------ | ---------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| POST   | `/api/login`                 | `{"password"}`                                                            | returns `{"token"}` and sets a cookie                                 |
+| GET    | `/api/targets`               |                                                                           | every device and room, with what each can do                          |
+| GET    | `/api/targets/{id}/state`    |                                                                           | room summary plus each device's state                                 |
+| POST   | `/api/targets/{id}/command`  | `{"on","brightness","colorTemperaturePct","color","clientId","revision"}` | 200 when every device took it, 502 with `failed` per device otherwise |
+| POST   | `/api/targets/{id}/sync`     | `{"on","brightness","colorTemperaturePct","clientId","revision"}`         | fixes devices that drifted, returns `synchronized`                    |
+| GET    | `/api/matter/nodes`          |                                                                           | paired Matter devices                                                 |
+| POST   | `/api/matter/commission`     | `{"code","networkOnly"}`                                                  | pair a device                                                         |
+| POST   | `/api/matter/wifi`           | `{"ssid","password"}`                                                     | Wi-Fi credentials for pairing                                         |
+| POST   | `/api/matter/thread`         | `{"dataset"}`                                                             | Thread dataset for pairing                                            |
+| DELETE | `/api/matter/nodes/{nodeId}` |                                                                           | unpair                                                                |
+
+`/healthz` answers `{"ok", "matterConnected"}`; `matterConnected` is true once
+the Matter controller has started and loaded the paired devices. While it
+isn't, the `/api/matter` routes answer 503.
 
 All command fields are optional. `brightness` is 1-100. `colorTemperaturePct`
 runs from the device's warmest white (0) to its coolest (100). `color` is
@@ -221,5 +244,11 @@ sync can't undo a newer command.
 python3 scripts/verify.py
 ```
 
-Runs lint, builds and every test. The Python tests build the real hub and
-drive it against a fake Govee API.
+Installs the pinned dependencies, then runs Prettier, the TypeScript compiler
+(strict), ESLint (typescript-eslint's strict type-checked rules), the Node
+tests, `npm audit` and the Python tests. The Node tests include a run of the
+real Matter controller on a fresh fabric; the Python tests build the real hub
+and drive it against a fake Govee API. `npm test` runs just the Node tests.
+
+`node dist/main.js --no-matter` runs the hub without the Matter controller,
+for Govee-only homes and tests.

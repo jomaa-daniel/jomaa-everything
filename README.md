@@ -9,13 +9,13 @@ Home projects, kept in one repo.
 
 ## Checks
 
-Run `python3 jomaa-home-hub/scripts/verify.py` before pushing. It runs the
-formatter, module checks, `go vet`, strict golangci-lint, builds for x86, Pi
-and Mac, race-detector tests, a vulnerability scan, and the Python tests. CI
-runs the same script.
+Run `python3 jomaa-home-hub/scripts/verify.py` before pushing. It installs the
+hub's pinned npm dependencies, then runs Prettier, the strict TypeScript
+compiler, strict typescript-eslint, the Node tests, `npm audit`, and the
+Python tests. CI runs the same script.
 
 Turn on the pre-commit hook once per clone, so commits that break the hub's
-format, lint or build are refused:
+format, types or lint are refused:
 
 ```bash
 git config core.hooksPath .githooks

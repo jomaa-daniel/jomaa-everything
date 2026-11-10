@@ -3,3 +3,6 @@ data/
 config.json
 scripts/
 docs/
+node_modules/
+dist/
+coverage/

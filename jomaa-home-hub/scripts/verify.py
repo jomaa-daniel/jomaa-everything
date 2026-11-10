@@ -1,91 +1,65 @@
 #!/usr/bin/env python3
 """Run every check the hub must pass. Exits non-zero if any fail.
 
-    verify.py           everything: format, modules, vet, lint, builds, tests, vulnerabilities
-    verify.py --fast    format, vet, lint and build only (used by the pre-commit hook)
+    verify.py           everything: dependencies, format, types, lint, tests, audit, Python tests
+    verify.py --fast    format, types and lint only (used by the pre-commit hook)
 
-Linters are pinned in tools/go.mod and built with the local Go, so every
-machine runs the same versions.
+Tools are pinned in package-lock.json, so every machine runs the same versions.
 """
 
 from __future__ import annotations
 
 import argparse
-import os
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 HUB_DIR = Path(__file__).resolve().parent.parent
-BIN = HUB_DIR / "bin"
-TOOLS = {
-    "golangci-lint": "github.com/golangci/golangci-lint/v2/cmd/golangci-lint",
-    "govulncheck": "golang.org/x/vuln/cmd/govulncheck",
-}
-# The hub ships as a static binary for x86 machines and for a Pi.
-TARGETS = [("linux", "amd64"), ("linux", "arm64"), ("darwin", "arm64")]
 
 
-def run(cmd: list[str], env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, cwd=HUB_DIR, env={**os.environ, **(env or {})}, capture_output=True, text=True)
+def run(cmd: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, cwd=HUB_DIR, capture_output=True, text=True)
 
 
-def check_gofmt() -> str | None:
-    out = run(["gofmt", "-l", "cmd", "internal"])
-    if out.returncode != 0:
-        return out.stderr
-    return f"not gofmt-formatted:\n{out.stdout}" if out.stdout.strip() else None
-
-
-def check_cmd(*cmd: str, env: dict[str, str] | None = None):
+def check_cmd(*cmd: str):
     def check() -> str | None:
-        out = run(list(cmd), env)
+        out = run(list(cmd))
         return None if out.returncode == 0 else (out.stdout + out.stderr).strip()
 
     return check
 
 
-def build_tools() -> str | None:
-    BIN.mkdir(exist_ok=True)
-    out = run(["go", "build", "-C", "tools", "-o", str(BIN) + "/", *TOOLS.values()])
-    return None if out.returncode == 0 else out.stderr
-
-
-def check_builds() -> str | None:
-    for goos, goarch in TARGETS:
-        out = run(
-            ["go", "build", "-trimpath", "-o", os.devnull, "./cmd/hub"],
-            {"CGO_ENABLED": "0", "GOOS": goos, "GOARCH": goarch},
-        )
-        if out.returncode != 0:
-            return f"{goos}/{goarch}:\n{out.stderr}"
+def check_installed() -> str | None:
+    if not shutil.which("npm"):
+        return "npm is not installed"
+    if not (HUB_DIR / "node_modules").is_dir():
+        return "dependencies are missing: run npm ci in jomaa-home-hub"
     return None
 
 
 def checks(fast: bool) -> list[tuple[str, object]]:
     steps = [
-        ("gofmt", check_gofmt),
-        ("go vet", check_cmd("go", "vet", "./...")),
-        ("build linters", build_tools),
-        ("golangci-lint", check_cmd(str(BIN / "golangci-lint"), "run", "./...")),
-        ("build " + ", ".join(f"{o}/{a}" for o, a in TARGETS), check_builds),
+        ("prettier", check_cmd("npx", "prettier", "--check", ".")),
+        ("tsc", check_cmd("npx", "tsc", "-p", "tsconfig.json", "--noEmit")),
+        ("eslint", check_cmd("npx", "eslint", ".")),
     ]
     if fast:
-        return steps
+        return [("dependencies installed", check_installed), *steps]
     return [
-        ("go.mod is tidy", check_cmd("go", "mod", "tidy", "-diff")),
-        ("modules match go.sum", check_cmd("go", "mod", "verify")),
+        # Installs exactly what package-lock.json lists, failing if it is out of date.
+        ("npm ci", check_cmd("npm", "ci", "--no-audit", "--no-fund")),
         *steps,
-        ("go test -race", check_cmd("go", "test", "-race", "-count=1", "-shuffle=on", "./...")),
-        ("govulncheck", check_cmd(str(BIN / "govulncheck"), "./...")),
+        ("node tests", check_cmd("npm", "test")),
+        ("npm audit", check_cmd("npm", "audit", "--omit=dev", "--audit-level=high")),
         ("python tests", check_cmd(sys.executable, "-m", "unittest", "discover", "-s", "scripts", "-q")),
     ]
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--fast", action="store_true", help="skip tests and the vulnerability scan")
+    parser.add_argument("--fast", action="store_true", help="skip installing, tests and the audit")
     args = parser.parse_args(argv)
 
     failed = []

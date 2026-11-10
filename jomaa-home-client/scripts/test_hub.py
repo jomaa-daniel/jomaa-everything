@@ -111,11 +111,9 @@ def main() -> int:
     threading.Thread(target=server.serve_forever, daemon=True).start()
 
     with tempfile.TemporaryDirectory() as tmp:
-        binary = Path(tmp) / "hub"
-        subprocess.run(["go", "build", "-o", str(binary), "./cmd/hub"], cwd=HUB_DIR, check=True)
+        subprocess.run(["npm", "run", "build"], cwd=HUB_DIR, check=True)
         config = {
             "listen": f"127.0.0.1:{args.port}",
-            "matterServerUrl": "ws://127.0.0.1:1/ws",  # no Matter server: pairing reports it's unavailable
             "devices": [
                 {"id": i, "name": n, "driver": "govee", "sku": s, "device": mac, "minKelvin": lo, "maxKelvin": hi}
                 for mac, (i, n, s, lo, hi) in LAMPS.items()
@@ -125,7 +123,9 @@ def main() -> int:
         (Path(tmp) / "config.json").write_text(json.dumps(config))
         env = {**os.environ, "HUB_PASSWORD": PASSWORD, "GOVEE_API_KEY": "test",
                "GOVEE_BASE_URL": f"http://127.0.0.1:{args.fake_port}"}
-        hub = subprocess.Popen([str(binary), "-config", str(Path(tmp) / "config.json")], env=env)
+        # Without Matter, so pairing reports that it's unavailable.
+        hub = subprocess.Popen(["node", str(HUB_DIR / "dist/main.js"), "--config", str(Path(tmp) / "config.json"),
+                                "--no-matter"], env=env)
         try:
             deadline = time.monotonic() + 15
             while True:

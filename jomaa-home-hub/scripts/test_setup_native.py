@@ -34,6 +34,31 @@ class NativeSetupTest(unittest.TestCase):
             self.assertIn("Requires=jomaa-setup.service", hub)
             self.assertIn("boot_native.py\" tunnel", tunnel)
             self.assertIn("jomaa-cloudflared.service", units)
+            # The hub runs Matter itself.
+            self.assertNotIn("jomaa-matter.service", units)
+            self.assertNotIn("matter", hub)
+
+    def test_upgrade_retires_the_standalone_matter_server_but_keeps_its_data(self):
+        with tempfile.TemporaryDirectory() as temp:
+            units, data = Path(temp) / "units", Path(temp) / "data/native"
+            (units / "jomaa-matter.service.d").mkdir(parents=True)
+            (units / "jomaa-matter.service").write_text("[Service]\n")
+            (units / "jomaa-matter.service.d/deployment.conf").write_text("[Service]\n")
+            for name in ("jomaa-setup", "jomaa-hub", "jomaa-cloudflared"):
+                (units / f"{name}.service.d").mkdir()
+                (units / f"{name}.service.d/deployment.conf").write_text("[Service]\nExecStart=old release\n")
+            (data / "matter/node_modules").mkdir(parents=True)
+            (data / "matter-data/server-1-fff1").mkdir(parents=True)
+            with patch.object(setup, "UNITS", units), patch.object(setup, "DATA", data), \
+                    patch.object(setup.subprocess, "run") as run:
+                setup.retire_matter_service()
+                setup.retire_matter_service()
+            run.assert_called_once_with(["systemctl", "--user", "disable", "--now", "jomaa-matter.service"],
+                                        check=False)
+            self.assertFalse((units / "jomaa-matter.service").exists())
+            self.assertFalse((units / "jomaa-hub.service.d/deployment.conf").exists())
+            self.assertFalse((data / "matter").exists())
+            self.assertTrue((data / "matter-data/server-1-fff1").is_dir())
 
     def test_boot_check_reports_missing_programs(self):
         with tempfile.TemporaryDirectory() as temp:

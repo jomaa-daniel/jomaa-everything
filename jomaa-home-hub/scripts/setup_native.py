@@ -12,8 +12,6 @@ import secrets
 import shutil
 import subprocess
 import sys
-import tarfile
-import tempfile
 import urllib.request
 from pathlib import Path
 
@@ -23,8 +21,6 @@ import hubctl
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data" / "native"
 UNITS = Path.home() / ".config" / "systemd" / "user"
-MATTER_VERSION = "1.5.5"
-GO_VERSION = "go1.27.3"
 CLOUDFLARED_VERSION = "2026.10.7"
 
 
@@ -65,25 +61,6 @@ def arch() -> str:
     return machines[platform.machine()]
 
 
-def get_go() -> str:
-    local = DATA / "go" / "bin" / "go"
-    if local.is_file():
-        return str(local)
-    if found := shutil.which("go"):
-        return found
-    releases = fetch_json("https://go.dev/dl/?mode=json&include=all")
-    release = next((x for x in releases if x["version"] == GO_VERSION), None)
-    if not release:
-        raise SetupError(f"{GO_VERSION} not found in Go release metadata")
-    item = next(x for x in release["files"] if x["os"] == "linux" and x["arch"] == arch() and x["kind"] == "archive")
-    archive = DATA / item["filename"]
-    download("https://go.dev/dl/" + item["filename"], archive, item["sha256"])
-    with tarfile.open(archive, "r:gz") as tar:
-        tar.extractall(DATA, filter="data")
-    archive.unlink()
-    return str(local)
-
-
 def get_cloudflared() -> Path:
     binary = DATA / "cloudflared"
     if binary.is_file():
@@ -105,13 +82,13 @@ def init_config(root: Path) -> None:
         with os.fdopen(fd, "w") as f:
             f.write("HUB_PASSWORD=" + secrets.token_urlsafe(32) + "\nGOVEE_API_KEY=\nHUB_URL=http://127.0.0.1:8080\n")
     if not (root / "config.json").exists():
-        config = {"listen": "127.0.0.1:8080", "matterServerUrl": "ws://127.0.0.1:5580/ws", "devices": [], "rooms": []}
+        config = {"listen": "127.0.0.1:8080", "devices": [], "rooms": []}
         (root / "config.json").write_text(json.dumps(config, indent=2) + "\n")
 
 
 def verify_boot() -> None:
     problems = hubctl.check_setup(ROOT, hubctl.load_env(ROOT / ".env"))
-    for p in (DATA / "hub", DATA / "matter/node_modules/.bin/matter-server"):
+    for p in (ROOT / "dist/main.js", ROOT / "node_modules/@matter-server/ws-controller"):
         if not p.exists():
             problems.append(f"missing {p}; run python3 scripts/setup_native.py")
     if problems:
@@ -125,21 +102,35 @@ def install_programs() -> None:
     version = run("node", "--version", capture=True).strip().lstrip("v")
     if tuple(int(n) for n in version.split(".")[:2]) < (22, 13):
         raise SetupError("Node.js 22.13 or newer is required")
-    DATA.mkdir(parents=True, exist_ok=True)
-    # Keep the downloaded Go SDK and runtime data outside ./... package scans.
-    marker = ROOT / "data/go.mod"
-    if not marker.exists():
-        marker.write_text("module jomaa.local/runtime-data\n")
-    (DATA / "matter-data").mkdir(exist_ok=True)
-    matter = DATA / "matter/node_modules/.bin/matter-server"
-    if not matter.exists():
-        run("npm", "install", "--prefix", str(DATA / "matter"), "--no-audit", "--no-fund", "matter-server@" + MATTER_VERSION)
-    go = get_go()
-    # Build to a new inode so an already-running hub can continue until restarted.
-    with tempfile.TemporaryDirectory(dir=DATA) as tmp:
-        binary = Path(tmp) / "hub"
-        run(go, "build", "-o", str(binary), "./cmd/hub")
-        binary.replace(DATA / "hub")
+    (DATA / "matter-data").mkdir(parents=True, exist_ok=True)
+    # The hub and its Matter controller, at the versions package-lock.json pins.
+    run("npm", "ci", "--no-audit", "--no-fund")
+    run("npm", "run", "build")
+
+
+def retire_matter_service() -> None:
+    """Stop the standalone Matter server from older installs: the hub now runs
+    the controller itself, on the same storage, which only one process may open."""
+    unit = UNITS / "jomaa-matter.service"
+    if not unit.exists():
+        return
+    subprocess.run(["systemctl", "--user", "disable", "--now", "jomaa-matter.service"], check=False)
+    unit.unlink()
+    shutil.rmtree(UNITS / "jomaa-matter.service.d", ignore_errors=True)
+    # The old server's own install; its data in matter-data stays.
+    shutil.rmtree(DATA / "matter", ignore_errors=True)
+    # Deployed releases from before this change expect that server, so run the
+    # services from this checkout until the deployment receiver is reinstalled.
+    redeploy = False
+    for name in ("jomaa-setup", "jomaa-hub", "jomaa-cloudflared"):
+        drop_in = UNITS / (name + ".service.d") / "deployment.conf"
+        if drop_in.exists():
+            drop_in.unlink()
+            redeploy = True
+    print("Removed the standalone Matter server; the hub now runs Matter itself.")
+    if redeploy:
+        print("Services now run from this checkout. Reinstall the deployment receiver:\n"
+              "  python3 scripts/deploy_native.py install")
 
 
 def systemd_quote(value: str) -> str:
@@ -153,8 +144,7 @@ def write_units(tunnel: bool) -> list[str]:
     boot = systemd_quote(str(ROOT / "scripts/boot_native.py"))
     units = {
         "jomaa-setup.service": f"[Unit]\nDescription=Check native hub setup\n[Service]\nType=oneshot\nExecStart={python} {setup} --boot\nRemainAfterExit=yes\n",
-        "jomaa-matter.service": f"[Unit]\nDescription=Jomaa Matter server\nRequires=jomaa-setup.service\nAfter=jomaa-setup.service network-online.target\n[Service]\nExecStart={python} {boot} matter\nRestart=on-failure\nRestartSec=5\n[Install]\nWantedBy=default.target\n",
-        "jomaa-hub.service": f"[Unit]\nDescription=Jomaa home hub\nRequires=jomaa-setup.service\nWants=jomaa-matter.service\nAfter=jomaa-setup.service jomaa-matter.service network-online.target\n[Service]\nExecStart={python} {boot} hub\nRestart=on-failure\nRestartSec=5\n[Install]\nWantedBy=default.target\n",
+        "jomaa-hub.service": f"[Unit]\nDescription=Jomaa home hub\nRequires=jomaa-setup.service\nAfter=jomaa-setup.service network-online.target\n[Service]\nExecStart={python} {boot} hub\nRestart=on-failure\nRestartSec=5\n[Install]\nWantedBy=default.target\n",
     }
     if tunnel:
         units["jomaa-cloudflared.service"] = f"[Unit]\nDescription=Jomaa Cloudflare tunnel\nRequires=jomaa-setup.service\nWants=jomaa-hub.service\nAfter=jomaa-setup.service jomaa-hub.service network-online.target\n[Service]\nExecStart={python} {boot} tunnel\nRestart=on-failure\nRestartSec=5\n[Install]\nWantedBy=default.target\n"
@@ -218,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
         if problems:
             raise SetupError("\n".join(problems))
         install_programs()
+        retire_matter_service()
         if args.tunnel:
             setup_tunnel(args.tunnel, args.tunnel_name)
         tunnel = (DATA / "tunnel.yml").is_file()

@@ -25,9 +25,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-node@v4
         with:
-          go-version-file: jomaa-home-hub/tools/go.mod
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: jomaa-home-hub/package-lock.json
 
       - uses: actions/setup-python@v5
         with:
