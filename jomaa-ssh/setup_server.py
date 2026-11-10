@@ -52,6 +52,8 @@ StrictModes yes
 LoginGraceTime 20
 MaxAuthTries 3
 X11Forwarding no
+# scp and sftp clients.
+Subsystem sftp internal-sftp
 """
 
 
