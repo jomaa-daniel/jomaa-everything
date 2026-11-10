@@ -9,6 +9,8 @@ import XCTest
 final class DevicePanelWidgetTests: XCTestCase {
     func testWidgetLoadsSharedStateAndRendersSmallAndMediumFamilies() async throws {
         let preferences = SharedPreferences(suiteName: "WidgetTests.\(UUID().uuidString)")
+        let configuration = try ServerConfiguration(urlString: "https://hub.example")
+        await preferences.saveServerConfiguration(configuration)
         let state = try RoomState(
             on: true,
             brightness: 75,
@@ -22,6 +24,7 @@ final class DevicePanelWidgetTests: XCTestCase {
         )
         let sessionStore = InMemorySessionStore(session: Session(token: "widget-test-token"))
         let loader = LiveWidgetStateLoader(
+            configuration: configuration,
             preferences: preferences,
             sessionStore: sessionStore
         )
@@ -38,6 +41,7 @@ final class DevicePanelWidgetTests: XCTestCase {
 
     func testWidgetShowsSignedOutWithoutSession() async {
         let loader = LiveWidgetStateLoader(
+            configuration: try! ServerConfiguration(urlString: "https://hub.example"),
             preferences: SharedPreferences(suiteName: "WidgetTests.\(UUID().uuidString)"),
             sessionStore: InMemorySessionStore()
         )
@@ -47,6 +51,26 @@ final class DevicePanelWidgetTests: XCTestCase {
         XCTAssertFalse(entry.isAuthenticated)
         XCTAssertNil(entry.state)
         XCTAssertNotNil(render(entry: entry, family: .systemSmall, size: CGSize(width: 170, height: 170)))
+    }
+
+    func testWidgetDoesNotShowCachedDevicesFromAnotherHub() async throws {
+        let preferences = SharedPreferences(suiteName: "WidgetTests.\(UUID().uuidString)")
+        await preferences.saveServerConfiguration(try ServerConfiguration(urlString: "https://old-hub.example"))
+        await preferences.saveSelectedTarget(CachedTarget(
+            id: "old-room", name: "Old Room", features: Features(),
+            state: RoomState(light: try LightState(on: true, brightness: 50, colorTemperaturePct: 50))
+        ))
+        let loader = LiveWidgetStateLoader(
+            configuration: try ServerConfiguration(urlString: "https://hub.example"),
+            preferences: preferences,
+            sessionStore: InMemorySessionStore(session: Session(token: "old-hub-token"))
+        )
+
+        let entry = await loader.load()
+
+        XCTAssertFalse(entry.isAuthenticated)
+        XCTAssertNil(entry.state)
+        XCTAssertEqual(entry.name, "Lights")
     }
 
     private func render(

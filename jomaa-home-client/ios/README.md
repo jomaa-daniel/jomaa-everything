@@ -12,10 +12,19 @@ Pick a Development Team for the app and the widget before running on a
 phone. The app group and Keychain group in `project.yml` must also exist in
 your Apple Developer account.
 
-Sign in with the hub's address (for example `http://192.168.1.10:8080`, or
-your Cloudflare hostname) and password. Plain http is only allowed for
-addresses on the home network; use https anywhere else. The session token is
-kept in the Keychain, never the password.
+The app connects to **https://hub.jomaa.org**. `jomaa.org/home` serves the
+landing page; the hub API is on `hub.jomaa.org`. The address comes from
+`DEVICE_PANEL_HUB_HOST` in `Configs/Shared.xcconfig`, expanded into
+`DevicePanelHubURL` in both the app and widget's Info.plist by `project.yml`.
+Changing the host requires a new build. Sessions saved for another origin
+are discarded and require a fresh sign-in.
+
+Sign in with the hub password. There is no default password: the deployed
+hub reads `HUB_PASSWORD` from Jerry's private
+`/home/jerry/jomaa-everything/jomaa-home-hub/.env`. Deployment releases use
+that same file. GitHub's `HUB_DEPLOY_SECRET` authenticates deployments and is
+separate from the login password. The app stores only the returned session
+token in Keychain, never the password.
 
 ## What's in it
 
@@ -30,7 +39,7 @@ kept in the Keychain, never the password.
 
 ## Test
 
-The UI tests run against the real hub and a fake Govee cloud. Start them in
+The UI tests run against a local instance of the hub and a fake Govee cloud. Start them in
 another terminal first:
 
 ```bash
@@ -46,3 +55,7 @@ xcodebuild test -project DevicePanel.xcodeproj -scheme DevicePanel \
 
 Add `-only-testing:DevicePanelCoreTests` to run just the core tests, which
 don't need the hub.
+
+Debug UI-test launches use the fixed origin `http://127.0.0.1:8797` with
+`-ui-testing-reset`, in-memory sessions and a loopback-only HTTP client.
+Release builds ignore that test argument and use the configured HTTPS hub.

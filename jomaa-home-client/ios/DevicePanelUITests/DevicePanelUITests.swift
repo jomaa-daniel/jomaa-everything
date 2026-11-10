@@ -6,7 +6,6 @@ import XCTest
 /// Both lamps start on at 50% in the Living Room.
 @MainActor
 final class DevicePanelUITests: XCTestCase {
-    private let hub = "http://127.0.0.1:8797"
     private let fakeGovee = "http://127.0.0.1:8798"
 
     func testRoomControlsReachEveryLampAndFailuresRollBack() async throws {
@@ -124,7 +123,8 @@ final class DevicePanelUITests: XCTestCase {
         defer { app.terminate() }
         app.launch()
 
-        XCTAssertTrue(app.textFields["serverURLField"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.secureTextFields["passwordField"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.textFields["serverURLField"].exists)
         attach(app, name: "Sign-in placeholders")
 
         signIn(app, password: "wrong-password")
@@ -164,24 +164,15 @@ final class DevicePanelUITests: XCTestCase {
     }
 
     private func signIn(_ app: XCUIApplication, password: String) {
-        let serverField = app.textFields["serverURLField"]
-        XCTAssertTrue(serverField.waitForExistence(timeout: 10))
-        reveal(serverField, in: app)
-        serverField.tap()
-        serverField.typeText(hub)
-        let addressEntered = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "value == %@", hub), object: serverField
-        )
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [addressEntered], timeout: 5), .completed,
-            "The complete hub address must be entered before moving keyboard focus"
-        )
-        app.keyboards.descendants(matching: .any)
-            .matching(NSPredicate(format: "label ==[c] %@", "next")).firstMatch.tap()
+        let passwordField = app.secureTextFields["passwordField"]
+        XCTAssertTrue(passwordField.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.textFields["serverURLField"].exists, "The hub address comes from configuration")
+        reveal(passwordField, in: app)
+        passwordField.tap()
         app.typeText(password)
         let signInButton = app.buttons["signInButton"]
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: signInButton)
-        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed, "Both credentials must be entered before submitting")
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed, "The password must be entered before submitting")
         // Submit through the focused keyboard; its Go key can sit outside
         // XCTest's visible bounds after simulator keyboard animations.
         app.typeText("\n")

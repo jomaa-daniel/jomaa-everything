@@ -4,19 +4,8 @@ import UIKit
 
 struct SignInView: View {
     @ObservedObject var controller: RoomController
-    @State private var serverURL: String
     @State private var password = ""
-    @FocusState private var focusedField: Field?
-
-    private enum Field {
-        case server
-        case password
-    }
-
-    init(controller: RoomController) {
-        self.controller = controller
-        _serverURL = State(initialValue: controller.serverURLString)
-    }
+    @FocusState private var passwordFocused: Bool
 
     var body: some View {
         NavigationStack {
@@ -40,21 +29,6 @@ struct SignInView: View {
                         }
 
                         VStack(spacing: 16) {
-                            TextField(
-                                "Hub address",
-                                text: $serverURL,
-                                prompt: Text("Hub address").foregroundStyle(AppTheme.inputPlaceholder)
-                            )
-                                .textContentType(.URL)
-                                .keyboardType(.URL)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .submitLabel(.next)
-                                .focused($focusedField, equals: .server)
-                                .onSubmit { focusedField = .password }
-                                .accessibilityHint("Your hub's address, like http://192.168.1.10:8080")
-                                .accessibilityIdentifier("serverURLField")
-
                             SecureField(
                                 "Hub password",
                                 text: $password,
@@ -62,7 +36,7 @@ struct SignInView: View {
                             )
                                 .textContentType(.password)
                                 .submitLabel(.go)
-                                .focused($focusedField, equals: .password)
+                                .focused($passwordFocused)
                                 .onSubmit(signIn)
                                 .accessibilityIdentifier("passwordField")
 
@@ -103,20 +77,20 @@ struct SignInView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .onAppear {
-                focusedField = serverURL.isEmpty ? .server : .password
+                passwordFocused = true
             }
         }
     }
 
     private var canSubmit: Bool {
-        !serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !password.isEmpty
+        !password.isEmpty
     }
 
     private func signIn() {
         guard canSubmit else { return }
-        focusedField = nil
+        passwordFocused = false
         Task {
-            await controller.signIn(serverURL: serverURL, password: password)
+            await controller.signIn(password: password)
             password = ""
         }
     }
