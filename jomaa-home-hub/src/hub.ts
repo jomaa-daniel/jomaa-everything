@@ -3,7 +3,7 @@
 import type { Config, Driver } from "./config.js";
 import { errorMessage, noChange, validate, type Command, type Device, type Features, type State } from "./device.js";
 import { GoveeLight, type GoveeClient } from "./govee.js";
-import { failures, Group, leaves } from "./group.js";
+import { failures, Group, leaves, summarize } from "./group.js";
 import { MatterLight } from "./matter/light.js";
 import type { MatterNodes } from "./matter/nodes.js";
 
@@ -133,16 +133,8 @@ export class Hub {
   async state(id: string, signal: AbortSignal): Promise<StateResult> {
     const d = this.#find(id);
     const { states, failed } = await observe(leaves(d), signal);
-    let state: State | null = null;
-    if (d instanceof Group) {
-      try {
-        state = await d.state(signal);
-      } catch {
-        // The per-device results already say what failed.
-      }
-    } else {
-      state = states[d.id] ?? null;
-    }
+    // Each device is read once; the room summary comes from those reads.
+    const state = d instanceof Group ? summarize(d, states) : (states[d.id] ?? null);
     return { state, devices: states, failed };
   }
 

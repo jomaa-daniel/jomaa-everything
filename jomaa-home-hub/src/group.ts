@@ -104,6 +104,22 @@ export function failures(id: string, err: unknown): Record<string, string> {
   return out;
 }
 
+/**
+ * Summarizes a room from its devices' states, the same way Group.state does:
+ * on if any device is on, with brightness and color temperature from the
+ * first that is on (or the first that answered). Null if none answered.
+ */
+export function summarize(room: Group, states: Readonly<Record<string, State>>): State | null {
+  let summary: State | null = null;
+  for (const d of leaves(room)) {
+    const s = states[d.id];
+    if (s !== undefined && (summary === null || (s.on && !summary.on))) {
+      summary = s;
+    }
+  }
+  return summary;
+}
+
 /** The individual devices under d, expanding nested groups. */
 export function leaves(d: Device): Device[] {
   return d instanceof Group ? d.members.flatMap(leaves) : [d];

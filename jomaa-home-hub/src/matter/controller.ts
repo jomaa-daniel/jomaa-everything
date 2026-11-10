@@ -86,6 +86,7 @@ export class Matter implements MatterNodes, MatterAdmin {
   #config: ConfigStorage | null = null;
   #controller: MatterController | null = null;
   #running: Running | null = null;
+  #starting: Promise<Running> | null = null;
   readonly #stopping = new AbortController();
 
   constructor(opts: MatterOptions) {
@@ -110,7 +111,12 @@ export class Matter implements MatterNodes, MatterAdmin {
     let backoff = 1000;
     while (!this.#stopped()) {
       try {
-        const running = await this.#start();
+        this.#starting = this.#start();
+        const running = await this.#starting;
+        if (this.#stopped()) {
+          // stop() waited for this start and closes what it opened.
+          return;
+        }
         this.#running = running;
         log.info("matter controller started", {
           storage: this.#opts.storagePath,
@@ -159,6 +165,8 @@ export class Matter implements MatterNodes, MatterAdmin {
   /** Stops the controller and flushes its storage. */
   async stop(): Promise<void> {
     this.#stopping.abort();
+    // Let a start in progress finish, so nothing it opens is left running.
+    await this.#starting?.catch(() => undefined);
     await this.#teardown();
     await this.#env.runtime.close();
   }

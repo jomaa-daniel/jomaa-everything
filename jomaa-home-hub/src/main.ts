@@ -53,35 +53,40 @@ async function run(log: Log): Promise<void> {
     throw new Error("config has Govee devices but GOVEE_API_KEY is not set");
   }
   const { host, port } = parseListen(cfg.listen);
-  const matter = await startMatter(log);
-
-  // GOVEE_BASE_URL points the hub at a fake Govee API in tests.
-  const govee = new GoveeClient(goveeKey, process.env["GOVEE_BASE_URL"] || defaultBaseURL);
-  const api = new Api(Hub.build(cfg, govee, matter), matter, password, log);
-  // Pairing can take five minutes.
-  const server = createServer({ requestTimeout: 6 * 60_000, headersTimeout: 10_000 }, api.handle);
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(host === null ? { port } : { host, port }, resolve);
-  });
-  log.info("hub listening", { addr: cfg.listen, devices: cfg.devices.length, rooms: cfg.rooms.length });
-
-  await new Promise<void>((resolve) => {
+  // Handled from the start, so a signal while starting still stops the controller cleanly.
+  const shutdown = new Promise<void>((resolve) => {
     process.once("SIGINT", resolve);
     process.once("SIGTERM", resolve);
   });
-  log.info("shutting down", {});
-  const closed = new Promise<void>((resolve) => {
-    server.close(() => {
-      resolve();
+  const matter = await startMatter(log);
+  try {
+    // GOVEE_BASE_URL points the hub at a fake Govee API in tests.
+    const govee = new GoveeClient(goveeKey, process.env["GOVEE_BASE_URL"] || defaultBaseURL);
+    const api = new Api(Hub.build(cfg, govee, matter), matter, password, log);
+    // Pairing can take five minutes.
+    const server = createServer({ requestTimeout: 6 * 60_000, headersTimeout: 10_000 }, api.handle);
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(host === null ? { port } : { host, port }, resolve);
     });
-  });
-  server.closeIdleConnections();
-  setTimeout(() => {
-    server.closeAllConnections();
-  }, 10_000).unref();
-  await closed;
-  await matter.stop();
+    log.info("hub listening", { addr: cfg.listen, devices: cfg.devices.length, rooms: cfg.rooms.length });
+
+    await shutdown;
+    log.info("shutting down", {});
+    const closed = new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve();
+      });
+    });
+    server.closeIdleConnections();
+    setTimeout(() => {
+      server.closeAllConnections();
+    }, 10_000).unref();
+    await closed;
+  } finally {
+    // On every exit, including a failed listen, so the Matter storage is flushed.
+    await matter.stop();
+  }
 }
 
 run(stderrLog).then(

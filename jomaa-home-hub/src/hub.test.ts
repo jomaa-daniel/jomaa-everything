@@ -25,6 +25,7 @@ class Bulb implements Device {
   /** Runs once, the next time state is read, after the state is taken. */
   onState: (() => Promise<void>) | null = null;
   caps: Features = allFeatures;
+  reads = 0;
 
   constructor(
     readonly id: string,
@@ -45,6 +46,7 @@ class Bulb implements Device {
   }
 
   async state(): Promise<State> {
+    this.reads++;
     const s = { ...this.current };
     const hook = this.onState;
     this.onState = null;
@@ -178,6 +180,22 @@ test("state reports each device and a summary", async () => {
     devices: { on: state(true, 60) },
     failed: { broken: "unreachable" },
   });
+});
+
+test("room state reads each device once and summarizes nested rooms", async () => {
+  const off = new Bulb("off", state(false, 20));
+  const on = new Bulb("on", state(true, 70, 40));
+  const lamp = new Bulb("lamp", state(true, 10));
+  const h = new Hub();
+  for (const b of [off, on, lamp]) h.addDevice("test", b);
+  const corner = new Group("corner", "Corner", [off, on]);
+  h.addRoom(corner);
+  h.addRoom(new Group("house", "House", [corner, lamp]));
+  const res = await h.state("house", signal);
+  assert.deepEqual([off.reads, on.reads, lamp.reads], [1, 1, 1]);
+  // The first device that is on, in room order, as Group.state picks it.
+  assert.deepEqual(res.state, state(true, 70, 40));
+  assert.deepEqual(res.state, await h.get("house")?.state(signal));
 });
 
 test("build from config", () => {

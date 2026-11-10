@@ -147,7 +147,7 @@ export class Api {
       }
       pathMatched = true;
       if (r.method === req.method) {
-        await r.handler({ req, res, params: m.slice(1).map(decodeURIComponent), signal });
+        await r.handler({ req, res, params: m.slice(1).map(decodeParam), signal });
         return true;
       }
     }
@@ -321,6 +321,15 @@ export class Api {
       if (err instanceof DOMException) throw new HttpError(504, err.message);
       throw err;
     }
+  }
+}
+
+/** Decodes one path segment; a malformed escape like %E0%A4 is the client's mistake. */
+function decodeParam(param: string): string {
+  try {
+    return decodeURIComponent(param);
+  } catch {
+    throw new HttpError(400, "malformed path");
   }
 }
 

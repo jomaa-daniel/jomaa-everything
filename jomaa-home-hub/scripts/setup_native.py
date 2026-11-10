@@ -219,13 +219,7 @@ def main(argv: list[str] | None = None) -> int:
         run("systemctl", "--user", "restart", *units)
         hub = hubctl.hub_from_env(hubctl.load_env(ROOT / ".env"))
         hubctl.wait_for("hub", hub.healthy, timeout=60)
-        def matter_connected() -> bool:
-            try:
-                status, health = hub.request("GET", "/healthz", timeout=2)
-                return status == 200 and bool(health.get("matterConnected"))
-            except hubctl.HubError:
-                return False
-        hubctl.wait_for("matter connection", matter_connected, timeout=90)
+        hubctl.wait_for("matter connection", hub.matter_ready, timeout=90)
         print("Native services installed. Edit config.json to add devices; credentials are in .env.")
         return 0
     except (SetupError, OSError, subprocess.CalledProcessError, cloudflare.CloudflareError, hubctl.HubError, StopIteration) as e:

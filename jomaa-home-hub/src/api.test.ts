@@ -193,6 +193,7 @@ test("bad requests", async () => {
     assert.equal(typeof got.body["error"], "string");
   }
   assert.equal((await call(e, "GET", "/api/targets/room/command")).status, 405);
+  assert.equal((await call(e, "GET", "/api/targets/%E0%A4%A/state")).status, 400);
 });
 
 test("sync", async () => {
