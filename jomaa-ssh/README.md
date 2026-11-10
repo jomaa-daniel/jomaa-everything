@@ -42,14 +42,31 @@ journalctl --user -u jomaa-ssh -f
 
 ## On each laptop
 
+macOS or Linux:
+
 ```bash
 python3 jomaa-ssh/setup_client.py
 ```
 
-Installs `cloudflared` with Homebrew if needed, pins jerry's host key from
-`known_hosts`, and adds a `jerry` entry at the top of `~/.ssh/config`. The
-laptop's SSH key must be in jerry's `authorized_keys`; add one from home
-with `ssh-copy-id jerry@192.168.1.239`.
+Windows (PowerShell, with the OpenSSH client built into Windows 10 and 11):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File jomaa-ssh\setup_client.ps1
+```
+
+Each one gets `cloudflared` if it's missing: Homebrew on macOS, or on Linux
+and Windows the release the hub uses, downloaded from GitHub and checked
+against its SHA-256 digest (`~/.local/bin` on Linux, `%LOCALAPPDATA%\cloudflared`
+on Windows). Then it pins jerry's host key from `known_hosts` and adds a
+`jerry` entry at the top of `~/.ssh/config`. The laptop's SSH key must be in
+jerry's `authorized_keys`; add one from home with
+`ssh-copy-id jerry@192.168.1.239`.
+
+Without the setup, any machine with `cloudflared` can connect in one line:
+
+```bash
+ssh -o ProxyCommand="cloudflared access ssh --hostname %h" jerry@ssh.jomaa.org
+```
 
 ## Remove it
 
