@@ -4,6 +4,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY tsconfig.json ./
 COPY src ./src
+COPY web ./web
+COPY scripts/build-web.mjs ./scripts/build-web.mjs
 RUN npm run build && npm prune --omit=dev && find dist -name '*.test.js*' -delete
 
 FROM node:22-bookworm-slim

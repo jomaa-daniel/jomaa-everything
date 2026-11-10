@@ -1,0 +1,234 @@
+# Wi-Fi device health
+
+This feature runs inside the merged TypeScript Matter hub. It uses the hub's existing administrator login,
+HTTP server, and logger. The health inventory is separate from the light configuration and Matter fabric,
+so health reporting works while the Matter controller is starting or when the hub runs with `--no-matter`.
+
+## What is included
+
+- MicroPython health firmware for **Pico W / Pico 2 W**, or an RP2040 board with an **ESP8285** on UART0 (GP0/GP1, 115200 baud).
+- A provisioning script that prepares firmware, Wi-Fi settings, and a dedicated credential. USB installation is an explicit option.
+- Automatic registration on the first authenticated report, persistent inventory, and SQLite health history.
+- A minimal management page at **`/devices`**: search, status filter, enrollment, details, history, rename, report interval, credential replacement, and access revocation.
+
+## Run the hub
+
+Use Node 22.13 or newer. SQLite is included in Node; no database service or extra database dependency is required.
+From `jomaa-home-hub`:
+
+```sh
+npm ci
+npm run build
+node --env-file=.env dist/main.js --config config.json
+```
+
+The build copies the management page into `dist/web`. Include that directory when packaging the compiled hub.
+Open `/devices` on the hub's origin and sign in with the existing hub password.
+The hub's root URL redirects to `/devices`, including on the Cloudflare hostname.
+
+### Preview the local worktree on Cloudflare
+
+While the live hub is still running the earlier implementation, run this from the local worktree:
+
+```sh
+python3 scripts/serve_health_preview.py --expose
+```
+
+The script uses the existing SSH access to `jerry@192.168.1.239`, starts an isolated health hub on
+`127.0.0.1:8085`, and forwards the server's `127.0.0.1:8082` to it over SSH. It adds a validated,
+path-specific rule to the existing locally managed Cloudflare tunnel. Visit **`https://hub.jomaa.org/devices`**
+or the hostname's root URL. Sign in with the existing hub password.
+
+The public health page and `/api/devices` use the preview. The existing hub still serves login, Matter/Govee
+operations, `/healthz`, and the deployment webhook. The preview gets the hub password through SSH and keeps
+it in process memory; it is not saved to a local secrets file. Its SQLite database lives at
+`data/health-preview/health.sqlite` in this worktree. No USB device is opened.
+
+The script also creates a local SSH forward at **`http://127.0.0.1:18080`** for access to the running server hub.
+SSH keepalives and forwarding checks are enabled. Keep the Mac and terminal running for the public preview
+to remain available. Ctrl+C stops the preview and removes its Cloudflare rule. If the process is killed or
+the Mac disconnects before cleanup can run, reconnect and remove the rule with:
+
+```sh
+python3 scripts/serve_health_preview.py --remove-exposure
+```
+
+For persistent hosting after the merged hub is deployed on the server, stop the preview; the normal
+Cloudflare hub route serves the health UI and API directly from that hub.
+
+For Docker, create the private bind-mount directory before starting the container:
+
+```sh
+mkdir -p data/health
+chmod 700 data/health
+```
+
+The directory must be writable by the container's `node` user (uid 1000). Compose stores the health database
+there via `/health/health.sqlite`, and the image includes the compiled UI assets.
+
+For a local development instance that cannot contact any lights, save this layout outside the live configuration:
+
+```json
+{ "listen": "127.0.0.1:8085", "devices": [], "rooms": [] }
+```
+
+Run `node --env-file=.env dist/main.js --no-matter --config /path/to/dev-config.json` and open
+`http://127.0.0.1:8085/devices`. Local development supports inventory management; device health reports still require HTTPS.
+
+| Environment variable    | Default              | Purpose                                                                    |
+| ----------------------- | -------------------- | -------------------------------------------------------------------------- |
+| `HEALTH_DB_PATH`        | `data/health.sqlite` | Local SQLite file. Use a persistent disk or container volume.              |
+| `HEALTH_RETENTION_DAYS` | `30`                 | Health history retention, 1–3650 days. Cleanup runs at startup and hourly. |
+| `HUB_TLS_CERT`          | unset                | Full certificate chain PEM for direct HTTPS.                               |
+| `HUB_TLS_KEY`           | unset                | Private key PEM for direct HTTPS. Set both TLS paths together.             |
+
+The existing local Cloudflare tunnel can provide HTTPS at `https://hub.jomaa.org`. It forwards to the hub's HTTP listener.
+The hub trusts `X-Forwarded-Proto: https` only on loopback connections, matching the existing tunnel configuration.
+Keep the HTTP listener protected from untrusted processes on the hub machine. For direct LAN access, configure
+the TLS certificate/key instead; forwarding headers from another LAN machine do not authorize plaintext reports.
+
+The Pico must trust the certificate's **root CA** and verify the hub hostname. Obtain a root certificate from a trusted
+OS certificate store, your CA's verified distribution, or your own LAN CA. The provisioning script accepts one PEM
+or DER root certificate and converts it to DER for MicroPython. Do not use an unverified certificate downloaded
+from the target as a new trust root. When the issuing root changes, provision the new CA on the device.
+
+## Prepare a Pico without USB access
+
+The board must already run a recent MicroPython build with `ssl.SSLContext`, `ssl.CERT_REQUIRED`, and
+`load_verify_locations`. The default native transport also needs `network.WLAN`. The ESP8285 transport needs
+`machine.UART`, `io.IOBase`, and AT firmware supporting TCP passthrough and SNTP. The firmware deliberately
+fails if verified TLS is unavailable. This script does not install MicroPython or flash a UF2 image.
+
+```sh
+python3 scripts/init_pico.py \
+  --hub-url https://hub.jomaa.org \
+  --id pico-office \
+  --name "Office Pico" \
+  --ssid "Your Wi-Fi SSID" \
+  --ca-cert /path/to/trusted-root-ca.pem \
+  --output data/provisioning/pico-office
+```
+
+The script prompts for the Wi-Fi and hub passwords. It enrolls a pending device and creates:
+
+- `main.py`: the startup health reporter.
+- `device_config.json`: hub hostname, individual device credential, Wi-Fi settings, and report interval.
+- `health_ca.der`: the trusted root certificate.
+
+For a board using the external ESP8285 radio, add **`--wifi-transport esp8285`**. Preparation also includes
+`esp8285.py`. The radio joins Wi-Fi and carries ordinary TCP bytes; the Pico runs TLS with the same required
+root CA and hostname verification as the native transport. The radio's older built-in SSL implementation
+is not used. ESP8285 SNTP sets the Pico's clock before certificate verification. UART TCP reads have a
+30-second request deadline and TCP passthrough is closed after each report.
+
+The directory uses mode 700 and files use mode 600. The output directory must be new. Generated files under
+`data/` are ignored by Git. The script does not print passwords or tokens. This default command **never opens USB**.
+
+For noninteractive use, `--wifi-password-file` and `--hub-password-file` read private files containing only
+the corresponding password, not `.env` syntax. Secret files must have mode 600 or stricter.
+
+If you created the device in the UI, download the credential there, make the file private (`chmod 600`),
+and pass `--credential-file /path/to/pico-office-credential.json` to skip enrollment. The JSON contains `id` and `token`.
+For an already enrolled device, `--rotate` issues a replacement credential using the administrator login.
+Rotation invalidates the old token while preserving inventory and history. Choose a new output directory each time.
+
+## Install over USB when deliberately selected
+
+Install `mpremote` on the machine physically connected to the selected board:
+
+```sh
+python3 -m pip install mpremote
+```
+
+Add **both** `--install` and `--port /dev/serial/by-id/YOUR-PICO` to the preparation command. The script never
+auto-selects a port. It checks networking/TLS capabilities, preserves an existing `main.py` as `main.pre-health.py`,
+copies the prepared files (including `esp8285.py` when selected), and restarts MicroPython. It refuses to overwrite an existing backup.
+Installation writes to and restarts the selected device; preparation alone does neither.
+
+If installation fails partway through, the prepared files remain available. Restore a saved startup program
+with `mpremote` or copy the prepared files manually. If files were already prepared using a newly issued token,
+use the UI credential file for another preparation rather than enrolling the same ID again.
+
+No USB device is changed during the repository tests. With the user's authorization, the attached server board
+(`5303284720e42a9c`) was tested over USB. Its firmware labels it Pico W, but the native Wi-Fi scan fails with
+`EPERM`; its usable radio is the external ESP8285. Resetting that radio restored scanning and connection with
+the existing saved credentials. Real verified HTTPS reports reached the public hub and were stored in SQLite;
+a TLS context without a trusted CA was rejected on the device. Original board files were privately backed up
+on the server, and the original `main.py` was preserved. The test reporter runs as `jomaa_health.py`; it does
+not replace startup and stops on reset. Use explicit installation for reporting across reboots.
+
+## Reports and status
+
+The firmware connects to Wi-Fi, sets its clock with NTP for certificate validity checks, verifies TLS with the
+configured root CA and hostname, then sends a report every 60 seconds by default. The hub response supplies the
+next interval, so changes in the UI take effect on the next successful report. Failures retry with a 5–60 second
+backoff, reuse the same report until acknowledged, and reconnect Wi-Fi when necessary.
+
+Each report includes a random boot ID, increasing sequence number, firmware version, uptime, free heap,
+IP address, optional RSSI, and `healthy` or `degraded` state. Low free heap produces a degraded report and message.
+Serial output records acknowledgments and failures without including credentials. Hub history stores each
+accepted report and its **server receipt time**. Duplicate or out-of-order reports from the same boot do not
+append history or update the last-seen timestamp. New reports must be at least five seconds apart.
+
+| Inventory status | Meaning                                                                           |
+| ---------------- | --------------------------------------------------------------------------------- |
+| Pending          | A credential has been issued; no health report has registered the device yet.     |
+| Online           | A recent healthy report was received.                                             |
+| Degraded         | A recent report indicates a health problem.                                       |
+| Offline          | No report for more than three configured intervals, with a minimum of 90 seconds. |
+| Revoked          | The hub refuses reports using this device's credential. History is preserved.     |
+
+Inventory and the most recent report survive hub restarts. Historical logs expire according to retention.
+Credentials are randomly generated per device and stored only as SHA-256 hashes. The SQLite file is mode 600.
+Device credentials grant access to that device's report endpoint only, never to administrator or Matter operations.
+The token and Wi-Fi password necessarily exist on the board; possession of its filesystem exposes them.
+
+## API
+
+Management routes require the existing hub session (bearer token or `hub_auth` cookie). Credential issuance
+requires HTTPS or loopback access; cookie mutations reject cross-origin requests.
+
+| Method | Path                           | Purpose                                                                                                  |
+| ------ | ------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/devices`                 | List inventory and derived status.                                                                       |
+| POST   | `/api/devices/enroll`          | Issue a credential; body: `id`, `name`, optional `intervalSeconds`. Returns the token once.              |
+| GET    | `/api/devices/{id}`            | Device details.                                                                                          |
+| PATCH  | `/api/devices/{id}`            | Update `name` and/or `intervalSeconds` (15–3600).                                                        |
+| GET    | `/api/devices/{id}/logs`       | History, newest first; `limit` 1–200 and optional `before` cursor. Response includes `nextCursor`.       |
+| POST   | `/api/devices/{id}/credential` | Replace the credential and enable reporting again. Returns the new token once.                           |
+| POST   | `/api/devices/{id}/revoke`     | Revoke reporting access and retain history.                                                              |
+| POST   | `/api/devices/{id}/health`     | Verified HTTPS plus that device's bearer credential. Register on first report and append health history. |
+
+A health report is a JSON object such as:
+
+```json
+{
+  "bootId": "0123456789abcdef0123456789abcdef",
+  "sequence": 0,
+  "firmware": "jomaa-pico-health/1.0.0",
+  "uptimeSeconds": 120,
+  "freeHeapBytes": 128000,
+  "rssi": -51,
+  "ip": "192.168.1.110",
+  "status": "healthy"
+}
+```
+
+`message` is optional, up to 240 printable characters. Unknown fields and invalid values are rejected.
+Health requests have a 4 KiB body limit. First registration returns 201; subsequent acknowledgments return 200,
+including `duplicate` and `nextIntervalSeconds`. An unrecognized or revoked credential returns 401, plaintext
+returns 426, and rate limiting returns 429. Devices should keep credentials out of URL query strings and logs.
+
+## Verification
+
+```sh
+npm test
+python3 -m unittest discover -s scripts -p test_init_pico.py -v
+npx eslint src/health src/api.ts src/main.ts
+python3 -m unittest discover -s scripts -p test_serve_health_preview.py -v
+```
+
+Tests cover actual HTTPS certificate trust, separation of administrator/device credentials, first registration,
+invalid reports, idempotent retries, revocation, persistence, file permissions, offline status, retention, pagination,
+private preparation without USB/network access when using a supplied credential, and the firmware HTTP parser.
+For browser verification, use an isolated local hub with test devices instead of connecting to physical lights or the Pico.
