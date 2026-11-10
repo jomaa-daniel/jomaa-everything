@@ -40,7 +40,11 @@ struct SignInView: View {
                         }
 
                         VStack(spacing: 16) {
-                            TextField("Hub address", text: $serverURL)
+                            TextField(
+                                "Hub address",
+                                text: $serverURL,
+                                prompt: Text("Hub address").foregroundStyle(AppTheme.inputPlaceholder)
+                            )
                                 .textContentType(.URL)
                                 .keyboardType(.URL)
                                 .textInputAutocapitalization(.never)
@@ -51,7 +55,11 @@ struct SignInView: View {
                                 .accessibilityHint("Your hub's address, like http://192.168.1.10:8080")
                                 .accessibilityIdentifier("serverURLField")
 
-                            SecureField("Hub password", text: $password)
+                            SecureField(
+                                "Hub password",
+                                text: $password,
+                                prompt: Text("Hub password").foregroundStyle(AppTheme.inputPlaceholder)
+                            )
                                 .textContentType(.password)
                                 .submitLabel(.go)
                                 .focused($focusedField, equals: .password)
