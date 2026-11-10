@@ -6,6 +6,7 @@ Home projects, kept in one repo.
 |--------|------------|
 | `jomaa-home-hub/` | Matter controller hub. Runs on the home network and controls Matter and Govee devices through one interface. |
 | `jomaa-home-client/` | Phone apps for the hub: Android (`android/`) and iOS (`ios/`). |
+| `jomaa-static-pages/` | Static websites served through the hub's tunnel, such as Sarah's art portfolio at sarah.jomaa.org. |
 | `jomaa-ssh/` | SSH into jerry from anywhere through the hub's Cloudflare tunnel (`ssh jerry`), keys only. |
 
 ## Checks
