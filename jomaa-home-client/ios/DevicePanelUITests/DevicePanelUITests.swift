@@ -182,8 +182,9 @@ final class DevicePanelUITests: XCTestCase {
         let signInButton = app.buttons["signInButton"]
         let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: signInButton)
         XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed, "Both credentials must be entered before submitting")
-        app.keyboards.descendants(matching: .any)
-            .matching(NSPredicate(format: "label ==[c] %@", "go")).firstMatch.tap()
+        // Submit through the focused keyboard; its Go key can sit outside
+        // XCTest's visible bounds after simulator keyboard animations.
+        app.typeText("\n")
     }
 
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
