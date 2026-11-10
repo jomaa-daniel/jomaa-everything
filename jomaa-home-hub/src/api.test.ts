@@ -39,7 +39,9 @@ class FakeMatter implements MatterAdmin {
   err: Error | null = null;
 
   nodes(): NodeSummary[] {
-    return [{ nodeId: 1, available: true, isBridge: false, vendor: "Acme", product: null, label: null }];
+    return [
+      { nodeId: 1, available: true, isBridge: false, lightEndpoints: [1], vendor: "Acme", product: null, label: null },
+    ];
   }
   commission(code: string): Promise<CommissionedNode> {
     this.code = code;
@@ -255,7 +257,9 @@ test("matter endpoints", async () => {
   assert.equal((res.body["node"] as Json)["node_id"], 5);
   res = await call(fresh, "GET", "/api/matter/nodes");
   assert.deepEqual(res.body, {
-    nodes: [{ nodeId: 1, available: true, isBridge: false, vendor: "Acme", product: null, label: null }],
+    nodes: [
+      { nodeId: 1, available: true, isBridge: false, lightEndpoints: [1], vendor: "Acme", product: null, label: null },
+    ],
   });
   assert.equal((await call(fresh, "DELETE", "/api/matter/nodes/abc")).status, 400);
   assert.equal((await call(fresh, "DELETE", "/api/matter/nodes/7")).status, 200);

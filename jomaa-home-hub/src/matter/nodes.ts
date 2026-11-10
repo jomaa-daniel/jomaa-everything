@@ -18,6 +18,8 @@ export interface NodeSummary {
   nodeId: number;
   available: boolean;
   isBridge: boolean;
+  /** Endpoints exposing a boolean OnOff attribute. */
+  lightEndpoints: number[];
   vendor: string | null;
   product: string | null;
   label: string | null;
@@ -87,6 +89,10 @@ export function summarize(n: MatterNode): NodeSummary {
     nodeId: n.nodeId,
     available: n.available,
     isBridge: n.isBridge,
+    lightEndpoints: Object.entries(n.attributes)
+      .filter(([path, value]) => /^[1-9]\d*\/6\/0$/.test(path) && typeof value === "boolean")
+      .map(([path]) => Number(path.split("/")[0]))
+      .sort((a, b) => a - b),
     vendor: text(attrVendorName),
     product: text(attrProductName),
     label: text(attrNodeLabel),

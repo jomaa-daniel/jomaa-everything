@@ -1,0 +1,28 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { summarize } from "./nodes.js";
+
+test("node summaries list OnOff endpoints in numeric order, including plugs on bridges", () => {
+  const summary = summarize({
+    nodeId: 7,
+    available: true,
+    isBridge: true,
+    attributes: {
+      "0/40/1": "Acme",
+      "0/6/0": true,
+      "10/6/0": false,
+      "2/6/0": true,
+      "3/6/0": null,
+      "4/8/0": 120,
+      "5/6/1": true,
+      "6/6/0": "false",
+    },
+  });
+  assert.deepEqual(summary.lightEndpoints, [2, 10]);
+  assert.equal(summary.vendor, "Acme");
+  assert.equal(summary.isBridge, true);
+});
+
+test("a node without an OnOff attribute has no light endpoints", () => {
+  assert.deepEqual(summarize({ nodeId: 1, available: false, isBridge: false, attributes: {} }).lightEndpoints, []);
+});

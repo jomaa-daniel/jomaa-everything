@@ -35,7 +35,7 @@ python3 scripts/hubctl.py status
 ```
 
 The first run creates an empty `config.json` and a private `.env` with a
-generated `HUB_PASSWORD`. Add your devices and rooms to `config.json` and, if
+generated `HUB_PASSWORD`. Register lights with `scripts/onboard_lights.py` and, if
 using Govee, set `GOVEE_API_KEY` in `.env`. Existing files and Matter pairing
 data are preserved. `config.example.json` shows the format; its Matter node is
 an example, not a paired device.
@@ -159,6 +159,12 @@ temperature, and color changes turn the selected lights on. The page reads
 device states after each command and shows individual failures. Use Refresh to
 read current states and update the list of configured targets.
 
+The bottom row selects Living Room and Bedroom independently. Select either
+room or both; the existing power, color, brightness, and temperature controls
+apply to the selected rooms. Changing the selection reads states without
+changing lights. With neither room selected, the controls are disabled. The
+top picker selects an individual device or another room.
+
 The panel source lives in `../jomaa-static-pages/device-panel/`. The hub build
 includes its HTML, JavaScript, and styles; native releases and Docker builds
 package the panel from the same repository revision as the API.
@@ -205,7 +211,108 @@ workflow runs the tests and then `cloudflare.py deploy` on every push to
 Sign-in is rate limited: 5 wrong passwords per address every 15 minutes, and
 50 across all addresses.
 
-## Add a Matter device
+## Register lights
+
+Run `scripts/onboard_lights.py` on the hub machine, from the `jomaa-home-hub`
+directory. It uses the local `.env`, validates entries with the hub's config
+parser, adds the light to `config.json`, and restarts `jomaa-hub.service`.
+It checks that the light and room appear in the API and reads the light's
+state. Registration never sends power, brightness, or color commands.
+
+```bash
+python3 scripts/onboard_lights.py
+```
+
+Choose Govee or Matter, select a discovered light, and select an existing room,
+create a room, or choose no room. The script uses the discovered display
+name and generates a unique target ID. Select Save and activate to register it,
+or cancel. Already registered lights and unsupported devices are excluded from
+the light selector.
+
+Discovery refreshes private metadata files at
+`data/light-inventory/govee.json` and `data/light-inventory/matter.json`.
+These contain Govee models, addresses, names, and capabilities, or Matter node
+information and endpoints. Selecting a light uses that discovery response;
+addresses, SKUs, and temperature ranges do not need to be entered. Cancelling
+retains the inventory without changing the configured lights.
+
+### Govee
+
+Add the device to your Govee account with the Govee app first. Set the account's
+`GOVEE_API_KEY` in the hub's private `.env`, then run:
+
+```bash
+python3 scripts/onboard_lights.py govee
+```
+
+Select the light by its Govee app name. The script reads the SKU, display name,
+and white temperature range from Govee. Supported Govee lights expose power,
+brightness, RGB color, and adjustable white temperature.
+`discover govee` saves and prints the account inventory with registration and
+support information.
+
+### Matter
+
+To select an existing node or pair a new device, run:
+
+```bash
+python3 scripts/onboard_lights.py matter
+```
+
+Select Pair a new Matter device, choose its connection method, and put it in
+pairing mode. The script prompts privately for the manual setup code or `MT:`
+QR payload and any Wi-Fi password or Thread dataset. After pairing it discovers
+the node's display name and light endpoints. Connect with `ssh -t jerry` for
+interactive prompts. Devices shared from Apple Home or Google Home use
+Already on the network; Wi-Fi and Thread pairing use Bluetooth.
+
+To list or register a node already paired with this hub:
+
+```bash
+python3 scripts/onboard_lights.py discover matter
+python3 scripts/onboard_lights.py matter --node-id 7 --id desk-lamp \
+  --name 'Desk Lamp' --room office
+```
+
+The hub's node listing includes `lightEndpoints`, the endpoints exposing an
+OnOff attribute. The script selects the endpoint when there is exactly one;
+use `--endpoint 2` when a node has multiple lights or plugs. Each endpoint can
+have its own target ID. Matter discovery requires the current hub build.
+
+### Registration options
+
+Explicit options support automated registration:
+
+```bash
+python3 scripts/onboard_lights.py govee --device 'AA:BB:CC:DD:EE:FF:00:11' \
+  --id desk-lamp --room living-room
+python3 scripts/onboard_lights.py matter --pair --id desk-lamp \
+  --name 'Desk Lamp' --room office --room-name Office --wifi MyNetwork
+```
+
+IDs use lowercase letters, digits, and dashes. `--name` overrides the discovered
+name. `--room` joins an existing room; a new room also needs `--room-name`.
+When the device and ID are explicit, omit room options for an individual light.
+Duplicate target IDs and duplicate physical lights are rejected.
+
+`--dry-run` supports the selectors and prints the proposed layout without
+pairing, saving discovery metadata or credentials, writing files, or restarting.
+With `matter --pair`, the preview shows a
+placeholder node and endpoint; these are discovered during pairing.
+`--restart docker` recreates only the hub container so it mounts the updated
+config. `--restart none` saves the layout for a manual restart. `--hub-dir PATH`
+selects another local installation, and `--url URL` selects its API; put these
+two options before the subcommand. The installation needs a built `dist/`
+directory and Node.js, including when managing a Docker hub.
+
+Config writes are atomic, keep deployment symlinks intact, and refuse concurrent
+onboarding or edits. Setup codes and credentials stay out of the layout and
+command output. If pairing succeeds but registration fails, the printed node ID
+can be used with `--node-id` to finish. A saved registration remains in the
+config if restarting or verifying state fails; inspect the service logs and
+restart the hub after correcting the problem.
+
+## Matter pairing commands
 
 ```bash
 python3 scripts/hubctl.py wifi MyNetwork            # once, for Wi-Fi devices
@@ -213,8 +320,8 @@ python3 scripts/hubctl.py thread <hex dataset>      # once, for Thread devices
 python3 scripts/hubctl.py commission MT:Y.K9042C00KA0648G00
 ```
 
-It prints the node id. Add the device to `config.json` with
-`"driver": "matter", "nodeId": <id>`, put it in a room, and restart.
+`hubctl.py commission` pairs without registering a target and prints the node
+ID. Register it with `onboard_lights.py matter --node-id <id>`.
 
 Brand-new Wi-Fi and Thread devices pair over Bluetooth, which the native setup
 turns on; with Docker, turn it on in `docker-compose.yml`. Without Bluetooth,

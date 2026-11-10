@@ -16,6 +16,11 @@ has a sliding power switch, red and orange tiles, two custom color tiles,
 10/50/75/100% brightness presets, and a warm-to-cool temperature bar. It shares the hub's
 administrator sign-in and reports individual device failures.
 
+The bottom row selects Living Room, Bedroom, or both. The existing controls
+apply to those rooms, and selecting a room does not change its lights.
+Clearing both selections disables the controls. The top picker selects one
+room or device directly.
+
 The hub serves this panel with its API. `jomaa-home-hub/scripts/build-web.mjs`
 copies the panel and its styles into the hub build. Run
 `npm run build` from `jomaa-home-hub/` after editing the panel. Changes to this

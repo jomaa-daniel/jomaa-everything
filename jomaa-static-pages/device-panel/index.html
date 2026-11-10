@@ -278,6 +278,20 @@
         <p id="empty" hidden>
           No lights configured. Add devices and rooms to the hub configuration.
         </p>
+        <div
+          id="room-selector"
+          class="room-selector"
+          role="group"
+          aria-label="Rooms to control"
+          hidden
+        >
+          <button class="room-btn" data-room="living-room" aria-pressed="false">
+            Living Room
+          </button>
+          <button class="room-btn" data-room="bedroom" aria-pressed="false">
+            Bedroom
+          </button>
+        </div>
       </section>
       <dialog id="color-dialog">
         <form id="color-form">

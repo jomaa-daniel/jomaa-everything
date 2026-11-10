@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 let targets = [];
-let selected = null;
+let selected = [];
+let selectionInitialized = false;
 let observed = null;
 let authenticated = false;
 let loading = false;
@@ -10,6 +11,7 @@ let selectedColor = null;
 let activeCustom = null;
 let observationStale = false;
 const customColors = { "custom-1": "#667eea", "custom-2": "#764ba2" };
+const roomIds = ["living-room", "bedroom"];
 
 function node(tag, text, className) {
   const element = document.createElement(tag);
@@ -57,7 +59,8 @@ function signedIn(value) {
   if (!value) {
     session += 1;
     targets = [];
-    selected = null;
+    selected = [];
+    selectionInitialized = false;
     observed = null;
     busy = false;
     loading = false;
@@ -115,12 +118,64 @@ function errorMessage(error) {
   return error.message;
 }
 
-function targetPath(action) {
-  return `/api/targets/${encodeURIComponent(selected)}/${action}`;
+function targetPath(id, action) {
+  return `/api/targets/${encodeURIComponent(id)}/${action}`;
+}
+
+function selectionTarget() {
+  const chosen = targets.filter((target) => selected.includes(target.id));
+  if (!chosen.length) return null;
+  if (chosen.length === 1) return chosen[0];
+  return {
+    name: chosen.map((target) => target.name).join(" + "),
+    kind: "room",
+    members: [...new Set(chosen.flatMap(memberIds))],
+    features: Object.fromEntries(
+      ["brightness", "colorTemperature", "color"].map((feature) => [
+        feature,
+        chosen.some((target) => target.features[feature]),
+      ]),
+    ),
+  };
+}
+
+async function readState(ids) {
+  const results = await Promise.allSettled(
+    ids.map((id) => api(targetPath(id, "state"))),
+  );
+  if (results.every((result) => result.status === "rejected")) {
+    throw results[0].reason;
+  }
+  const devices = {};
+  const failed = {};
+  results.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      Object.assign(devices, result.value.devices);
+      Object.assign(failed, result.value.failed);
+    } else {
+      failed[ids[index]] = errorMessage(result.reason);
+    }
+  });
+  const states = Object.values(devices);
+  return {
+    devices,
+    failed,
+    state: states.find((state) => state.on) || states[0] || null,
+  };
 }
 
 function renderPicker() {
   $("target-picker").replaceChildren();
+  if (selected.length !== 1) {
+    const summary = node(
+      "option",
+      selectionTarget()?.name || "Select a room or device",
+    );
+    summary.value = "";
+    summary.disabled = true;
+    summary.selected = true;
+    $("target-picker").append(summary);
+  }
   for (const [heading, group] of [
     ["Rooms", targets.filter((target) => target.kind === "room")],
     ["Devices", targets.filter((target) => target.kind !== "room")],
@@ -131,7 +186,7 @@ function renderPicker() {
     for (const target of group) {
       const option = node("option", target.name);
       option.value = target.id;
-      option.selected = target.id === selected;
+      option.selected = selected.length === 1 && target.id === selected[0];
       list.append(option);
     }
     $("target-picker").append(list);
@@ -168,26 +223,39 @@ function render() {
   $("refresh").disabled = loading || busy;
   $("controller").setAttribute("aria-busy", String(busy || loading));
   $("empty").hidden = targets.length > 0;
-  const target = targets.find((item) => item.id === selected);
-  $("controls").hidden = !target;
-  if (!target) {
+  $("room-selector").hidden = !targets.some(
+    (target) => target.kind === "room" && roomIds.includes(target.id),
+  );
+  document.querySelectorAll("[data-room]").forEach((button) => {
+    const id = button.dataset.room;
+    button.setAttribute("aria-pressed", String(selected.includes(id)));
+    button.disabled =
+      busy ||
+      loading ||
+      !targets.some((target) => target.kind === "room" && target.id === id);
+  });
+  const target = selectionTarget();
+  $("controls").hidden = !targets.length;
+  if (!targets.length) {
     $("state-note").hidden = true;
     return;
   }
-  $("target-title").textContent = target.name;
+  $("target-title").textContent = target?.name || "Select a room or device";
   $("target-description").textContent =
-    target.kind === "room"
+    target?.kind === "room"
       ? `${memberIds(target).length} ${memberIds(target).length === 1 ? "device" : "devices"} · Control together`
-      : target.kind === "govee"
+      : target?.kind === "govee"
         ? "Govee device"
         : "Matter device";
-  $("controls").disabled = busy || loading;
+  $("controls").disabled = busy || loading || !target;
   for (const [id, feature] of [
     ["brightness-setting", "brightness"],
     ["temperature-setting", "colorTemperature"],
     ["color-setting", "color"],
   ]) {
-    $(id).hidden = !target.features[feature];
+    $(id).hidden = target
+      ? !target.features[feature]
+      : !targets.some((item) => item.features[feature]);
   }
   const state = observed?.state;
   const states = Object.entries(observed?.devices || {});
@@ -215,7 +283,7 @@ function render() {
   $("power-toggle").setAttribute("aria-checked", String(Boolean(state?.on)));
   $("power-toggle").setAttribute(
     "aria-description",
-    `${target.name}: ${$("power-state").textContent}. Activate to turn ${state?.on ? "off" : "on"}.`,
+    `${target?.name || "No room selected"}: ${$("power-state").textContent}. Activate to turn ${state?.on ? "off" : "on"}.`,
   );
   const featureState = (feature) =>
     states.find(
@@ -252,11 +320,13 @@ function render() {
   $("temperature").disabled = !featureState("colorTemperature");
   $("state-note").textContent = loading
     ? "Reading your lights…"
-    : observationStale
-      ? "Showing the last known state. Refresh to check your lights."
-      : !state
-        ? "No device state available. You can still try a power command or Refresh."
-        : "";
+    : !target
+      ? "Select at least one room to control your lights."
+      : observationStale
+        ? "Showing the last known state. Refresh to check your lights."
+        : !state
+          ? "No device state available. You can still try a power command or Refresh."
+          : "";
   $("state-note").hidden = (Boolean(state) && !observationStale) || loading;
   document.querySelectorAll(".color-btn").forEach((button) => {
     const color = button.dataset.color || customColors[button.id];
@@ -264,18 +334,26 @@ function render() {
   });
 }
 
-async function selectTarget(id) {
+async function selectTargets(ids) {
   if (busy || loading) return;
-  selected = id;
+  selected = [...new Set(ids)].filter((id) =>
+    targets.some((target) => target.id === id),
+  );
+  selectionInitialized = true;
   observed = null;
   observationStale = false;
   selectedColor = null;
+  if (!selected.length) {
+    notice("");
+    render();
+    return;
+  }
   const generation = session;
   loading = true;
   notice("");
   render();
   try {
-    const result = await api(targetPath("state"));
+    const result = await readState(selected);
     if (generation !== session) return;
     observed = result;
     notice(
@@ -304,16 +382,20 @@ async function refresh() {
     if (generation !== session) return;
     targets = result.targets;
     signedIn(true);
-    if (!targets.some((target) => target.id === selected)) {
-      selected =
+    selected = selected.filter((id) =>
+      targets.some((target) => target.id === id),
+    );
+    if (!selectionInitialized) {
+      const initial =
         targets.find((target) => target.kind === "room")?.id ||
         targets[0]?.id ||
         null;
+      selected = initial ? [initial] : [];
     }
     observed = null;
     observationStale = false;
     loading = false;
-    if (selected) await selectTarget(selected);
+    if (selected.length) await selectTargets(selected);
     else notice("");
   } catch (error) {
     if (generation === session && !authenticated)
@@ -334,7 +416,8 @@ async function refresh() {
 }
 
 async function command(changes) {
-  if (busy || loading || !selected || !authenticated) return;
+  if (busy || loading || !selected.length || !authenticated) return;
+  const ids = [...selected];
   const generation = session;
   const previousObserved = observed;
   if (observed?.state) {
@@ -350,10 +433,7 @@ async function command(changes) {
     });
     observed = {
       ...observed,
-      state: apply(
-        observed.state,
-        targets.find((target) => target.id === selected).features,
-      ),
+      state: apply(observed.state, selectionTarget().features),
       devices: Object.fromEntries(
         Object.entries(observed.devices).map(([id, state]) => [
           id,
@@ -367,8 +447,20 @@ async function command(changes) {
   render();
   let problem = "";
   try {
-    await api(targetPath("command"), "POST", changes);
-    if (generation === session && changes.color) selectedColor = changes.color;
+    const results = await Promise.allSettled(
+      ids.map((id) => api(targetPath(id, "command"), "POST", changes)),
+    );
+    problem = results
+      .flatMap((result, index) =>
+        result.status === "rejected"
+          ? [
+              `${targets.find((target) => target.id === ids[index])?.name || ids[index]}: ${errorMessage(result.reason)}`,
+            ]
+          : [],
+      )
+      .join("; ");
+    if (generation === session && changes.color && !problem)
+      selectedColor = changes.color;
     if (generation === session && changes.colorTemperaturePct !== undefined)
       selectedColor = null;
   } catch (error) {
@@ -379,7 +471,7 @@ async function command(changes) {
     return;
   }
   try {
-    const result = await api(targetPath("state"));
+    const result = await readState(ids);
     if (generation !== session) return;
     observationStale = Boolean(
       problem && !result.state && previousObserved?.state,
@@ -437,8 +529,19 @@ $("logout").addEventListener("click", async () => {
 $("refresh").addEventListener("click", refresh);
 $("reconnect").addEventListener("click", refresh);
 $("target-picker").addEventListener("change", () =>
-  selectTarget($("target-picker").value),
+  selectTargets([$("target-picker").value]),
 );
+document.querySelectorAll("[data-room]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const id = button.dataset.room;
+    const rooms = selected.filter((selectedId) => roomIds.includes(selectedId));
+    selectTargets(
+      rooms.includes(id)
+        ? rooms.filter((selectedId) => selectedId !== id)
+        : [...rooms, id],
+    );
+  });
+});
 document.querySelectorAll("[data-brightness]").forEach((button) => {
   button.addEventListener("click", () =>
     command({ on: true, brightness: Number(button.dataset.brightness) }),
@@ -480,7 +583,8 @@ function initPowerToggle() {
   const knob = toggle.querySelector(".power-toggle-knob");
   let gesture = null;
   let suppressClick = false;
-  const canChange = () => authenticated && !busy && !loading && selected;
+  const canChange = () =>
+    authenticated && !busy && !loading && selected.length > 0;
   const isOn = () => Boolean(observed?.state?.on);
   const offset = (clientX) =>
     Math.max(
