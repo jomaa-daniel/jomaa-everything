@@ -183,7 +183,8 @@ def configure_tunnel(source: Path, hostname: str) -> None:
     cloudflared = source / "data/native/cloudflared"
     original = config.read_text()
     marker = "# jomaa-deployment-webhook"
-    rule = (f"ingress:\n  {marker}\n  - hostname: {json.dumps(settings.hostname)}\n"
+    # Other rules may have been added above this one since it was written.
+    rule = (f"  {marker}\n  - hostname: {json.dumps(settings.hostname)}\n"
             f"    path: ^{WEBHOOK_PATH}$\n    service: http://127.0.0.1:{WEBHOOK_PORT}\n")
     if marker in original:
         if rule in original:
@@ -195,7 +196,7 @@ def configure_tunnel(source: Path, hostname: str) -> None:
     else:
         if WEBHOOK_PATH in original or original.count("ingress:\n") != 1:
             raise DeployError("tunnel configuration needs manual review before adding the deployment route")
-        updated = original.replace("ingress:\n", rule, 1)
+        updated = original.replace("ingress:\n", "ingress:\n" + rule, 1)
     with tempfile.NamedTemporaryFile(mode="w", dir=config.parent, prefix=".tunnel-", delete=False) as f:
         temp = Path(f.name)
         f.write(updated)

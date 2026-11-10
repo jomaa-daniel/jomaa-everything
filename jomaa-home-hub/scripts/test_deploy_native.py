@@ -190,6 +190,18 @@ class DeploymentTest(unittest.TestCase):
         self.assertEqual(config.read_text(), old.replace("^/__deployment$", "^/deploy$"))
         self.assertEqual(run.call_count, 2)
 
+    def test_existing_deployment_route_below_another_rule_is_kept(self):
+        config = self.source / "data/native/tunnel.yml"
+        original = ('tunnel: fixture\ningress:\n  - hostname: "hub.example.org"\n    path: ^/devices$\n'
+                    '    service: http://127.0.0.1:8082\n  # jomaa-deployment-webhook\n'
+                    '  - hostname: "hub.example.org"\n    path: ^/deploy$\n'
+                    '    service: http://127.0.0.1:8091\n  - service: http_status:404\n')
+        config.write_text(original)
+        with mock.patch.object(deploy, "run") as run:
+            deploy.configure_tunnel(self.source, "hub.example.org")
+        self.assertEqual(config.read_text(), original)
+        run.assert_not_called()
+
     def test_conflicting_existing_deployment_route_is_preserved(self):
         config = self.source / "data/native/tunnel.yml"
         original = ('ingress:\n  # jomaa-deployment-webhook\n'
