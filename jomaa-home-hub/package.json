@@ -12,8 +12,8 @@
     "start": "node dist/main.js",
     "test": "npm run build && node --test --test-concurrency=1 \"dist/**/*.test.js\"",
     "lint": "eslint .",
-    "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format": "prettier --write . ../jomaa-static-pages/device-panel",
+    "format:check": "prettier --check . ../jomaa-static-pages/device-panel"
   },
   "dependencies": {
     "@matter-server/custom-clusters": "1.5.5",

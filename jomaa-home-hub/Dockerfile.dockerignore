@@ -1,0 +1,14 @@
+**
+!jomaa-home-hub/
+!jomaa-home-hub/package.json
+!jomaa-home-hub/package-lock.json
+!jomaa-home-hub/tsconfig.json
+!jomaa-home-hub/src/
+!jomaa-home-hub/src/**
+!jomaa-home-hub/web/
+!jomaa-home-hub/web/**
+!jomaa-home-hub/scripts/
+!jomaa-home-hub/scripts/build-web.mjs
+!jomaa-static-pages/
+!jomaa-static-pages/device-panel/
+!jomaa-static-pages/device-panel/**

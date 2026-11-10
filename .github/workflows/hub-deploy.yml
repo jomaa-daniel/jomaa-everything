@@ -8,7 +8,7 @@ name: Deploy hub to Cloudflare
 on:
   push:
     branches: [main]
-    paths: ["jomaa-home-hub/**", ".github/workflows/hub-deploy.yml"]
+    paths: ["jomaa-home-hub/**", "jomaa-static-pages/device-panel/**", ".github/workflows/hub-deploy.yml"]
   workflow_dispatch: # allow manual runs from the Actions tab
 
 concurrency:

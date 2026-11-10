@@ -77,33 +77,38 @@ def is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
 
 
 def make_release(repo: Path, sha: str, source: Path, deploy_dir: Path) -> Path:
-    """Materialize tracked hub files; link all local runtime state outside the release."""
+    """Materialize tracked hub and panel files; link local runtime state outside the release."""
     releases = deploy_dir / "releases"
     releases.mkdir(parents=True, exist_ok=True)
     target = releases / sha
+    hub = target / "jomaa-home-hub"
     if target.exists():
-        if (target / ".revision").read_text().strip() != sha:
+        if (hub / ".revision").read_text().strip() != sha:
             raise DeployError(f"existing release {target} has the wrong revision")
-        return target
+        return hub
     with tempfile.TemporaryDirectory(prefix="release-", dir=releases) as tmp:
         folder = Path(tmp)
         archive = folder / "source.tar"
         with archive.open("wb") as out:
-            subprocess.run(["git", "-C", str(repo), "archive", "--format=tar", sha, "jomaa-home-hub/"],
+            subprocess.run(["git", "-C", str(repo), "archive", "--format=tar", sha,
+                            "jomaa-home-hub/", "jomaa-static-pages/device-panel/"],
                            stdout=out, check=True, timeout=60)
+        content = folder / "release"
         with tarfile.open(archive, "r:") as tar:
-            tar.extractall(folder, filter="data")
-        release = folder / "jomaa-home-hub"
+            tar.extractall(content, filter="data")
+        release = content / "jomaa-home-hub"
         if not (release / "scripts/boot_native.py").is_file():
             raise DeployError("release does not contain the native hub")
+        if not (content / "jomaa-static-pages/device-panel/index.html").is_file():
+            raise DeployError("release does not contain the device panel")
         for name in (".env", "config.json", "data"):
             original = source / name
             if not original.exists():
                 raise DeployError(f"missing local runtime state: {original}")
             (release / name).symlink_to(original.resolve(), target_is_directory=original.is_dir())
         (release / ".revision").write_text(sha + "\n")
-        release.rename(target)
-    return target
+        content.rename(target)
+    return hub
 
 
 def switch_link(link: Path, destination: Path) -> None:
@@ -145,10 +150,10 @@ def prune_releases(deploy_dir: Path, keep: int = 3) -> None:
     """Delete all but the newest releases, never the current one. Each holds its own node_modules."""
     releases = deploy_dir / "releases"
     current = (deploy_dir / "current").resolve()
-    built = sorted((r for r in releases.iterdir() if (r / ".revision").is_file()),
+    built = sorted((r for r in releases.iterdir() if (r / "jomaa-home-hub/.revision").is_file()),
                    key=lambda r: r.stat().st_mtime, reverse=True)
     for old in built[keep:]:
-        if old.resolve() != current:
+        if (old / "jomaa-home-hub").resolve() != current:
             shutil.rmtree(old, ignore_errors=True)
 
 

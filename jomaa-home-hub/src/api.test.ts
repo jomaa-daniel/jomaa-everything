@@ -82,6 +82,35 @@ async function setup(): Promise<Env> {
   return { url, token: body["token"] as string, a, b, matter };
 }
 
+await test("light controller assets are public without a health store, while commands require sign-in", async () => {
+  const env = await setup();
+  for (const [path, contentType] of [
+    ["/lights", "text/html"],
+    ["/lights/", "text/html"],
+    ["/lights/app.js", "text/javascript"],
+    ["/lights/style.css", "text/css"],
+  ] as const) {
+    const response = await fetch(env.url + path);
+    assert.equal(response.status, 200);
+    assert.ok(response.headers.get("content-type")?.startsWith(contentType));
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.ok(response.headers.get("content-security-policy")?.includes("script-src 'self'"));
+    assert.ok((await response.text()).length > 0);
+  }
+  const head = await fetch(env.url + "/lights", { method: "HEAD" });
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), "");
+  const post = await fetch(env.url + "/lights", { method: "POST" });
+  assert.equal(post.status, 405);
+  assert.equal(post.headers.get("allow"), "GET, HEAD");
+  const denied = await fetch(env.url + "/api/targets/room/command", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ on: true }),
+  });
+  assert.equal(denied.status, 401);
+});
+
 async function call(
   e: Pick<Env, "url" | "token">,
   method: string,

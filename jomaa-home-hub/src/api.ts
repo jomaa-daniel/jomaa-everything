@@ -10,6 +10,7 @@ import type { Log } from "./log.js";
 import { HealthHttp } from "./health/http.js";
 import { HealthError, type HealthStore } from "./health/store.js";
 import { MatterError, MatterNotReadyError, type MatterAdmin } from "./matter/nodes.js";
+import { serveWeb } from "./web.js";
 
 const authCookie = "hub_auth";
 const commandTimeoutMs = 15_000;
@@ -122,6 +123,7 @@ export class Api {
 
   async #dispatch(req: IncomingMessage, res: ServerResponse, signal: AbortSignal): Promise<void> {
     const path = new URL(req.url ?? "/", "http://hub").pathname;
+    if (serveWeb(req, res)) return;
     if (await this.#healthHttp?.handle(req, res, this.#authedRequest(req))) return;
     if (await this.#serve(this.#public, req, res, path, signal, false)) {
       return;

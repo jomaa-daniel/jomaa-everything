@@ -41,7 +41,7 @@ def check_installed() -> str | None:
 
 def checks(fast: bool) -> list[tuple[str, object]]:
     steps = [
-        ("prettier", check_cmd("npx", "prettier", "--check", ".")),
+        ("prettier", check_cmd("npx", "prettier", "--check", ".", "../jomaa-static-pages/device-panel")),
         ("tsc", check_cmd("npx", "tsc", "-p", "tsconfig.json", "--noEmit")),
         ("eslint", check_cmd("npx", "eslint", ".")),
     ]

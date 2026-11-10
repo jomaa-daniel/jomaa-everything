@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'jomaa-home-hub/**'
+      - 'jomaa-static-pages/device-panel/**'
       - '.github/workflows/hub-deploy-native.yml'
       - '.github/scripts/notify_hub.py'
   workflow_dispatch:

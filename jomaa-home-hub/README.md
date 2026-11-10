@@ -140,14 +140,32 @@ set the `HUB_DEPLOY_URL` GitHub Actions variable to its `/deploy` URL.
 
 ## Home page
 
-`https://jomaa.org/home` links to device health, hub status, the Pico imaging guide,
+`https://jomaa.org/home` links to lights, device health, hub status, the Pico imaging guide,
 and the project documentation. The hub serves the page at `/home` and its CSS under
 `/home/`; edit `web/home.html` to add another page. It needs no administrator session.
 
-The locally managed Cloudflare tunnel also routes hostname `jomaa.org`, paths `/`
-and `/home` (including assets), to the hub on port 8080. Its proxied DNS record
+The locally managed Cloudflare tunnel also routes hostname `jomaa.org`, paths `/`,
+`/home`, `/lights` (including assets), and the panel's API requests to the hub on port 8080. Its proxied DNS record
 points to the same tunnel as `hub.jomaa.org`. The apex `/` redirects to `/home`;
 the hub subdomain's `/` continues to open device health.
+
+## Web light controller
+
+`https://jomaa.org/lights` controls rooms and individual devices. Sign in with
+the hub password; the page shares the administrator session with device health.
+Power, brightness, white temperature, and color use the same API as the phone
+apps. Controls appear according to each target's capabilities. Brightness,
+temperature, and color changes turn the selected lights on. The page reads
+device states after each command and shows individual failures. Use Refresh to
+read current states and update the list of configured targets.
+
+The panel source lives in `../jomaa-static-pages/device-panel/`. The hub build
+includes its HTML, JavaScript, and styles; native releases and Docker builds
+package the panel from the same repository revision as the API.
+
+On the hub machine, `python3 scripts/publish_panel.py` configures the `jomaa.org`
+tunnel route for the home page, light panel, sign-in, and target API. It validates
+the routing with cloudflared and restarts the tunnel when the route changes.
 
 ## Reach it from anywhere with Docker
 

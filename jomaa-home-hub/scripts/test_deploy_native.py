@@ -51,6 +51,9 @@ class DeploymentTest(unittest.TestCase):
         (self.source / "scripts/deploy_native.py").write_text("# tracked deployment\n")
         (self.source / "cmd").mkdir()
         (self.source / "cmd/test.txt").write_text("first")
+        self.panel = self.repo / "jomaa-static-pages/device-panel"
+        self.panel.mkdir(parents=True)
+        (self.panel / "index.html").write_text("first panel")
         self.git("init", "-q")
         self.git("config", "user.email", "test@example.org")
         self.git("config", "user.name", "Test")
@@ -64,7 +67,8 @@ class DeploymentTest(unittest.TestCase):
         (self.source / "dist").mkdir()
         (self.source / "dist/main.js").write_text("checkout build")
         (self.source / "cmd/test.txt").write_text("second")
-        self.git("add", "jomaa-home-hub/cmd/test.txt")
+        (self.panel / "index.html").write_text("second panel")
+        self.git("add", "jomaa-home-hub/cmd/test.txt", "jomaa-static-pages/device-panel/index.html")
         self.git("commit", "-qm", "second")
         self.second = self.git("rev-parse", "HEAD")
         self.deploy_dir = self.root / "deploy"
@@ -85,6 +89,8 @@ class DeploymentTest(unittest.TestCase):
         release = deploy.make_release(self.repo, self.first, self.source, self.deploy_dir)
         self.assertEqual((release / "cmd/test.txt").read_text(), "first")
         self.assertEqual((self.source / "cmd/test.txt").read_text(), "second")
+        self.assertEqual((release.parent / "jomaa-static-pages/device-panel/index.html").read_text(), "first panel")
+        self.assertEqual((self.panel / "index.html").read_text(), "second panel")
         for name in (".env", "config.json", "data"):
             self.assertEqual((release / name).resolve(), (self.source / name).resolve())
         self.assertEqual(deploy.make_release(self.repo, self.first, self.source, self.deploy_dir), release)
@@ -279,11 +285,12 @@ class DeploymentTest(unittest.TestCase):
         made = []
         for i in range(5):
             r = releases / f"r{i}"
-            r.mkdir(parents=True)
-            (r / ".revision").write_text(f"r{i}\n")
+            hub = r / "jomaa-home-hub"
+            hub.mkdir(parents=True)
+            (hub / ".revision").write_text(f"r{i}\n")
             os.utime(r, (1000 + i, 1000 + i))
             made.append(r)
-        deploy.switch_link(self.deploy_dir / "current", made[0])
+        deploy.switch_link(self.deploy_dir / "current", made[0] / "jomaa-home-hub")
         deploy.prune_releases(self.deploy_dir, keep=3)
         self.assertEqual(sorted(p.name for p in releases.iterdir()), ["r0", "r2", "r3", "r4"])
 

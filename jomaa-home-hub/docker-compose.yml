@@ -4,7 +4,9 @@ services:
   hub:
     # Runs the HTTP API and the Matter controller in one process. The
     # controller owns pairing and the Matter fabric.
-    build: .
+    build:
+      context: ..
+      dockerfile: jomaa-home-hub/Dockerfile
     container_name: jomaa-home-hub
     network_mode: host
     read_only: true

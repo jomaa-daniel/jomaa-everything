@@ -2,9 +2,9 @@ name: hub
 
 on:
   push:
-    paths: ["jomaa-home-hub/**", "pico-imaging-bench/**", ".github/workflows/hub.yml"]
+    paths: ["jomaa-home-hub/**", "jomaa-static-pages/device-panel/**", "pico-imaging-bench/**", ".github/workflows/hub.yml"]
   pull_request:
-    paths: ["jomaa-home-hub/**", "pico-imaging-bench/**", ".github/workflows/hub.yml"]
+    paths: ["jomaa-home-hub/**", "jomaa-static-pages/device-panel/**", "pico-imaging-bench/**", ".github/workflows/hub.yml"]
 
 jobs:
   verify:
