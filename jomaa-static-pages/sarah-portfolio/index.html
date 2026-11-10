@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Paintings, studies and prints by Sarah." />
+    <meta name="theme-color" content="#f7f4ee" />
+    <title>Sarah · Art Portfolio</title>
+    <link rel="icon" href="images/orbit.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="gallery.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#top">Sarah</a>
+      <nav aria-label="Sections">
+        <a href="#work">Work</a>
+        <a href="#about">About</a>
+        <a href="#contact">Contact</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <p class="eyebrow">Painter &amp; illustrator</p>
+        <h1>Colour, shape and quiet landscapes.</h1>
+        <p class="lede">A selection of recent paintings, studies and prints.</p>
+      </section>
+
+      <section id="work" aria-labelledby="work-title">
+        <div class="work-head">
+          <h2 id="work-title">Work</h2>
+          <div class="filters" role="group" aria-label="Filter by series"></div>
+        </div>
+        <ul class="gallery" aria-live="polite"></ul>
+        <noscript><p class="note">Turn on JavaScript to browse the gallery.</p></noscript>
+      </section>
+
+      <section id="about" class="about" aria-labelledby="about-title">
+        <img src="images/spring-bloom.svg" alt="" width="900" height="1200" loading="lazy" />
+        <div>
+          <h2 id="about-title">About</h2>
+          <p>
+            Sarah makes paintings about light, weather and the shapes that are left when detail falls away. She works
+            mostly in acrylic and gouache, with a growing body of screen prints.
+          </p>
+          <p>
+            Her studies start as small sketches made outdoors and are finished in the studio, where colour is pushed
+            further than the scene ever was.
+          </p>
+          <dl class="facts">
+            <div><dt>Mediums</dt><dd>Acrylic, gouache, screen print</dd></div>
+            <div><dt>Commissions</dt><dd>Open for 2027</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section id="contact" class="contact" aria-labelledby="contact-title">
+        <h2 id="contact-title">Get in touch</h2>
+        <p>For commissions, prints or exhibitions, send a message.</p>
+        <a class="button" href="mailto:sarah@example.com">sarah@example.com</a>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>© <span class="year">2026</span> Sarah. All artwork is the artist's own; please ask before reusing it.</p>
+    </footer>
+
+    <dialog class="lightbox" aria-label="Artwork viewer">
+      <button class="close" type="button" aria-label="Close">×</button>
+      <button class="nav prev" type="button" aria-label="Previous artwork">‹</button>
+      <figure>
+        <img alt="" />
+        <figcaption>
+          <h3></h3>
+          <p class="meta"></p>
+          <p class="description"></p>
+        </figcaption>
+      </figure>
+      <button class="nav next" type="button" aria-label="Next artwork">›</button>
+    </dialog>
+  </body>
+</html>
