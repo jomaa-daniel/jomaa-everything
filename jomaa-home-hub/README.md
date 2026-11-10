@@ -156,6 +156,17 @@ deployment and is reported in the deployment service journal. Rerun a failed
 push workflow after correcting the issue. To use a different public hostname,
 set the `HUB_DEPLOY_URL` GitHub Actions variable to its `/deploy` URL.
 
+## Home page
+
+`https://jomaa.org/home` links to device health, hub status, the Pico imaging guide,
+and the project documentation. The hub serves the page at `/home` and its CSS under
+`/home/`; edit `web/home.html` to add another page. It needs no administrator session.
+
+The locally managed Cloudflare tunnel also routes hostname `jomaa.org`, paths `/`
+and `/home` (including assets), to the hub on port 8080. Its proxied DNS record
+points to the same tunnel as `hub.jomaa.org`. The apex `/` redirects to `/home`;
+the hub subdomain's `/` continues to open device health.
+
 ## Reach it from anywhere with Docker
 
 A Cloudflare Tunnel serves the hub at `https://hub.yourdomain.com` without
