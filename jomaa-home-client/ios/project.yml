@@ -43,6 +43,8 @@ targets:
       - DevicePanel
     dependencies:
       - target: DevicePanelCore
+      - target: DevicePanelWidgetSupport
+        embed: true
       - target: DevicePanelWidget
         embed: true
     entitlements:
