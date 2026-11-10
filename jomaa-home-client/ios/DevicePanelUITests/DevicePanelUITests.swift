@@ -169,6 +169,13 @@ final class DevicePanelUITests: XCTestCase {
         reveal(serverField, in: app)
         serverField.tap()
         serverField.typeText(hub)
+        let addressEntered = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "value == %@", hub), object: serverField
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [addressEntered], timeout: 5), .completed,
+            "The complete hub address must be entered before moving keyboard focus"
+        )
         app.keyboards.descendants(matching: .any)
             .matching(NSPredicate(format: "label ==[c] %@", "next")).firstMatch.tap()
         app.typeText(password)
