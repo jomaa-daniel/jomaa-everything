@@ -2,9 +2,7 @@
 
 One hub for every light in the house, Matter or Govee. Send a command to a room
 and it goes to every device in that room at once. A sync pass then checks each
-device and fixes any that didn't change. Same idea as
-[device-panel](https://github.com/jomaa-daniel/device-panel), now running at home
-and speaking Matter.
+device and fixes any that didn't change.
 
 ```
 phone / web / hubctl.py
@@ -62,28 +60,12 @@ adapter. The Bluetooth service and adapter must be enabled on the host. Set
 `MATTER_LOG_LEVEL` (`debug`, `info`, `notice`, `warn`, `error`; default
 `notice`) for more or less Matter detail in the journal.
 
-### Upgrading from the Go hub
-
-Earlier versions ran the hub in Go next to a separate `jomaa-matter` service.
-Pull, then run the setup and reinstall the deployment receiver:
-
-```bash
-python3 scripts/setup_native.py
-python3 scripts/deploy_native.py install --repo jomaa-daniel/jomaa-everything
-```
-
-The setup stops and removes `jomaa-matter` and its npm install, and the hub
-opens the same `data/native/matter-data`, so paired devices stay paired. A
-`matterServerUrl` left in `config.json` is ignored. Until the receiver is
-reinstalled, the services run from the checkout.
-
 ## Run it with Docker
 
 Needs a machine on your home network that stays on (a Pi, NAS or mini PC) with
 Docker and Python 3. Thread devices also need a Thread border router on the
 network (an Apple TV, HomePod mini or Nest hub). One container runs the hub
-and its Matter controller; Matter data stays in `data/matter`, where the
-separate Matter server container used to keep it.
+and its Matter controller; Matter data stays in `data/matter`.
 
 ```bash
 cp config.example.json config.json   # list your devices and rooms
@@ -200,8 +182,7 @@ and away.
 destroy` removes the tunnel and the DNS record. The `hub-deploy` GitHub
 workflow runs the tests and then `cloudflare.py deploy` on every push to
 `main`, using the `CLOUDFLARE_HOSTNAME`, `CLOUDFLARE_API_TOKEN` and
-`CLOUDFLARE_ACCOUNT_ID` repository secrets, the same way device-panel deploys
-its Worker. It skips the deploy until `CLOUDFLARE_HOSTNAME` is set.
+`CLOUDFLARE_ACCOUNT_ID` repository secrets. It skips the deploy until `CLOUDFLARE_HOSTNAME` is set.
 
 Sign-in is rate limited: 5 wrong passwords per address every 15 minutes, and
 50 across all addresses.

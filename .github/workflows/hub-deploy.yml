@@ -1,7 +1,6 @@
 name: Deploy hub to Cloudflare
 
-# Same shape as device-panel's Workers deploy: test, then deploy with the
-# CLOUDFLARE_* repository secrets. Here "deploy" creates or updates the
+# Tests, then deploys with the CLOUDFLARE_* repository secrets. "Deploy" creates or updates the
 # Cloudflare Tunnel, its route and the DNS record for CLOUDFLARE_HOSTNAME. The
 # hub itself runs at home; its machine starts cloudflared with
 # `python3 scripts/hubctl.py up`. Until CLOUDFLARE_HOSTNAME is set, deploy skips.

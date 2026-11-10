@@ -111,11 +111,12 @@ def run():
         config = json.load(source)
     tls = tls_context(config)
     radio = None
-    if config.get("wifi_transport", "native") == "esp8285":
+    transport = config["wifi_transport"]
+    if transport == "esp8285":
         from esp8285 import ESP8285
         radio = ESP8285(config)
         wlan = radio
-    elif config.get("wifi_transport", "native") == "native":
+    elif transport == "native":
         import network
         import ntptime
         wlan = network.WLAN(network.STA_IF)

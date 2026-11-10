@@ -45,7 +45,7 @@ export interface StateResult {
 }
 
 /**
- * The state a client last asked for. Like device-panel, the client owns it and
+ * The state a client last asked for. The client owns it and
  * sends it with each sync; the hub only tracks revisions. null fields aren't
  * checked.
  */
@@ -163,8 +163,7 @@ export class Hub {
 
   /**
    * Checks every device under the target against want and corrects only the
-   * devices and fields that drifted. Unlike device-panel, which checked one
-   * representative bulb, each bulb is checked on its own.
+   * devices and fields that drifted. Each bulb is checked on its own.
    */
   async sync(id: string, want: Desired, signal: AbortSignal): Promise<SyncResult> {
     const d = this.#find(id);
@@ -267,7 +266,7 @@ const defaultClientId = "default";
 
 /**
  * Remembers the newest revision each client has sent, so a slow sync can't
- * undo a command the same client sent after it. Like device-panel, a client
+ * undo a command the same client sent after it. A client
  * uses one counter for everything it controls: a newer command to a single
  * lamp also retires an older sync of the room that lamp is in.
  */

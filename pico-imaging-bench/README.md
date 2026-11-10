@@ -108,5 +108,4 @@ python3 -m unittest discover -s pico-imaging-bench/tests -v
 
 Repository tests use synthetic UF2 data and a simulated BOOTSEL volume, test rejection before writing,
 check the identity guard before filesystem erasure, and exercise persisted-report verification. CI never
-flashes USB hardware. Real ESP8285 Wi-Fi, verified TLS, CA rejection, and continued reporting were tested
-on the dev Pico. Complete filesystem erasure and reimaging remain explicit operator actions.
+flashes USB hardware. Complete filesystem erasure and reimaging remain explicit operator actions.

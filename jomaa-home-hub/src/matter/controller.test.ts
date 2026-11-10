@@ -24,7 +24,7 @@ after(async () => {
   rmSync(storage, { recursive: true, force: true });
 });
 
-test("starts on the storage the standalone Matter server used", () => {
+test("starts on its fabric storage", () => {
   assert.ok(matter.ready);
   assert.ok(readdirSync(storage).includes("server-1-fff1"), readdirSync(storage).join(", "));
   assert.deepEqual(matter.nodes(), []);

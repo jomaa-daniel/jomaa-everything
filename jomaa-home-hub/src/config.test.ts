@@ -14,10 +14,6 @@ test("defaults", () => {
   assert.deepEqual(c.devices, []);
 });
 
-test("an old matterServerUrl is ignored", () => {
-  parseConfig('{"matterServerUrl":"ws://127.0.0.1:5580/ws"}');
-});
-
 test("matter devices get default endpoint and white range", () => {
   const c = parseConfig('{"devices":[{"id":"bulb","name":"Bulb","driver":"matter","nodeId":3}]}');
   assert.deepEqual(c.devices, [

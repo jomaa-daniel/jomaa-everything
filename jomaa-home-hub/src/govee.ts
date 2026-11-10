@@ -1,5 +1,4 @@
 // Drives Govee lights through Govee's cloud API (https://developer.govee.com).
-// It is the TypeScript port of device-panel's GoveeLight.
 import { randomUUID } from "node:crypto";
 import type { GoveeDeviceConfig } from "./config.js";
 import {

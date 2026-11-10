@@ -21,8 +21,7 @@ services:
     # command: ["--bluetooth-adapter", "0"]
     volumes:
       - ./config.json:/etc/jomaa-home-hub/config.json:ro
-      # Matter fabric keys live here (the same folder the separate Matter
-      # server container used). Back it up; losing it means re-pairing.
+      # Matter fabric keys live here. Back it up; losing it means re-pairing.
       - ./data/matter:/data
       - ./data/health:/health
       # - /run/dbus:/run/dbus:ro

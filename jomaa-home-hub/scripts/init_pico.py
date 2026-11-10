@@ -100,15 +100,12 @@ def install(port: str, output: Path) -> None:
     config = json.loads((output / "device_config.json").read_text())
     remote("exec", "import ssl; assert hasattr(ssl, 'CERT_REQUIRED'); "
            "assert hasattr(ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT), 'load_verify_locations')")
-    if config.get("wifi_transport", "native") == "esp8285":
+    if config["wifi_transport"] == "esp8285":
         remote("exec", "import machine, io; assert hasattr(machine, 'UART'); assert hasattr(io, 'IOBase')")
     else:
         remote("exec", "import network; assert hasattr(network, 'WLAN')")
-    # Preserve any existing startup program, and refuse to overwrite an earlier backup.
-    remote("exec", "import os; files=os.listdir(); assert 'main.pre-health.py' not in files; "
-           "os.rename('main.py','main.pre-health.py') if 'main.py' in files else None")
     names = ["device_config.json", "health_ca.der"]
-    if config.get("wifi_transport") == "esp8285":
+    if config["wifi_transport"] == "esp8285":
         names.append("esp8285.py")
     for name in names + ["main.py"]:
         remote("fs", "cp", str(output / name), ":" + name)

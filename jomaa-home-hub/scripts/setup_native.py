@@ -108,31 +108,6 @@ def install_programs() -> None:
     run("npm", "run", "build")
 
 
-def retire_matter_service() -> None:
-    """Stop the standalone Matter server from older installs: the hub now runs
-    the controller itself, on the same storage, which only one process may open."""
-    unit = UNITS / "jomaa-matter.service"
-    if not unit.exists():
-        return
-    subprocess.run(["systemctl", "--user", "disable", "--now", "jomaa-matter.service"], check=False)
-    unit.unlink()
-    shutil.rmtree(UNITS / "jomaa-matter.service.d", ignore_errors=True)
-    # The old server's own install; its data in matter-data stays.
-    shutil.rmtree(DATA / "matter", ignore_errors=True)
-    # Deployed releases from before this change expect that server, so run the
-    # services from this checkout until the deployment receiver is reinstalled.
-    redeploy = False
-    for name in ("jomaa-setup", "jomaa-hub", "jomaa-cloudflared"):
-        drop_in = UNITS / (name + ".service.d") / "deployment.conf"
-        if drop_in.exists():
-            drop_in.unlink()
-            redeploy = True
-    print("Removed the standalone Matter server; the hub now runs Matter itself.")
-    if redeploy:
-        print("Services now run from this checkout. Reinstall the deployment receiver:\n"
-              "  python3 scripts/deploy_native.py install")
-
-
 def systemd_quote(value: str) -> str:
     return json.dumps(value.replace("%", "%%"))
 
@@ -208,7 +183,6 @@ def main(argv: list[str] | None = None) -> int:
         if problems:
             raise SetupError("\n".join(problems))
         install_programs()
-        retire_matter_service()
         if args.tunnel:
             setup_tunnel(args.tunnel, args.tunnel_name)
         tunnel = (DATA / "tunnel.yml").is_file()

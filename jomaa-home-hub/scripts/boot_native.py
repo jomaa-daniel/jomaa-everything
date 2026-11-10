@@ -17,8 +17,6 @@ def main() -> None:
         # Bluetooth pairing talks to BlueZ over D-Bus.
         os.environ.setdefault("NOBLE_BINDINGS", "dbus")
     commands = {
-        # The hub runs the Matter controller in-process, on the storage the
-        # standalone Matter server used.
         "hub": ["node", str(ROOT / "dist/main.js"), "--config", str(ROOT / "config.json"),
                 "--matter-storage", str(DATA / "matter-data"),
                 "--bluetooth-adapter", os.environ.get("MATTER_BLUETOOTH_ADAPTER", "0")],

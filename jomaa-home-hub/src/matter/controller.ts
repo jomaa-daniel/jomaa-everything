@@ -1,6 +1,6 @@
 // The hub's Matter controller. It runs the Open Home Foundation Matter server's
 // controller library (https://github.com/matter-js/matterjs-server) inside the
-// hub process, so the hub calls it directly instead of over a WebSocket. The
+// hub process, and the hub calls it directly. The
 // controller owns the Matter fabric: pairing, Thread and Wi-Fi credentials,
 // and device sessions, and keeps a live copy of every node's attributes.
 import "./preinit.js";
@@ -32,8 +32,8 @@ import {
   type NodeSummary,
 } from "./nodes.js";
 
-// The vendor and fabric the standalone server used by default. With them the
-// controller finds its existing storage ("server-1-fff1").
+// The hub's vendor and fabric. Changing them means a new fabric (storage
+// "server-1-fff1" holds the current one), so every device must be re-paired.
 const vendorId = 0xfff1;
 const fabricId = 1;
 const maxNodeIdAttempts = 5;
@@ -268,7 +268,7 @@ export class Matter implements MatterNodes, MatterAdmin {
       // Attestation certificates must be loaded before pairing.
       await controller.certificateService();
       // The stored node id counter can drift from the fabric; on a conflict,
-      // take the next id, as the standalone server did.
+      // take the next id.
       for (let attempt = 1; ; attempt++) {
         const nodeId = NodeId(await config.allocateNodeId((id) => handler.isNodeIdInUse(NodeId(id))));
         try {

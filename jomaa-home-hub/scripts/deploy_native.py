@@ -197,17 +197,11 @@ def configure_tunnel(source: Path, hostname: str) -> None:
     marker = "# jomaa-deployment-webhook"
     rule = (f"  {marker}\n  - hostname: {json.dumps(settings.hostname)}\n"
             f"    path: ^{WEBHOOK_PATH}$\n    service: {receiver}\n")
-    if marker in original:
-        old_rule = rule.replace(f"path: ^{WEBHOOK_PATH}$", "path: ^/__deployment$")
-        if rule in original:
-            raise DeployError("a tunnel rule above the deployment route catches /deploy first; move the route up")
-        if old_rule not in original:
-            raise DeployError("existing deployment tunnel rule differs from requested settings")
-        updated = original.replace(old_rule, rule, 1)
-    else:
-        if WEBHOOK_PATH in original or original.count("ingress:\n") != 1:
-            raise DeployError("tunnel configuration needs manual review before adding the deployment route")
-        updated = original.replace("ingress:\n", "ingress:\n" + rule, 1)
+    if rule in original:
+        raise DeployError("a tunnel rule above the deployment route catches /deploy first; move the route up")
+    if marker in original or WEBHOOK_PATH in original or original.count("ingress:\n") != 1:
+        raise DeployError("tunnel configuration needs manual review before adding the deployment route")
+    updated = original.replace("ingress:\n", "ingress:\n" + rule, 1)
     with tempfile.NamedTemporaryFile(mode="w", dir=config.parent, prefix=".tunnel-", delete=False) as f:
         temp = Path(f.name)
         f.write(updated)

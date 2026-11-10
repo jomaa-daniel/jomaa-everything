@@ -204,15 +204,6 @@ class DeploymentTest(unittest.TestCase):
         self.assertIn('service: http://127.0.0.1:8080', updated)
         self.assertLess(updated.index("/deploy"), updated.index("http://127.0.0.1:8080"))
 
-    def test_existing_deployment_route_is_migrated(self):
-        config = self.source / "data/native/tunnel.yml"
-        old = ('tunnel: fixture\ningress:\n  # jomaa-deployment-webhook\n'
-               '  - hostname: "hub.example.org"\n    path: ^/__deployment$\n'
-               '    service: http://127.0.0.1:8091\n  - hostname: "hub.example.org"\n'
-               '    service: http://127.0.0.1:8080\n  - service: http_status:404\n')
-        self.assertEqual(self.configure(old), 1)
-        self.assertEqual(config.read_text(), old.replace("^/__deployment$", "^/deploy$"))
-
     def test_existing_deployment_route_below_another_rule_is_kept(self):
         config = self.source / "data/native/tunnel.yml"
         original = ('tunnel: fixture\ningress:\n  - hostname: "hub.example.org"\n    path: ^/devices$\n'
@@ -225,22 +216,20 @@ class DeploymentTest(unittest.TestCase):
     def test_deployment_route_below_the_hub_route_is_refused(self):
         config = self.source / "data/native/tunnel.yml"
         hub = '  - hostname: "hub.example.org"\n    service: http://127.0.0.1:8080\n'
-        for path in ("^/deploy$", "^/__deployment$"):
-            with self.subTest(path=path):
-                original = ('tunnel: fixture\ningress:\n' + hub + '  # jomaa-deployment-webhook\n'
-                            f'  - hostname: "hub.example.org"\n    path: {path}\n'
-                            '    service: http://127.0.0.1:8091\n  - service: http_status:404\n')
-                with self.assertRaisesRegex(deploy.DeployError, "catches /deploy first"):
-                    self.configure(original)
-                self.assertEqual(config.read_text(), original)
-                self.assertEqual(sorted(p.name for p in config.parent.iterdir()), ["tunnel.yml"])
+        original = ('tunnel: fixture\ningress:\n' + hub + '  # jomaa-deployment-webhook\n'
+                    '  - hostname: "hub.example.org"\n    path: ^/deploy$\n'
+                    '    service: http://127.0.0.1:8091\n  - service: http_status:404\n')
+        with self.assertRaisesRegex(deploy.DeployError, "catches /deploy first"):
+            self.configure(original)
+        self.assertEqual(config.read_text(), original)
+        self.assertEqual(sorted(p.name for p in config.parent.iterdir()), ["tunnel.yml"])
 
     def test_conflicting_existing_deployment_route_is_preserved(self):
         config = self.source / "data/native/tunnel.yml"
         original = ('ingress:\n  # jomaa-deployment-webhook\n'
-                    '  - hostname: "another.example.org"\n    path: ^/__deployment$\n'
+                    '  - hostname: "another.example.org"\n    path: ^/deploy$\n'
                     '    service: http://127.0.0.1:8091\n  - service: http_status:404\n')
-        with self.assertRaisesRegex(deploy.DeployError, "differs from requested"):
+        with self.assertRaisesRegex(deploy.DeployError, "needs manual review"):
             self.configure(original)
         self.assertEqual(config.read_text(), original)
 

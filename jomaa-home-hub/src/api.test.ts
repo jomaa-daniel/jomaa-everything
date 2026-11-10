@@ -127,8 +127,7 @@ test("the login cookie works", async () => {
   assert.equal(got.status, 200);
 });
 
-test("tokens match the ones the Go hub issued", async () => {
-  // Phones keep their sessions across the rewrite.
+test("the token is derived from the password", async () => {
   const { body } = await call({ url: e.url, token: "" }, "POST", "/api/login", '{"password":"hunter2"}');
   assert.equal(body["token"], "2c21a219a581f92d5b4355f1c4a02542d0655fedca18b08c5f21bfdb3e94a50f");
 });

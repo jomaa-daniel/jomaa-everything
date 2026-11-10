@@ -26,36 +26,6 @@ The build copies the management page into `dist/web`. Include that directory whe
 Open `/devices` on the hub's origin and sign in with the existing hub password.
 The hub's root URL redirects to `/devices`, including on the Cloudflare hostname.
 
-### Preview the local worktree on Cloudflare
-
-While the live hub is still running the earlier implementation, run this from the local worktree:
-
-```sh
-python3 scripts/serve_health_preview.py --expose
-```
-
-The script uses the existing SSH access to `jerry@192.168.1.239`, starts an isolated health hub on
-`127.0.0.1:8085`, and forwards the server's `127.0.0.1:8082` to it over SSH. It adds a validated,
-path-specific rule to the existing locally managed Cloudflare tunnel. Visit **`https://hub.jomaa.org/devices`**
-or the hostname's root URL. Sign in with the existing hub password.
-
-The public health page and `/api/devices` use the preview. The existing hub still serves login, Matter/Govee
-operations, `/healthz`, and the deployment webhook. The preview gets the hub password through SSH and keeps
-it in process memory; it is not saved to a local secrets file. Its SQLite database lives at
-`data/health-preview/health.sqlite` in this worktree. No USB device is opened.
-
-The script also creates a local SSH forward at **`http://127.0.0.1:18080`** for access to the running server hub.
-SSH keepalives and forwarding checks are enabled. Keep the Mac and terminal running for the public preview
-to remain available. Ctrl+C stops the preview and removes its Cloudflare rule. If the process is killed or
-the Mac disconnects before cleanup can run, reconnect and remove the rule with:
-
-```sh
-python3 scripts/serve_health_preview.py --remove-exposure
-```
-
-For persistent hosting after the merged hub is deployed on the server, stop the preview; the normal
-Cloudflare hub route serves the health UI and API directly from that hub.
-
 For Docker, create the private bind-mount directory before starting the container:
 
 ```sh
@@ -141,21 +111,15 @@ python3 -m pip install mpremote
 ```
 
 Add **both** `--install` and `--port /dev/serial/by-id/YOUR-PICO` to the preparation command. The script never
-auto-selects a port. It checks networking/TLS capabilities, preserves an existing `main.py` as `main.pre-health.py`,
-copies the prepared files (including `esp8285.py` when selected), and restarts MicroPython. It refuses to overwrite an existing backup.
+auto-selects a port. It checks networking/TLS capabilities, copies the prepared files (including `esp8285.py`
+when selected) over whatever is on the board, and restarts MicroPython.
 Installation writes to and restarts the selected device; preparation alone does neither.
 
-If installation fails partway through, the prepared files remain available. Restore a saved startup program
-with `mpremote` or copy the prepared files manually. If files were already prepared using a newly issued token,
+If installation fails partway through, the prepared files remain available; copy them manually with `mpremote`. If files were already prepared using a newly issued token,
 use the UI credential file for another preparation rather than enrolling the same ID again.
 
-No USB device is changed during the repository tests. With the user's authorization, the attached server board
-(`5303284720e42a9c`) was tested over USB. Its firmware labels it Pico W, but the native Wi-Fi scan fails with
-`EPERM`; its usable radio is the external ESP8285. Resetting that radio restored scanning and connection with
-the existing saved credentials. Real verified HTTPS reports reached the public hub and were stored in SQLite;
-a TLS context without a trusted CA was rejected on the device. Original board files were privately backed up
-on the server, and the original `main.py` was preserved. The test reporter runs as `jomaa_health.py`; it does
-not replace startup and stops on reset. Use explicit installation for reporting across reboots.
+No USB device is changed during the repository tests. The server board (`5303284720e42a9c`) labels itself
+Pico W, but its native Wi-Fi scan fails with `EPERM`; its usable radio is the external ESP8285.
 
 ## Reports and status
 
@@ -225,7 +189,6 @@ returns 426, and rate limiting returns 429. Devices should keep credentials out 
 npm test
 python3 -m unittest discover -s scripts -p test_init_pico.py -v
 npx eslint src/health src/api.ts src/main.ts
-python3 -m unittest discover -s scripts -p test_serve_health_preview.py -v
 ```
 
 Tests cover actual HTTPS certificate trust, separation of administrator/device credentials, first registration,

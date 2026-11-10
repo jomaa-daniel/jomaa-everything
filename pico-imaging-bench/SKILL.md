@@ -16,39 +16,29 @@ Use `jomaa-daniel/jomaa-everything` as the upstream repository.
 - Stable USB path: `/dev/serial/by-id/usb-MicroPython_Board_in_FS_mode_5303284720e42a9c-if00`;
   normally resolves to `/dev/ttyACM0`. Unique ID: `5303284720e42a9c`.
 - The usable radio is an **external ESP8285**, UART0, TX GP0 / RX GP1, 115200 baud.
-- The current MicroPython build reports “Raspberry Pi Pico W with RP2040”, v1.29.0 dated 2026-08-24.
-  That label identifies the firmware build. Its native `network.WLAN` scan failed with `EPERM`, while
-  the ESP8285 responded to `AT` and successfully joined Wi-Fi. Determine the actual transport by probing it.
+- The MicroPython build reports “Raspberry Pi Pico W with RP2040”, v1.29.0. That label identifies the
+  firmware build. Its native `network.WLAN` scan fails with `EPERM`; the ESP8285 answers `AT` and joins
+  Wi-Fi. Determine the actual transport by probing it.
 - ESP AT version 1.6.2.0, SDK 2.2.1, build September 2019. Its TCP passthrough and SNTP commands work.
-- A reset restored an initially empty scan: the radio then found 11 networks and joined the saved network.
-  The observed address was `192.168.1.240`; DHCP can change it. Identify this board by its USB ID and hub ID.
-- Before health testing, files were `main.py`, `wifi.py`, `wifi_config.py`, and `heartbeat.py`.
-  `wifi_config.py` stored `SSID` and `PASSWORD`; `wifi.py` used ESP AT commands. The old heartbeat used
-  plain HTTP and depended on a missing `hub_config.py`.
+- An empty radio scan is fixed by resetting the radio. The board's address is usually `192.168.1.240`;
+  DHCP can change it. Identify this board by its USB ID and hub ID.
 
-## USB operation and backups
+## USB operation
 
 Inspect the attached device and select its explicit port. `mpremote` can automatically soft-reset before
 operations; use `connect PORT resume exec ...` or `resume fs cp ...` when inspecting or copying without
 that reset. Entering raw REPL still interrupts the running program. Capture USB output and emit only an
 explicit result marker; existing startup output may contain private configuration.
 
-The original four files are privately backed up on the dev server under
-`/home/jerry/.local/share/jomaa-pico-health-test/`. The `latest-backup` file points to the backup directory.
-Verify its contents before using it for restoration. Copy a saved `main.py` with `mpremote ... resume fs cp`;
-do not assume an existing test backup is safe to overwrite.
-
-The temporary dev test runs `jomaa_health.py` with the original `main.py` preserved. It continues after
-closing the USB connection, but a reset starts the original program. Normal installation writes the health
-reporter to `main.py` and saves an existing startup file as `main.pre-health.py`; it refuses an existing backup.
+Installation writes the health reporter to `main.py`, replacing whatever startup file was there.
 
 `mpremote soft-reset` leaves the device in raw REPL and does **not** run startup. Use `mpremote reset`
 after installation. For temporary reporting, use `SerialTransport.enter_raw_repl(soft_reset=False)` and
 `exec_raw_no_follow("import jomaa_health; jomaa_health.run()")`, then close the transport without sending
 Ctrl-C. Confirm subsequent reports through the hub; an acknowledgment alone does not establish persistence.
 
-Python on this server originally had neither pip nor `ensurepip`. `scripts/setup_tools.py` creates an
-isolated environment using verified universal wheels. Existing test tools also live at
+Python on this server has neither pip nor `ensurepip`. `scripts/setup_tools.py --venv DIR` creates an
+isolated environment from verified universal wheels; the server's is
 `/home/jerry/.local/share/jomaa-pico-tools/bin/python`. Run USB commands on the host connected to USB.
 
 ## ESP8285 recovery
@@ -98,8 +88,7 @@ Host administrator password: `HUB_PASSWORD` in `/home/jerry/jomaa-everything/jom
 secret values cannot be retrieved. Do not put either password in source, CLI history, logs, or skill text.
 
 Provisioning puts the actual Wi-Fi password and device token in private `device_config.json` on the host
-and on the Pico. Read previous settings internally with `ast.literal_eval` when recovering a simple
-`wifi_config.py`; do not dump its contents. The administrator password is never installed on the board.
+and on the Pico. The administrator password is never installed on the board.
 Use a trusted root from an OS-verified certificate chain or verified CA source, rather than trusting an
 unverified peer certificate. The live dev board successfully reported with certificate validation and
 rejected a TLS context without a trusted CA.
