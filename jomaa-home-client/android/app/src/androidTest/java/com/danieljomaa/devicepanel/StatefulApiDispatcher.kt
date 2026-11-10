@@ -73,12 +73,12 @@ class StatefulApiDispatcher : Dispatcher() {
             -> json(200, """{"synchronized":true,"stale":false,"corrected":{},"failed":{},"observed":{}}""")
             "GET" to "/api/matter/nodes" -> json(
                 200,
-                """{"nodes":[{"nodeId":2,"available":true,"isBridge":false,"vendor":"Acme","product":"Plug"}]}""",
+                """{"nodes":[{"nodeId":2,"available":true,"isBridge":false,"vendor":"Acme","product":"Plug","label":null}]}""",
             )
             "POST" to "/api/matter/commission" -> {
                 val code = JSONObject(request.body.readUtf8()).getString("code")
                 synchronized(lock) { room = room.copy(pairedCodes = room.pairedCodes + code) }
-                json(200, """{"node":{"node_id":7,"available":true}}""")
+                json(200, """{"node":{"node_id":7,"available":true,"is_bridge":false}}""")
             }
             "POST" to "/api/logout" -> json(200, """{"ok":true}""")
             else -> json(404, """{"error":"not found"}""")
@@ -100,7 +100,7 @@ class StatefulApiDispatcher : Dispatcher() {
 
     private fun plugLight() = """{"on":${snapshot().plugOn},"brightness":0,"colorTemperaturePct":0}"""
 
-    private fun stateJson(light: String) = """{"state":$light,"devices":{}}"""
+    private fun stateJson(light: String) = """{"state":$light,"devices":{},"failed":{}}"""
 
     private fun json(status: Int, body: String) = MockResponse()
         .setResponseCode(status)

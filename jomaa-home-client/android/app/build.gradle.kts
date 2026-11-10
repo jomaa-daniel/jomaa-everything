@@ -45,10 +45,9 @@ android {
         warningsAsErrors = true
         abortOnError = true
         checkDependencies = true
-        // Dependency versions are bumped deliberately, not on every lint run.
+        // Dependency versions are bumped by hand.
         disable += "GradleDependency"
-        // Its answer depends on the newest SDK installed on the machine, so it
-        // passes locally and fails in CI. Raising targetSdk is its own change.
+        // Its result depends on the newest SDK installed on the machine.
         disable += "OldTargetApi"
     }
     buildFeatures {

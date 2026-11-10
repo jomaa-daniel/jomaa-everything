@@ -138,7 +138,7 @@ struct TargetPicker: View {
     let selectedID: String?
     let select: (String) -> Void
 
-    /// Rooms first, as on Android.
+    /// Rooms first, then single devices.
     private var ordered: [Target] {
         targets.filter(\.isRoom) + targets.filter { !$0.isRoom }
     }

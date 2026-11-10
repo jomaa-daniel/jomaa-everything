@@ -91,7 +91,7 @@ public final class RoomController: ObservableObject {
 
     /// What the selected room or device can change.
     public var features: Features {
-        selectedTarget?.features ?? Features()
+        selectedTarget?.features ?? .powerOnly
     }
 
     public var targetName: String {

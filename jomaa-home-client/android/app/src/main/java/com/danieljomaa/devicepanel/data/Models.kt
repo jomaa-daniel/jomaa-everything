@@ -10,19 +10,27 @@ import java.util.Locale
  */
 @Serializable
 data class Features(
-    val brightness: Boolean = false,
-    val colorTemperature: Boolean = false,
-    val color: Boolean = false,
-)
+    val brightness: Boolean,
+    val colorTemperature: Boolean,
+    val color: Boolean,
+) {
+    companion object {
+        /** Power only: nothing else can change. */
+        val POWER_ONLY = Features(brightness = false, colorTemperature = false, color = false)
+    }
+}
 
-/** A device or room the hub controls. kind is "room" or the driver behind it. */
+/**
+ * A device or room the hub controls. kind is "room" or the driver behind it.
+ * Only rooms have members; it is null for a device.
+ */
 @Serializable
 data class Target(
     val id: String,
     val name: String,
     val kind: String,
-    val members: List<String> = emptyList(),
-    val features: Features = Features(),
+    val members: List<String>?,
+    val features: Features,
 ) {
     val isRoom: Boolean get() = kind == "room"
 }
@@ -43,11 +51,15 @@ data class LightState(
     }
 }
 
+/**
+ * A target's summary state plus each device's own. state is null when no
+ * device under the target answered.
+ */
 @Serializable
 data class StateResponse(
-    val state: LightState? = null,
-    val devices: Map<String, LightState> = emptyMap(),
-    val failed: Map<String, String> = emptyMap(),
+    val state: LightState?,
+    val devices: Map<String, LightState>,
+    val failed: Map<String, String>,
 )
 
 /** A color, sent to the hub as "#rrggbb". */
@@ -149,18 +161,18 @@ data class SyncRequest(
 data class SyncResponse(
     val synchronized: Boolean,
     val stale: Boolean,
-    val corrected: Map<String, List<String>> = emptyMap(),
-    val failed: Map<String, String> = emptyMap(),
+    val corrected: Map<String, List<String>>,
+    val failed: Map<String, String>,
 )
 
 @Serializable
 data class MatterNode(
     val nodeId: ULong,
     val available: Boolean,
-    val isBridge: Boolean = false,
-    val vendor: String? = null,
-    val product: String? = null,
-    val label: String? = null,
+    val isBridge: Boolean,
+    val vendor: String?,
+    val product: String?,
+    val label: String?,
 ) {
     val displayName: String
         get() = listOfNotNull(vendor, product, label).joinToString(" ").ifBlank { "Matter device" }
@@ -173,15 +185,15 @@ data class MatterNodeList(val nodes: List<MatterNode>)
 data class CommissionRequest(val code: String, val networkOnly: Boolean)
 
 @Serializable
-data class CommissionedNode(@SerialName("node_id") val nodeId: ULong? = null)
+data class CommissionedNode(@SerialName("node_id") val nodeId: ULong)
 
 @Serializable
-data class CommissionResponse(val node: CommissionedNode? = null)
+data class CommissionResponse(val node: CommissionedNode)
 
 @Serializable
 data class ApiErrorPayload(
-    val error: String? = null,
-    val failed: Map<String, String>? = null,
+    val error: String?,
+    val failed: Map<String, String>?,
 )
 
 /** Checks a Matter setup code before it goes to the hub. */

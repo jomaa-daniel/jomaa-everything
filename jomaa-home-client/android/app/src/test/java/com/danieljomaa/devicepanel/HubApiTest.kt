@@ -3,6 +3,7 @@ package com.danieljomaa.devicepanel
 import com.danieljomaa.devicepanel.data.ColorPreset
 import com.danieljomaa.devicepanel.data.CommandRequest
 import com.danieljomaa.devicepanel.data.DevicePanelException
+import com.danieljomaa.devicepanel.data.Features
 import com.danieljomaa.devicepanel.data.MatterSetupCode
 import com.danieljomaa.devicepanel.data.OkHttpDevicePanelApi
 import com.danieljomaa.devicepanel.data.RoomChanges
@@ -77,12 +78,35 @@ class HubApiTest {
         val targets = api.targets(base, "t")
         assertEquals("Bearer t", server.takeRequest().getHeader("Authorization"))
         assertTrue(targets[0].isRoom)
-        assertFalse(targets[1].features.brightness)
+        assertEquals(listOf("lamp"), targets[0].members)
+        assertNull(targets[1].members)
+        assertEquals(Features.POWER_ONLY, targets[1].features)
 
-        json(200, """{"state":{"on":true,"brightness":40,"colorTemperaturePct":10},"devices":{"lamp":{"on":true,"brightness":40,"colorTemperaturePct":10}}}""")
+        json(200, """{"state":{"on":true,"brightness":40,"colorTemperaturePct":10},"devices":{"lamp":{"on":true,"brightness":40,"colorTemperaturePct":10}},"failed":{}}""")
         val state = api.state(base, "t", "living-room")
         assertEquals("/api/targets/living-room/state", server.takeRequest().path)
         assertEquals(40, state.state?.brightness)
+
+        json(200, """{"state":null,"devices":{},"failed":{"lamp":"offline"}}""")
+        val silent = api.state(base, "t", "lamp")
+        assertNull(silent.state)
+        assertEquals(mapOf("lamp" to "offline"), silent.failed)
+    }
+
+    @Test
+    fun responsesMissingFieldsTheHubAlwaysSendsAreRejected() {
+        val missing = listOf<Pair<String, suspend () -> Unit>>(
+            """{"targets":[{"id":"plug","name":"Plug","kind":"matter"}]}""" to { api.targets(base, "t") },
+            """{"targets":[{"id":"plug","name":"Plug","kind":"matter","features":{"brightness":true}}]}""" to
+                { api.targets(base, "t") },
+            """{"state":{"on":true,"brightness":40,"colorTemperaturePct":10}}""" to { api.state(base, "t", "r") },
+            """{"synchronized":true}""" to { api.sync(base, "t", "r", SyncRequest(clientId = "c", revision = 1, on = true)) },
+            """{"node":{}}""" to { api.commission(base, "t", "34970112332", false) },
+        )
+        for ((body, call) in missing) {
+            json(200, body)
+            assertEquals(body, DevicePanelException.InvalidResponse, runCatching { runBlocking { call() } }.exceptionOrNull())
+        }
     }
 
     @Test
@@ -118,13 +142,13 @@ class HubApiTest {
 
     @Test
     fun matterPairingAndNodes() = runBlocking {
-        json(200, """{"node":{"node_id":7,"available":true}}""")
+        json(200, """{"node":{"node_id":7,"available":true,"is_bridge":false}}""")
         assertEquals(7uL, api.commission(base, "t", "MT:Y.K9042C00KA0648G00", true))
         val sent = body()
         assertEquals("MT:Y.K9042C00KA0648G00", sent["code"]!!.jsonPrimitive.content)
         assertTrue(sent["networkOnly"]!!.jsonPrimitive.boolean)
 
-        json(200, """{"nodes":[{"nodeId":18446744065119617024,"available":false,"isBridge":false,"vendor":"Acme","product":"Bulb"}]}""")
+        json(200, """{"nodes":[{"nodeId":18446744065119617024,"available":false,"isBridge":false,"vendor":"Acme","product":"Bulb","label":null}]}""")
         val nodes = api.matterNodes(base, "t")
         assertEquals(18446744065119617024uL, nodes[0].nodeId)
         assertEquals("Acme Bulb", nodes[0].displayName)
@@ -132,7 +156,7 @@ class HubApiTest {
 
     @Test
     fun matterServerDownIsItsOwnError() {
-        json(503, """{"error":"not connected to the Matter server"}""")
+        json(503, """{"error":"Matter controller is not running"}""")
         val error = runCatching { runBlocking { api.matterNodes(base, "t") } }.exceptionOrNull()
         assertEquals(DevicePanelException.MatterUnavailable, error)
     }

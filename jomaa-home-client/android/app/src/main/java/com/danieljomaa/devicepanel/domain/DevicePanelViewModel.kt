@@ -66,7 +66,7 @@ data class DevicePanelUiState(
     val canRetryCommand: Boolean = false,
     val matter: MatterUiState = MatterUiState(),
 ) {
-    val features: Features get() = selected?.features ?: Features()
+    val features: Features get() = selected?.features ?: Features.POWER_ONLY
 }
 
 class DevicePanelViewModel(

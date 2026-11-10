@@ -60,7 +60,7 @@ public struct RoomState: Codable, Equatable, Sendable {
             on: container.decode(Bool.self, forKey: .on),
             brightness: container.decode(Int.self, forKey: .brightness),
             colorTemperaturePct: container.decode(Int.self, forKey: .colorTemperaturePct),
-            colorMode: container.decodeIfPresent(RoomColorMode.self, forKey: .colorMode) ?? .unknown,
+            colorMode: container.decode(RoomColorMode.self, forKey: .colorMode),
             observedAt: container.decode(Date.self, forKey: .observedAt)
         )
     }

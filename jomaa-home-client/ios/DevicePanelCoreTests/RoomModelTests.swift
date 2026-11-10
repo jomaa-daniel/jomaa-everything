@@ -78,15 +78,28 @@ final class RoomModelTests: XCTestCase {
         XCTAssertEqual(white.colorTemperaturePct, 20)
     }
 
-    func testCachedStateWithoutAColorModeDecodesAsUnknown() throws {
+    func testCachedStateKeepsItsColorMode() throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let state = try RoomState(
+            on: true,
+            brightness: 34,
+            colorTemperaturePct: 50,
+            colorMode: .orange,
+            observedAt: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+
+        XCTAssertEqual(try decoder.decode(RoomState.self, from: encoder.encode(state)), state)
+    }
+
+    func testRejectsCachedStateWithoutAColorMode() {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let data = Data(#"{"on":true,"brightness":34,"colorTemperaturePct":50,"observedAt":"2026-10-07T20:00:00Z"}"#.utf8)
 
-        let state = try decoder.decode(RoomState.self, from: data)
-
-        XCTAssertEqual(state.brightness, 34)
-        XCTAssertEqual(state.colorMode, .unknown)
+        XCTAssertThrowsError(try decoder.decode(RoomState.self, from: data))
     }
 
     func testChecksMatterSetupCodes() {

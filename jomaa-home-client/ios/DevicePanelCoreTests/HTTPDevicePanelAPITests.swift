@@ -57,7 +57,8 @@ final class HTTPDevicePanelAPITests: XCTestCase {
                 {"targets":[
                   {"id":"living-room","name":"Living Room","kind":"room","members":["lamp-a","lamp-b"],
                    "features":{"brightness":true,"colorTemperature":true,"color":true}},
-                  {"id":"plug","name":"Plug","kind":"matter"}
+                  {"id":"plug","name":"Plug","kind":"matter",
+                   "features":{"brightness":false,"colorTemperature":false,"color":false}}
                 ]}
                 """)
             default:
@@ -75,15 +76,92 @@ final class HTTPDevicePanelAPITests: XCTestCase {
 
         XCTAssertEqual(targets.map(\.id), ["living-room", "plug"])
         XCTAssertTrue(targets[0].isRoom)
+        XCTAssertEqual(targets[0].members, ["lamp-a", "lamp-b"])
         XCTAssertEqual(targets[0].features, Features(brightness: true, colorTemperature: true, color: true))
-        XCTAssertEqual(targets[1].features, Features())
+        XCTAssertNil(targets[1].members)
+        XCTAssertEqual(targets[1].features, .powerOnly)
         XCTAssertEqual(state.state, try LightState(on: true, brightness: 40, colorTemperaturePct: 10))
         XCTAssertEqual(state.failed, ["lamp-b": "offline"])
     }
 
+    func testDecodesStateWhenNoDeviceAnswered() async throws {
+        URLProtocolStub.handler = { request in
+            Self.response(request, json: #"{"state":null,"devices":{},"failed":{"lamp-a":"offline"}}"#)
+        }
+
+        let state = try await makeClient().state(baseURL: hub, token: "t", targetID: "lamp-a")
+
+        XCTAssertNil(state.state)
+        XCTAssertEqual(state.failed, ["lamp-a": "offline"])
+    }
+
+    func testRejectsResponsesMissingFieldsTheHubAlwaysSends() async {
+        URLProtocolStub.handler = { request in
+            switch request.url?.path {
+            case "/api/targets":
+                return Self.response(request, json: #"{"targets":[{"id":"plug","name":"Plug","kind":"matter"}]}"#)
+            case "/api/targets/r/sync":
+                return Self.response(request, json: #"{"synchronized":true}"#)
+            default:
+                return Self.response(request, json: #"{"state":{"on":true,"brightness":40,"colorTemperaturePct":10}}"#)
+            }
+        }
+        let client = makeClient()
+
+        await assertThrows(.invalidResponse) {
+            _ = try await client.targets(baseURL: self.hub, token: "t")
+        }
+        await assertThrows(.invalidResponse) {
+            _ = try await client.state(baseURL: self.hub, token: "t", targetID: "r")
+        }
+        await assertThrows(.invalidResponse) {
+            _ = try await client.sync(
+                baseURL: self.hub,
+                token: "t",
+                targetID: "r",
+                request: SyncRequest(clientId: UUID(), revision: 1, on: true, brightness: nil, colorTemperaturePct: nil)
+            )
+        }
+    }
+
+    func testDecodesSyncResult() async throws {
+        URLProtocolStub.handler = { request in
+            Self.response(request, json: """
+            {"synchronized":false,"stale":false,"corrected":{"lamp-a":["brightness"]},
+             "failed":{"lamp-b":"offline"},"observed":{"lamp-a":{"on":true,"brightness":40,"colorTemperaturePct":10}}}
+            """)
+        }
+
+        let result = try await makeClient().sync(
+            baseURL: hub,
+            token: "t",
+            targetID: "r",
+            request: SyncRequest(clientId: UUID(), revision: 1, on: true, brightness: 50, colorTemperaturePct: nil)
+        )
+
+        XCTAssertEqual(
+            result,
+            SyncResponse(synchronized: false, stale: false, corrected: ["lamp-a": ["brightness"]], failed: ["lamp-b": "offline"])
+        )
+    }
+
+    func testCommissionReturnsTheNewNodeID() async throws {
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.url?.path, "/api/matter/commission")
+            return Self.response(request, json: #"{"node":{"node_id":7,"available":true,"is_bridge":false}}"#)
+        }
+
+        let nodeID = try await makeClient().commission(baseURL: hub, token: "t", code: "34970112332", networkOnly: false)
+
+        XCTAssertEqual(nodeID, 7)
+    }
+
     func testRejectsOutOfRangeState() async {
         URLProtocolStub.handler = { request in
-            Self.response(request, json: #"{"state":{"on":true,"brightness":140,"colorTemperaturePct":10}}"#)
+            Self.response(
+                request,
+                json: #"{"state":{"on":true,"brightness":140,"colorTemperaturePct":10},"devices":{},"failed":{}}"#
+            )
         }
 
         await assertThrows(.invalidResponse) {
@@ -108,7 +186,7 @@ final class HTTPDevicePanelAPITests: XCTestCase {
 
     func testMapsMissingMatterServer() async {
         URLProtocolStub.handler = { request in
-            Self.response(request, status: 503, json: #"{"error":"matter server not connected"}"#)
+            Self.response(request, status: 503, json: #"{"error":"Matter controller is not running"}"#)
         }
 
         await assertThrows(.matterUnavailable) {
@@ -118,7 +196,7 @@ final class HTTPDevicePanelAPITests: XCTestCase {
 
     func testMapsUnauthorizedResponses() async {
         URLProtocolStub.handler = { request in
-            Self.response(request, status: 401, json: #"{"error":"unauthorized"}"#)
+            Self.response(request, status: 401, json: #"{"error":"sign in first"}"#)
         }
 
         await assertThrows(.authenticationRequired) {
@@ -131,7 +209,7 @@ final class HTTPDevicePanelAPITests: XCTestCase {
 
     func testReadsRetryAfterWhenSignInIsLockedOut() async {
         URLProtocolStub.handler = { request in
-            Self.response(request, status: 429, headers: ["Retry-After": "120"], json: #"{"error":"too many"}"#)
+            Self.response(request, status: 429, headers: ["Retry-After": "120"], json: #"{"error":"too many failed sign-ins; try again later"}"#)
         }
 
         await assertThrows(.rateLimited(retryAfter: 120)) {

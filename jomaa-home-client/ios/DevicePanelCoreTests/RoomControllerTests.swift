@@ -15,9 +15,10 @@ final class RoomControllerTests: XCTestCase {
         id: "lamp-a",
         name: "Lamp A",
         kind: "govee",
+        members: nil,
         features: Features(brightness: true, colorTemperature: true, color: true)
     )
-    private static let plug = Target(id: "plug", name: "Plug", kind: "matter")
+    private static let plug = Target(id: "plug", name: "Plug", kind: "matter", members: nil, features: .powerOnly)
 
     func testStartsSignedOutWithoutStoredSession() async throws {
         let controller = try await makeController(api: FakeAPI())
@@ -203,7 +204,7 @@ final class RoomControllerTests: XCTestCase {
         await controller.setPower(true)
         let sync = try await waitForSync(api, count: 1)
 
-        XCTAssertEqual(controller.features, Features())
+        XCTAssertEqual(controller.features, .powerOnly)
         XCTAssertTrue(sync.request.on)
         XCTAssertNil(sync.request.brightness)
         XCTAssertNil(sync.request.colorTemperaturePct)
@@ -361,7 +362,7 @@ private actor FakeAPI: DevicePanelAPI {
     }
 
     func state(baseURL: URL, token: String, targetID: String) async throws -> StateResponse {
-        StateResponse(state: light, failed: failed)
+        StateResponse(state: light, devices: [:], failed: failed)
     }
 
     func send(baseURL: URL, token: String, targetID: String, command: HubCommand) async throws {
@@ -371,7 +372,7 @@ private actor FakeAPI: DevicePanelAPI {
 
     func sync(baseURL: URL, token: String, targetID: String, request: SyncRequest) async throws -> SyncResponse {
         syncs.append(Sync(target: targetID, request: request))
-        return SyncResponse(synchronized: synchronized, stale: false)
+        return SyncResponse(synchronized: synchronized, stale: false, corrected: [:], failed: [:])
     }
 
     func matterNodes(baseURL: URL, token: String) async throws -> [MatterNode] {
@@ -379,7 +380,7 @@ private actor FakeAPI: DevicePanelAPI {
         return [MatterNode(nodeId: 7, available: true, vendor: "Eve", product: "Energy")]
     }
 
-    func commission(baseURL: URL, token: String, code: String, networkOnly: Bool) async throws -> UInt64? {
+    func commission(baseURL: URL, token: String, code: String, networkOnly: Bool) async throws -> UInt64 {
         if let matterError { throw matterError }
         commissionedCodes.append(code)
         return 7

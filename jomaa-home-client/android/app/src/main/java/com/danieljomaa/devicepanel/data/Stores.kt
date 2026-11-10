@@ -25,7 +25,7 @@ interface SessionStore {
     suspend fun clear()
 }
 
-// commit() on purpose: the widget and app read these right after writing.
+// Writes with commit() so the widget and app can read the session right after.
 @SuppressLint("ApplySharedPref")
 class KeystoreSessionStore(context: Context) : SessionStore {
     private val preferences = context.getSharedPreferences("device_panel_secure", Context.MODE_PRIVATE)
@@ -93,15 +93,15 @@ data class CachedTarget(
     val id: String,
     val name: String,
     val features: Features,
-    val state: LightState? = null,
+    val state: LightState?,
 )
 
-// commit() on purpose: the revision counter must be on disk before a command
-// goes out, and the widget reads the cached room right after the app writes it.
+// Writes with commit() so the revision counter is on disk before a command goes
+// out, and the widget can read the cached room right after the app writes it.
 @SuppressLint("ApplySharedPref")
 class SharedStateStore(context: Context) {
     private val preferences = context.getSharedPreferences("device_panel_shared", Context.MODE_PRIVATE)
-    private val json = Json { encodeDefaults = false; explicitNulls = false; ignoreUnknownKeys = true }
+    private val json = Json
     private val lock = Any()
 
     fun serverUrl(): String? = preferences.getString(KEY_SERVER_URL, null)

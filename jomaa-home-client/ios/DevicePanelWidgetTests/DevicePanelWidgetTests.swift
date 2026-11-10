@@ -20,7 +20,7 @@ final class DevicePanelWidgetTests: XCTestCase {
             observedAt: Date(timeIntervalSince1970: 1_800_000_000)
         )
         await preferences.saveSelectedTarget(
-            CachedTarget(id: "lamp-a", name: "Lamp A", features: Features(brightness: true), state: state)
+            CachedTarget(id: "lamp-a", name: "Lamp A", features: Features(brightness: true, colorTemperature: false, color: false), state: state)
         )
         let sessionStore = InMemorySessionStore(session: Session(token: "widget-test-token"))
         let loader = LiveWidgetStateLoader(
@@ -57,7 +57,7 @@ final class DevicePanelWidgetTests: XCTestCase {
         let preferences = SharedPreferences(suiteName: "WidgetTests.\(UUID().uuidString)")
         await preferences.saveServerConfiguration(try ServerConfiguration(urlString: "https://old-hub.example"))
         await preferences.saveSelectedTarget(CachedTarget(
-            id: "old-room", name: "Old Room", features: Features(),
+            id: "old-room", name: "Old Room", features: .powerOnly,
             state: RoomState(light: try LightState(on: true, brightness: 50, colorTemperaturePct: 50))
         ))
         let loader = LiveWidgetStateLoader(

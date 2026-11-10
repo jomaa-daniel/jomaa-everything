@@ -13,7 +13,7 @@ public protocol DevicePanelAPI: Sendable {
     func send(baseURL: URL, token: String, targetID: String, command: HubCommand) async throws
     func sync(baseURL: URL, token: String, targetID: String, request: SyncRequest) async throws -> SyncResponse
     func matterNodes(baseURL: URL, token: String) async throws -> [MatterNode]
-    func commission(baseURL: URL, token: String, code: String, networkOnly: Bool) async throws -> UInt64?
+    func commission(baseURL: URL, token: String, code: String, networkOnly: Bool) async throws -> UInt64
 }
 
 public actor HTTPDevicePanelAPI: DevicePanelAPI {
@@ -110,7 +110,7 @@ public actor HTTPDevicePanelAPI: DevicePanelAPI {
     }
 
     /// Pairs a Matter device through the hub. Returns the new node id.
-    public func commission(baseURL: URL, token: String, code: String, networkOnly: Bool) async throws -> UInt64? {
+    public func commission(baseURL: URL, token: String, code: String, networkOnly: Bool) async throws -> UInt64 {
         struct Body: Encodable {
             let code: String
             let networkOnly: Bool
@@ -123,7 +123,7 @@ public actor HTTPDevicePanelAPI: DevicePanelAPI {
             body: try encoder.encode(Body(code: code, networkOnly: networkOnly)),
             using: pairingSession
         )
-        return response.node?.nodeId
+        return response.node.nodeId
     }
 
     private func send<Response: Decodable>(

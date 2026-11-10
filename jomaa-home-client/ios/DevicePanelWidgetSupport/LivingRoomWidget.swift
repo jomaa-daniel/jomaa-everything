@@ -14,7 +14,7 @@ public struct LivingRoomEntry: TimelineEntry, Sendable {
     public init(
         date: Date,
         name: String = "Lights",
-        features: Features = Features(brightness: true),
+        features: Features = Features(brightness: true, colorTemperature: false, color: false),
         state: RoomState?,
         isAuthenticated: Bool
     ) {
@@ -58,7 +58,7 @@ public struct LiveWidgetStateLoader: Sendable {
         return LivingRoomEntry(
             date: Date(),
             name: target?.name ?? "Lights",
-            features: target?.features ?? Features(),
+            features: target?.features ?? .powerOnly,
             state: target?.state,
             isAuthenticated: session != nil
         )

@@ -91,30 +91,10 @@ public struct SyncResponse: Decodable, Equatable, Sendable {
     public let corrected: [String: [String]]
     public let failed: [String: String]
 
-    public init(
-        synchronized: Bool,
-        stale: Bool,
-        corrected: [String: [String]] = [:],
-        failed: [String: String] = [:]
-    ) {
+    public init(synchronized: Bool, stale: Bool, corrected: [String: [String]], failed: [String: String]) {
         self.synchronized = synchronized
         self.stale = stale
         self.corrected = corrected
         self.failed = failed
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        synchronized = try container.decode(Bool.self, forKey: .synchronized)
-        stale = try container.decodeIfPresent(Bool.self, forKey: .stale) ?? false
-        corrected = try container.decodeIfPresent([String: [String]].self, forKey: .corrected) ?? [:]
-        failed = try container.decodeIfPresent([String: String].self, forKey: .failed) ?? [:]
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case synchronized
-        case stale
-        case corrected
-        case failed
     }
 }

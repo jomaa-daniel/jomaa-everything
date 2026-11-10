@@ -9,44 +9,31 @@ public struct Features: Codable, Equatable, Sendable {
     public var colorTemperature: Bool
     public var color: Bool
 
-    public init(brightness: Bool = false, colorTemperature: Bool = false, color: Bool = false) {
+    /// Power only: nothing else can change.
+    public static let powerOnly = Features(brightness: false, colorTemperature: false, color: false)
+
+    public init(brightness: Bool, colorTemperature: Bool, color: Bool) {
         self.brightness = brightness
         self.colorTemperature = colorTemperature
         self.color = color
     }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        brightness = try container.decodeIfPresent(Bool.self, forKey: .brightness) ?? false
-        colorTemperature = try container.decodeIfPresent(Bool.self, forKey: .colorTemperature) ?? false
-        color = try container.decodeIfPresent(Bool.self, forKey: .color) ?? false
-    }
 }
 
 /// A device or room the hub controls. `kind` is "room" or the driver behind
-/// a single device.
+/// a single device. Only rooms have `members`; it is nil for a device.
 public struct Target: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let name: String
     public let kind: String
-    public let members: [String]
+    public let members: [String]?
     public let features: Features
 
-    public init(id: String, name: String, kind: String, members: [String] = [], features: Features = Features()) {
+    public init(id: String, name: String, kind: String, members: [String]?, features: Features) {
         self.id = id
         self.name = name
         self.kind = kind
         self.members = members
         self.features = features
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
-        name = try container.decode(String.self, forKey: .name)
-        kind = try container.decode(String.self, forKey: .kind)
-        members = try container.decodeIfPresent([String].self, forKey: .members) ?? []
-        features = try container.decodeIfPresent(Features.self, forKey: .features) ?? Features()
     }
 
     public var isRoom: Bool { kind == "room" }
@@ -87,28 +74,16 @@ public struct LightState: Codable, Equatable, Sendable {
 
 /// A target's state. For a room, `state` is the room as a whole, `devices`
 /// holds each member that answered, and `failed` each one that didn't.
+/// `state` is nil when no device under the target answered.
 public struct StateResponse: Decodable, Equatable, Sendable {
     public let state: LightState?
     public let devices: [String: LightState]
     public let failed: [String: String]
 
-    public init(state: LightState?, devices: [String: LightState] = [:], failed: [String: String] = [:]) {
+    public init(state: LightState?, devices: [String: LightState], failed: [String: String]) {
         self.state = state
         self.devices = devices
         self.failed = failed
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        state = try container.decodeIfPresent(LightState.self, forKey: .state)
-        devices = try container.decodeIfPresent([String: LightState].self, forKey: .devices) ?? [:]
-        failed = try container.decodeIfPresent([String: String].self, forKey: .failed) ?? [:]
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case state
-        case devices
-        case failed
     }
 }
 
@@ -142,14 +117,14 @@ struct MatterNodeList: Decodable, Sendable {
 
 struct CommissionResponse: Decodable, Sendable {
     struct Node: Decodable, Sendable {
-        let nodeId: UInt64?
+        let nodeId: UInt64
 
         private enum CodingKeys: String, CodingKey {
             case nodeId = "node_id"
         }
     }
 
-    let node: Node?
+    let node: Node
 }
 
 /// Checks a Matter setup code before it goes to the hub.

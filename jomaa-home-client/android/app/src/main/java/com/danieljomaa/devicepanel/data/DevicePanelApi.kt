@@ -32,7 +32,7 @@ interface DevicePanelApi {
     suspend fun command(baseUrl: HttpUrl, token: String, targetId: String, request: CommandRequest)
     suspend fun sync(baseUrl: HttpUrl, token: String, targetId: String, request: SyncRequest): SyncResponse
     suspend fun matterNodes(baseUrl: HttpUrl, token: String): List<MatterNode>
-    suspend fun commission(baseUrl: HttpUrl, token: String, code: String, networkOnly: Boolean): ULong?
+    suspend fun commission(baseUrl: HttpUrl, token: String, code: String, networkOnly: Boolean): ULong
 }
 
 class OkHttpDevicePanelApi(
@@ -94,7 +94,7 @@ class OkHttpDevicePanelApi(
     override suspend fun matterNodes(baseUrl: HttpUrl, token: String): List<MatterNode> =
         execute<MatterNodeList>(baseUrl, listOf("api", "matter", "nodes"), "GET", token).nodes
 
-    override suspend fun commission(baseUrl: HttpUrl, token: String, code: String, networkOnly: Boolean): ULong? {
+    override suspend fun commission(baseUrl: HttpUrl, token: String, code: String, networkOnly: Boolean): ULong {
         val response: CommissionResponse = execute(
             baseUrl,
             listOf("api", "matter", "commission"),
@@ -103,7 +103,7 @@ class OkHttpDevicePanelApi(
             json.encodeToString(CommissionRequest(code, networkOnly)),
             httpClient = pairingClient,
         )
-        return response.node?.nodeId
+        return response.node.nodeId
     }
 
     private suspend inline fun <reified T> execute(
