@@ -8,17 +8,23 @@ struct LivingRoomControlValueProvider: ControlValueProvider {
     var previewValue: Bool { false }
 
     func currentValue() async throws -> Bool {
-        if let cached = await SharedPreferences().cachedRoomState() {
+        let configuration = try ServerConfiguration.bundled()
+        let preferences = SharedPreferences()
+        guard try await preferences.serverConfiguration() == configuration else {
+            throw DevicePanelError.authenticationRequired
+        }
+        if let cached = await preferences.cachedRoomState() {
             return cached.on
         }
         return try await IntentCommandService(
-            api: HTTPDevicePanelAPI(),
+            configuration: configuration,
+            api: HTTPDevicePanelAPI(allowedHosts: [configuration.baseURL.host!]),
             sessionStore: KeychainSessionStore(
                 accessGroup: Bundle.main.object(
                     forInfoDictionaryKey: "DevicePanelKeychainAccessGroup"
                 ) as? String
             ),
-            preferences: SharedPreferences()
+            preferences: preferences
         ).currentState().on
     }
 }

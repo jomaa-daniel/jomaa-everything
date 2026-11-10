@@ -25,20 +25,95 @@ final class RoomControllerTests: XCTestCase {
         await controller.start()
 
         XCTAssertEqual(controller.authentication, .signedOut)
+        XCTAssertEqual(controller.serverURLString, "https://hub.example")
     }
 
     func testSignInPicksTheRoomAndLoadsItsState() async throws {
         let api = FakeAPI(targets: [Self.lamp, Self.room], light: try light(on: true, brightness: 50))
         let controller = try await makeController(api: api)
 
-        await controller.signIn(serverURL: "http://192.168.1.10:8080", password: "correct horse battery staple")
+        await controller.signIn(password: "test-password")
 
-        XCTAssertEqual(controller.authentication, .signedIn(serverLabel: "192.168.1.10:8080"))
+        XCTAssertEqual(controller.authentication, .signedIn(serverLabel: "hub.example"))
+        let signInOrigins = await api.signInOrigins
+        XCTAssertEqual(signInOrigins.map(\.absoluteString), ["https://hub.example"])
         XCTAssertEqual(controller.targets.map(\.id), ["lamp-a", "living-room"])
         XCTAssertEqual(controller.selectedTarget?.id, "living-room")
         XCTAssertEqual(controller.targetName, "Living Room")
         XCTAssertEqual(controller.roomState?.brightness, 50)
         XCTAssertEqual(controller.connection, .connected)
+    }
+
+    func testStartDiscardsSessionAndCachedTargetFromAnotherHub() async throws {
+        let preferences = SharedPreferences(suiteName: "RoomControllerTests.\(UUID().uuidString)")
+        await preferences.saveServerConfiguration(try ServerConfiguration(urlString: "https://old-hub.example"))
+        await preferences.saveSelectedTarget(CachedTarget(target: Self.room, state: nil))
+        let sessionStore = InMemorySessionStore(session: Session(token: "old-hub-token"))
+        let api = FakeAPI(targets: [Self.room])
+        let controller = RoomController(
+            configuredHub: try ServerConfiguration(urlString: "https://hub.example"),
+            api: api,
+            sessionStore: sessionStore,
+            preferences: preferences
+        )
+
+        await controller.start()
+
+        XCTAssertEqual(controller.authentication, .signedOut)
+        XCTAssertEqual(controller.serverURLString, "https://hub.example")
+        XCTAssertNil(controller.selectedTarget)
+        let storedSession = await sessionStore.load()
+        let cachedTarget = await preferences.selectedTarget()
+        let requestedOrigins = await api.targetOrigins
+        XCTAssertNil(storedSession)
+        XCTAssertNil(cachedTarget)
+        XCTAssertTrue(requestedOrigins.isEmpty, "A session for another hub must never be sent")
+    }
+
+    func testShortcutRejectsSessionForAnotherOrigin() async throws {
+        let preferences = SharedPreferences(suiteName: "IntentTests.\(UUID().uuidString)")
+        await preferences.saveServerConfiguration(try ServerConfiguration(urlString: "https://old-hub.example"))
+        await preferences.saveSelectedTarget(CachedTarget(target: Self.room, state: nil))
+        let api = FakeAPI(targets: [Self.room])
+        let service = IntentCommandService(
+            configuration: try ServerConfiguration(urlString: "https://hub.example"),
+            api: api,
+            sessionStore: InMemorySessionStore(session: Session(token: "old-hub-token")),
+            preferences: preferences
+        )
+
+        do {
+            _ = try await service.apply(RoomChanges(on: true))
+            XCTFail("Expected a new sign-in for the configured hub")
+        } catch {
+            XCTAssertEqual(error as? DevicePanelError, .authenticationRequired)
+        }
+        let commands = await api.commands
+        XCTAssertTrue(commands.isEmpty)
+    }
+
+    func testShortcutUsesConfiguredHubWithMatchingSession() async throws {
+        let preferences = SharedPreferences(suiteName: "IntentTests.\(UUID().uuidString)")
+        let configuration = try ServerConfiguration(urlString: "https://hub.example")
+        await preferences.saveServerConfiguration(configuration)
+        await preferences.saveSelectedTarget(CachedTarget(
+            target: Self.room,
+            state: RoomState(light: try light(on: false, brightness: 50))
+        ))
+        let api = FakeAPI()
+        let service = IntentCommandService(
+            configuration: configuration,
+            api: api,
+            sessionStore: InMemorySessionStore(session: Session(token: "matching-hub-token")),
+            preferences: preferences
+        )
+
+        let updated = try await service.apply(RoomChanges(on: true))
+
+        XCTAssertEqual(updated.state?.on, true)
+        let commands = await api.commands
+        XCTAssertEqual(commands.first?.origin, configuration.baseURL)
+        XCTAssertEqual(commands.first?.target, "living-room")
     }
 
     func testCommandsGoToTheSelectedTarget() async throws {
@@ -209,6 +284,7 @@ final class RoomControllerTests: XCTestCase {
             await preferences.saveServerConfiguration(try ServerConfiguration(urlString: configuration))
         }
         return RoomController(
+            configuredHub: try ServerConfiguration(urlString: "https://hub.example"),
             api: api,
             sessionStore: InMemorySessionStore(session: storedSession),
             preferences: preferences,
@@ -234,6 +310,7 @@ final class RoomControllerTests: XCTestCase {
 
 private actor FakeAPI: DevicePanelAPI {
     struct Command: Sendable {
+        let origin: URL
         let target: String
         let command: HubCommand
     }
@@ -252,6 +329,8 @@ private actor FakeAPI: DevicePanelAPI {
     private(set) var commands: [Command] = []
     private(set) var syncs: [Sync] = []
     private(set) var commissionedCodes: [String] = []
+    private(set) var signInOrigins: [URL] = []
+    private(set) var targetOrigins: [URL] = []
 
     init(
         targets: [Target] = [],
@@ -270,13 +349,15 @@ private actor FakeAPI: DevicePanelAPI {
     }
 
     func signIn(baseURL: URL, password: String) async throws -> Session {
-        Session(token: "token")
+        signInOrigins.append(baseURL)
+        return Session(token: "token")
     }
 
     func signOut(baseURL: URL, token: String) async throws {}
 
     func targets(baseURL: URL, token: String) async throws -> [Target] {
-        targetList
+        targetOrigins.append(baseURL)
+        return targetList
     }
 
     func state(baseURL: URL, token: String, targetID: String) async throws -> StateResponse {
@@ -285,7 +366,7 @@ private actor FakeAPI: DevicePanelAPI {
 
     func send(baseURL: URL, token: String, targetID: String, command: HubCommand) async throws {
         if let commandError { throw commandError }
-        commands.append(Command(target: targetID, command: command))
+        commands.append(Command(origin: baseURL, target: targetID, command: command))
     }
 
     func sync(baseURL: URL, token: String, targetID: String, request: SyncRequest) async throws -> SyncResponse {

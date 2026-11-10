@@ -10,12 +10,6 @@ struct SettingsView: View {
             Form {
                 Section("Hub") {
                     LabeledContent("Address", value: controller.serverURLString)
-                    Button("Change Hub") {
-                        Task {
-                            await controller.signOut()
-                            dismiss()
-                        }
-                    }
                 }
 
                 Section("Security") {

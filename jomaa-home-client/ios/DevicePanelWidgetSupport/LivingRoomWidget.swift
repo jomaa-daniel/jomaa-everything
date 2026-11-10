@@ -27,13 +27,16 @@ public struct LivingRoomEntry: TimelineEntry, Sendable {
 }
 
 public struct LiveWidgetStateLoader: Sendable {
+    private let configuration: ServerConfiguration?
     private let preferences: SharedPreferences
     private let sessionStore: any SessionStoring
 
     public init(
+        configuration: ServerConfiguration? = try? ServerConfiguration.bundled(),
         preferences: SharedPreferences = SharedPreferences(),
         sessionStore: (any SessionStoring)? = nil
     ) {
+        self.configuration = configuration
         self.preferences = preferences
         if let sessionStore {
             self.sessionStore = sessionStore
@@ -46,6 +49,10 @@ public struct LiveWidgetStateLoader: Sendable {
     }
 
     public func load() async -> LivingRoomEntry {
+        guard let configuration,
+              (try? await preferences.serverConfiguration()) == configuration else {
+            return LivingRoomEntry(date: Date(), state: nil, isAuthenticated: false)
+        }
         let target = await preferences.selectedTarget()
         let session = try? await sessionStore.load()
         return LivingRoomEntry(

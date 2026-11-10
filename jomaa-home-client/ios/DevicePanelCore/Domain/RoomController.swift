@@ -47,9 +47,9 @@ public final class RoomController: ObservableObject {
     @Published public private(set) var roomState: RoomState?
     @Published public private(set) var isPowerCommandInFlight = false
     @Published public private(set) var lastError: String?
-    @Published public private(set) var serverURLString = ""
     @Published public private(set) var matter = MatterPairingState()
 
+    private let configuredHub: ServerConfiguration
     private let api: any DevicePanelAPI
     private let sessionStore: any SessionStoring
     private let preferences: SharedPreferences
@@ -66,17 +66,23 @@ public final class RoomController: ObservableObject {
     private var lastFailedChanges: RoomChanges?
 
     public init(
+        configuredHub: ServerConfiguration,
         api: any DevicePanelAPI,
         sessionStore: any SessionStoring,
         preferences: SharedPreferences,
         reconcileDelays: [Duration] = [.seconds(3), .seconds(6), .seconds(10), .seconds(15)],
         resetPersistentStateOnStart: Bool = false
     ) {
+        self.configuredHub = configuredHub
         self.api = api
         self.sessionStore = sessionStore
         self.preferences = preferences
         self.reconcileDelays = reconcileDelays
         self.resetPersistentStateOnStart = resetPersistentStateOnStart
+    }
+
+    public var serverURLString: String {
+        configuredHub.baseURL.absoluteString
     }
 
     public var canRetryLastCommand: Bool {
@@ -97,40 +103,49 @@ public final class RoomController: ObservableObject {
             try? await sessionStore.clear()
             await preferences.reset()
         }
-        if let cached = await preferences.selectedTarget() {
-            selectedTarget = cached
-            if let state = cached.state {
-                roomState = state
-                confirmedState = state
-                connection = .stale
-            }
-        }
-        latestRevision = await preferences.currentRevision()
-
         do {
             let savedConfiguration = try await preferences.serverConfiguration()
-            serverURLString = savedConfiguration?.baseURL.absoluteString ?? ""
-            guard let configuration = savedConfiguration, let session = try await sessionStore.load() else {
+            // A stored origin only binds a session to its hub; it cannot override configuration.
+            guard savedConfiguration == configuredHub else {
+                try await sessionStore.clear()
+                await preferences.reset()
+                clearTarget()
                 authentication = .signedOut
                 return
             }
-            self.configuration = configuration
+            if let cached = await preferences.selectedTarget() {
+                selectedTarget = cached
+                if let state = cached.state {
+                    roomState = state
+                    confirmedState = state
+                    connection = .stale
+                }
+            }
+            latestRevision = await preferences.currentRevision()
+            guard let session = try await sessionStore.load() else {
+                authentication = .signedOut
+                return
+            }
+            self.configuration = configuredHub
             self.session = session
-            authentication = .signedIn(serverLabel: configuration.label)
+            authentication = .signedIn(serverLabel: configuredHub.label)
             await refresh()
         } catch {
+            try? await sessionStore.clear()
+            await preferences.reset()
+            clearTarget()
             authentication = .signedOut
             present(error)
         }
     }
 
-    public func signIn(serverURL: String, password: String) async {
+    public func signIn(password: String) async {
         guard authentication != .signingIn else { return }
         authentication = .signingIn
         lastError = nil
 
         do {
-            let configuration = try ServerConfiguration(urlString: serverURL)
+            let configuration = configuredHub
             let session = try await api.signIn(baseURL: configuration.baseURL, password: password)
             try await sessionStore.save(session)
             // Another hub has other devices, so forget the cached one.
@@ -140,7 +155,6 @@ public final class RoomController: ObservableObject {
                 clearTarget()
             }
             await preferences.saveServerConfiguration(configuration)
-            serverURLString = configuration.baseURL.absoluteString
             self.configuration = configuration
             self.session = session
             authentication = .signedIn(serverLabel: configuration.label)

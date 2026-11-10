@@ -1,9 +1,16 @@
 import Foundation
 
-/// The hub's address. https is accepted anywhere; plain http only for
-/// addresses on the home network, where the hub normally runs without TLS.
+/// The configured hub origin. Plain HTTP is supported for local test hubs.
 public struct ServerConfiguration: Equatable, Sendable {
     public let baseURL: URL
+
+    /// App and extension targets receive the same origin from their build configuration.
+    public static func bundled(in bundle: Bundle = .main) throws -> ServerConfiguration {
+        guard let address = bundle.object(forInfoDictionaryKey: "DevicePanelHubURL") as? String else {
+            throw DevicePanelError.invalidServerURL
+        }
+        return try ServerConfiguration(urlString: address)
+    }
 
     public init(urlString: String) throws {
         let trimmed = urlString.trimmingCharacters(in: .whitespacesAndNewlines)

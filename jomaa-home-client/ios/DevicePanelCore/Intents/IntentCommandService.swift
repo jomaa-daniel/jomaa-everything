@@ -3,11 +3,18 @@ import Foundation
 /// Sends commands to the last room or device the app showed, for widgets and
 /// Shortcuts.
 public actor IntentCommandService {
+    private let configuration: ServerConfiguration
     private let api: any DevicePanelAPI
     private let sessionStore: any SessionStoring
     private let preferences: SharedPreferences
 
-    public init(api: any DevicePanelAPI, sessionStore: any SessionStoring, preferences: SharedPreferences) {
+    public init(
+        configuration: ServerConfiguration,
+        api: any DevicePanelAPI,
+        sessionStore: any SessionStoring,
+        preferences: SharedPreferences
+    ) {
+        self.configuration = configuration
         self.api = api
         self.sessionStore = sessionStore
         self.preferences = preferences
@@ -50,7 +57,7 @@ public actor IntentCommandService {
 
     private func credentials() async throws -> (ServerConfiguration, Session) {
         guard
-            let configuration = try await preferences.serverConfiguration(),
+            try await preferences.serverConfiguration() == configuration,
             let session = try await sessionStore.load()
         else {
             throw DevicePanelError.authenticationRequired
@@ -69,12 +76,14 @@ public actor IntentCommandService {
 
 #if canImport(Security)
 enum IntentEnvironment {
-    static func commandService() -> IntentCommandService {
+    static func commandService() throws -> IntentCommandService {
         let accessGroup = Bundle.main.object(
             forInfoDictionaryKey: "DevicePanelKeychainAccessGroup"
         ) as? String
+        let configuration = try ServerConfiguration.bundled()
         return IntentCommandService(
-            api: HTTPDevicePanelAPI(),
+            configuration: configuration,
+            api: HTTPDevicePanelAPI(allowedHosts: [configuration.baseURL.host!]),
             sessionStore: KeychainSessionStore(accessGroup: accessGroup),
             preferences: SharedPreferences()
         )

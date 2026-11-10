@@ -59,8 +59,8 @@ targets:
       properties:
         CFBundleDisplayName: Device Panel
         DevicePanelKeychainAccessGroup: $(AppIdentifierPrefix)com.danieljomaa.devicepanel.shared
-        # The hub usually runs on the home network without TLS. Anywhere else
-        # the app only accepts https.
+        DevicePanelHubURL: https://$(DEVICE_PANEL_HUB_HOST)
+        # Local networking supports the isolated UI-test hub. Production uses HTTPS.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSLocalNetworkUsageDescription: Connect to your home hub to control lights and pair Matter devices.
@@ -106,6 +106,7 @@ targets:
       properties:
         CFBundleDisplayName: Device Panel
         DevicePanelKeychainAccessGroup: $(AppIdentifierPrefix)com.danieljomaa.devicepanel.shared
+        DevicePanelHubURL: https://$(DEVICE_PANEL_HUB_HOST)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
