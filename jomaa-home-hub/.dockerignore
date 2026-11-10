@@ -1,7 +1,8 @@
 data/
 .env
 config.json
-scripts/
+scripts/*
+!scripts/build-web.mjs
 docs/
 node_modules/
 dist/

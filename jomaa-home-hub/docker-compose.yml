@@ -13,6 +13,8 @@ services:
     environment:
       HUB_PASSWORD: ${HUB_PASSWORD:?set HUB_PASSWORD in .env}
       GOVEE_API_KEY: ${GOVEE_API_KEY:-}
+      HEALTH_DB_PATH: /health/health.sqlite
+      HEALTH_RETENTION_DAYS: ${HEALTH_RETENTION_DAYS:-30}
       # Bluetooth pairing for brand-new Wi-Fi/Thread devices: uncomment these,
       # the command and the dbus volume below. Without it, pair with networkOnly.
       # NOBLE_BINDINGS: dbus
@@ -22,6 +24,7 @@ services:
       # Matter fabric keys live here (the same folder the separate Matter
       # server container used). Back it up; losing it means re-pairing.
       - ./data/matter:/data
+      - ./data/health:/health
       # - /run/dbus:/run/dbus:ro
 
   cloudflared:

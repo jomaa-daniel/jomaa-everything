@@ -7,6 +7,8 @@ import { NotFoundError, type Desired, type Hub } from "./hub.js";
 import { Fields, JsonShapeError, parseJson } from "./json.js";
 import { clientIP, isHTTPS, LoginLimiter } from "./limiter.js";
 import type { Log } from "./log.js";
+import { HealthHttp } from "./health/http.js";
+import { HealthError, type HealthStore } from "./health/store.js";
 import { MatterError, MatterNotReadyError, type MatterAdmin } from "./matter/nodes.js";
 
 const authCookie = "hub_auth";
@@ -60,6 +62,7 @@ export class Api {
   readonly #limiter = new LoginLimiter();
   readonly #public: Route[];
   readonly #authed: Route[];
+  readonly #healthHttp: HealthHttp | undefined;
 
   /** password must be non-empty; clients exchange it for a session token at POST /api/login. */
   constructor(
@@ -67,8 +70,10 @@ export class Api {
     private readonly matter: MatterAdmin,
     password: string,
     private readonly log: Log,
+    health?: HealthStore,
   ) {
     this.#token = sessionToken(password);
+    this.#healthHttp = health ? new HealthHttp(health, log.with({ component: "device-health" })) : undefined;
     const route = (method: string, path: string, handler: Handler): Route => ({
       method,
       pattern: new RegExp("^" + path.replace(/\{\w+\}/g, "([^/]+)") + "$"),
@@ -101,7 +106,8 @@ export class Api {
       }
     });
     this.#dispatch(req, res, gone.signal).catch((err: unknown) => {
-      if (err instanceof HttpError) {
+      if (err instanceof HttpError || err instanceof HealthError) {
+        if (err instanceof HealthError && err.status === 429) res.setHeader("Retry-After", "15");
         writeError(res, err.status, err.message);
         return;
       }
@@ -116,6 +122,7 @@ export class Api {
 
   async #dispatch(req: IncomingMessage, res: ServerResponse, signal: AbortSignal): Promise<void> {
     const path = new URL(req.url ?? "/", "http://hub").pathname;
+    if (await this.#healthHttp?.handle(req, res, this.#authedRequest(req))) return;
     if (await this.#serve(this.#public, req, res, path, signal, false)) {
       return;
     }

@@ -252,3 +252,11 @@ and drive it against a fake Govee API. `npm test` runs just the Node tests.
 
 `node dist/main.js --no-matter` runs the hub without the Matter controller,
 for Govee-only homes and tests.
+
+## Wi-Fi device health
+
+The hub includes a device inventory, SQLite health history, and a management page at `/devices`.
+Pico W, Pico 2 W, and RP2040 boards with an ESP8285 UART radio report over verified HTTPS using individual credentials.
+Their first authenticated report registers them; missed reports mark them offline.
+See [Health monitoring](docs/health-monitoring.md) for setup, USB provisioning, API details, and tests.
+For imaging and checking a board from scratch, use [Pico imaging bench](../pico-imaging-bench/README.md).

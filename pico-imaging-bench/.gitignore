@@ -1,0 +1,6 @@
+data/
+__pycache__/
+*.pyc
+*.uf2
+*.der
+*.pem

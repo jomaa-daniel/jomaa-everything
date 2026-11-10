@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Device health · Jomaa Home</title>
+    <link rel="stylesheet" href="/devices/style.css" />
+    <script type="module" src="/devices/app.js"></script>
+  </head>
+  <body>
+    <header><a href="/devices">Jomaa Home</a><button id="logout" hidden>Sign out</button></header>
+    <main>
+      <div class="heading">
+        <div>
+          <h1>Device health</h1>
+          <p>Monitor and manage your Wi-Fi devices.</p>
+        </div>
+        <button id="add" class="primary" hidden>Add device</button>
+      </div>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <section id="login-section" hidden>
+        <form id="login-form" class="login">
+          <h2>Sign in to your hub</h2>
+          <label for="password">Hub password</label
+          ><input id="password" type="password" autocomplete="current-password" required /><button class="primary">
+            Sign in
+          </button>
+        </form>
+      </section>
+      <section id="inventory" hidden aria-label="Device inventory">
+        <div class="toolbar">
+          <p id="summary"></p>
+          <div class="filters">
+            <label class="sr-only" for="search">Search devices</label
+            ><input id="search" type="search" placeholder="Search devices" /><label class="sr-only" for="filter"
+              >Filter by status</label
+            ><select id="filter">
+              <option value="all">All statuses</option>
+              <option>online</option>
+              <option>degraded</option>
+              <option>offline</option>
+              <option>pending</option>
+              <option>revoked</option></select
+            ><button id="refresh">Refresh</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Device</th>
+                <th>Status</th>
+                <th>Last seen</th>
+                <th>Uptime</th>
+                <th>Signal</th>
+              </tr>
+            </thead>
+            <tbody id="device-rows"></tbody>
+          </table>
+        </div>
+        <p id="empty" hidden>No devices yet. Add a device to get started.</p>
+        <p class="muted" id="retention"></p>
+      </section>
+      <section id="detail" hidden aria-label="Selected device">
+        <div class="detail-heading">
+          <h2 id="detail-title"></h2>
+          <button id="close-detail">Close details</button>
+        </div>
+        <dl id="device-facts"></dl>
+        <form id="edit-form" class="edit">
+          <div><label for="device-name">Name</label><input id="device-name" required maxlength="80" /></div>
+          <div>
+            <label for="device-interval">Report interval (seconds)</label
+            ><input id="device-interval" type="number" min="15" max="3600" required />
+          </div>
+          <button class="primary">Save</button>
+        </form>
+        <div class="actions">
+          <button id="rotate">Replace credential</button><button id="revoke" class="danger">Revoke access</button>
+        </div>
+        <h3>Health history</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Received</th>
+                <th>Health</th>
+                <th>Free heap</th>
+                <th>Message</th>
+              </tr>
+            </thead>
+            <tbody id="log-rows"></tbody>
+          </table>
+        </div>
+        <p id="no-logs" hidden>No health reports received yet.</p>
+        <button id="more" hidden>Load older reports</button>
+      </section>
+    </main>
+    <dialog id="enroll-dialog">
+      <form id="enroll-form">
+        <h2>Add device</h2>
+        <label for="enroll-name">Name</label
+        ><input id="enroll-name" required maxlength="80" placeholder="Office Pico" /><label for="enroll-id"
+          >Device ID</label
+        ><input
+          id="enroll-id"
+          required
+          minlength="3"
+          maxlength="64"
+          pattern="[a-z0-9][a-z0-9_-]{2,63}"
+          placeholder="pico-office"
+        /><label for="enroll-interval">Report interval (seconds)</label
+        ><input id="enroll-interval" type="number" min="15" max="3600" value="60" required />
+        <p id="enroll-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button type="button" id="cancel-enroll">Cancel</button><button class="primary">Create credential</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog id="credential-dialog">
+      <h2>Device credential</h2>
+      <p>Save this credential now. It is shown only once.</p>
+      <label for="credential-value">Credential</label><input id="credential-value" readonly autocomplete="off" />
+      <div class="dialog-actions">
+        <button id="download-credential" class="primary">Download credential</button
+        ><button id="close-credential">Done</button>
+      </div>
+    </dialog>
+  </body>
+</html>

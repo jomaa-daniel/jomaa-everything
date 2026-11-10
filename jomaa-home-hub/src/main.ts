@@ -2,10 +2,13 @@
 // and serves the HTTP API.
 import { cliOptions } from "./cli.js";
 import { createServer } from "node:http";
+import { createServer as createTLSServer } from "node:https";
+import { readFileSync } from "node:fs";
 import { Api } from "./api.js";
 import { loadConfig, parseListen, usesDriver } from "./config.js";
 import { GoveeClient, defaultBaseURL } from "./govee.js";
 import { Hub } from "./hub.js";
+import { HealthStore } from "./health/store.js";
 import { stderrLog, type Log } from "./log.js";
 import { MatterNotReadyError, type MatterAdmin, type MatterNodes } from "./matter/nodes.js";
 
@@ -45,32 +48,51 @@ async function startMatter(log: Log): Promise<MatterService> {
 async function run(log: Log): Promise<void> {
   const cfg = loadConfig(cliOptions.config);
   const password = process.env["HUB_PASSWORD"] ?? "";
-  if (password === "") {
-    throw new Error("HUB_PASSWORD is not set");
-  }
+  if (password === "") throw new Error("HUB_PASSWORD is not set");
   const goveeKey = process.env["GOVEE_API_KEY"] ?? "";
   if (usesDriver(cfg, "govee") && goveeKey === "") {
     throw new Error("config has Govee devices but GOVEE_API_KEY is not set");
   }
   const { host, port } = parseListen(cfg.listen);
-  // Handled from the start, so a signal while starting still stops the controller cleanly.
   const shutdown = new Promise<void>((resolve) => {
     process.once("SIGINT", resolve);
     process.once("SIGTERM", resolve);
   });
   const matter = await startMatter(log);
+  let health: HealthStore | undefined;
+  let cleanup: ReturnType<typeof setInterval> | undefined;
   try {
-    // GOVEE_BASE_URL points the hub at a fake Govee API in tests.
     const govee = new GoveeClient(goveeKey, process.env["GOVEE_BASE_URL"] || defaultBaseURL);
-    const api = new Api(Hub.build(cfg, govee, matter), matter, password, log);
-    // Pairing can take five minutes.
-    const server = createServer({ requestTimeout: 6 * 60_000, headersTimeout: 10_000 }, api.handle);
+    const store = new HealthStore(
+      process.env["HEALTH_DB_PATH"] ?? "data/health.sqlite",
+      Number(process.env["HEALTH_RETENTION_DAYS"] ?? 30),
+    );
+    health = store;
+    const api = new Api(Hub.build(cfg, govee, matter), matter, password, log, store);
+    const cert = process.env["HUB_TLS_CERT"];
+    const key = process.env["HUB_TLS_KEY"];
+    if (Boolean(cert) !== Boolean(key)) throw new Error("set both HUB_TLS_CERT and HUB_TLS_KEY");
+    const options = { requestTimeout: 6 * 60_000, headersTimeout: 10_000 };
+    const server =
+      cert && key
+        ? createTLSServer(
+            { ...options, cert: readFileSync(cert), key: readFileSync(key), minVersion: "TLSv1.2" },
+            api.handle,
+          )
+        : createServer(options, api.handle);
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(host === null ? { port } : { host, port }, resolve);
     });
     log.info("hub listening", { addr: cfg.listen, devices: cfg.devices.length, rooms: cfg.rooms.length });
-
+    cleanup = setInterval(() => {
+      try {
+        store.prune();
+      } catch (err) {
+        log.error("health log retention failed", { err });
+      }
+    }, 60 * 60_000);
+    cleanup.unref();
     await shutdown;
     log.info("shutting down", {});
     const closed = new Promise<void>((resolve) => {
@@ -84,8 +106,12 @@ async function run(log: Log): Promise<void> {
     }, 10_000).unref();
     await closed;
   } finally {
-    // On every exit, including a failed listen, so the Matter storage is flushed.
-    await matter.stop();
+    if (cleanup) clearInterval(cleanup);
+    try {
+      health?.close();
+    } finally {
+      await matter.stop();
+    }
   }
 }
 
