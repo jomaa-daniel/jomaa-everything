@@ -173,23 +173,34 @@ def activate(release: Path, deploy_dir: Path) -> None:
         raise
 
 
+def deploy_service(cloudflared: Path, config: Path, hostname: str) -> str:
+    """Ask cloudflared which service a /deploy request reaches; this also validates the file."""
+    output = run(str(cloudflared), "--config", str(config), "tunnel", "ingress", "rule",
+                 f"https://{hostname}{WEBHOOK_PATH}", capture=True)
+    match = re.search(r"^\s*service: (\S+)\s*$", output, re.MULTILINE)
+    return match.group(1) if match else ""
+
+
 def configure_tunnel(source: Path, hostname: str) -> None:
-    """Add one path-specific rule ahead of the existing hub route."""
+    """Make /deploy reach the receiver, adding a path-specific rule ahead of the hub route if needed."""
     from cloudflare import Settings
 
     settings = Settings.from_env({"CLOUDFLARE_HOSTNAME": hostname})
     settings.require_configured()
     config = source / "data/native/tunnel.yml"
     cloudflared = source / "data/native/cloudflared"
+    receiver = f"http://127.0.0.1:{WEBHOOK_PORT}"
+    # cloudflared uses the first matching rule, so only it can say whether the route is reachable.
+    if deploy_service(cloudflared, config, settings.hostname) == receiver:
+        return
     original = config.read_text()
     marker = "# jomaa-deployment-webhook"
-    # Other rules may have been added above this one since it was written.
     rule = (f"  {marker}\n  - hostname: {json.dumps(settings.hostname)}\n"
-            f"    path: ^{WEBHOOK_PATH}$\n    service: http://127.0.0.1:{WEBHOOK_PORT}\n")
+            f"    path: ^{WEBHOOK_PATH}$\n    service: {receiver}\n")
     if marker in original:
-        if rule in original:
-            return
         old_rule = rule.replace(f"path: ^{WEBHOOK_PATH}$", "path: ^/__deployment$")
+        if rule in original:
+            raise DeployError("a tunnel rule above the deployment route catches /deploy first; move the route up")
         if old_rule not in original:
             raise DeployError("existing deployment tunnel rule differs from requested settings")
         updated = original.replace(old_rule, rule, 1)
@@ -201,7 +212,8 @@ def configure_tunnel(source: Path, hostname: str) -> None:
         temp = Path(f.name)
         f.write(updated)
     try:
-        run(str(cloudflared), "--config", str(temp), "tunnel", "ingress", "validate")
+        if deploy_service(cloudflared, temp, settings.hostname) != receiver:
+            raise DeployError("a tunnel rule above the deployment route catches /deploy first; move the route up")
         os.replace(temp, config)
         try:
             run("systemctl", "--user", "restart", "jomaa-cloudflared.service")

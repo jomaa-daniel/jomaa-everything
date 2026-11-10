@@ -4,17 +4,38 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import subprocess
 import tempfile
 import threading
 import time
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from unittest import mock
 
 import deploy_native as deploy
+
+
+def fake_cloudflared(*args, capture=False, **kwargs):
+    """Answer `tunnel ingress rule URL` like cloudflared: the first rule whose hostname and path match."""
+    if "rule" not in args:
+        return ""
+    url = urllib.parse.urlsplit(args[-1])
+    config = Path(args[args.index("--config") + 1]).read_text()
+    rules = [{}]
+    for line in config.split("ingress:\n", 1)[1].splitlines():
+        key, _, value = line.strip().removeprefix("- ").partition(": ")
+        if line.lstrip().startswith("- ") and rules[-1]:
+            rules.append({})
+        if key in ("hostname", "path", "service"):
+            rules[-1][key] = value.strip('"')
+    for number, rule in enumerate(rules):
+        if rule.get("hostname", url.hostname) == url.hostname and re.search(rule.get("path", ""), url.path):
+            return f"Matched rule #{number}\n\tservice: {rule['service']}"
+    return ""
 
 
 class DeploymentTest(unittest.TestCase):
@@ -164,19 +185,24 @@ class DeploymentTest(unittest.TestCase):
         verified.assert_called_once_with("example/hub", self.second, 12, 1)
         applied.assert_called_once_with(self.source, self.deploy_dir, "example/hub", self.second)
 
+    def configure(self, text):
+        """Run configure_tunnel on a tunnel.yml holding text; return the restart count."""
+        config = self.source / "data/native/tunnel.yml"
+        config.write_text(text)
+        with mock.patch.object(deploy, "run", side_effect=fake_cloudflared) as run:
+            deploy.configure_tunnel(self.source, "hub.example.org")
+        return sum("systemctl" in call.args for call in run.call_args_list)
+
     def test_tunnel_rule_is_added_once_without_replacing_existing_ingress(self):
         config = self.source / "data/native/tunnel.yml"
         original = 'tunnel: fixture\ningress:\n  - hostname: "hub.example.org"\n    service: http://127.0.0.1:8080\n  - service: http_status:404\n'
-        config.write_text(original)
-        with mock.patch.object(deploy, "run") as run:
-            deploy.configure_tunnel(self.source, "hub.example.org")
-            updated = config.read_text()
-            deploy.configure_tunnel(self.source, "hub.example.org")
+        self.assertEqual(self.configure(original), 1)
+        updated = config.read_text()
+        self.assertEqual(self.configure(updated), 0)
         self.assertEqual(config.read_text(), updated)
         self.assertIn("path: ^/deploy$", updated)
         self.assertIn('service: http://127.0.0.1:8080', updated)
         self.assertLess(updated.index("/deploy"), updated.index("http://127.0.0.1:8080"))
-        self.assertEqual(run.call_count, 2)
 
     def test_existing_deployment_route_is_migrated(self):
         config = self.source / "data/native/tunnel.yml"
@@ -184,11 +210,8 @@ class DeploymentTest(unittest.TestCase):
                '  - hostname: "hub.example.org"\n    path: ^/__deployment$\n'
                '    service: http://127.0.0.1:8091\n  - hostname: "hub.example.org"\n'
                '    service: http://127.0.0.1:8080\n  - service: http_status:404\n')
-        config.write_text(old)
-        with mock.patch.object(deploy, "run") as run:
-            deploy.configure_tunnel(self.source, "hub.example.org")
+        self.assertEqual(self.configure(old), 1)
         self.assertEqual(config.read_text(), old.replace("^/__deployment$", "^/deploy$"))
-        self.assertEqual(run.call_count, 2)
 
     def test_existing_deployment_route_below_another_rule_is_kept(self):
         config = self.source / "data/native/tunnel.yml"
@@ -196,23 +219,30 @@ class DeploymentTest(unittest.TestCase):
                     '    service: http://127.0.0.1:8082\n  # jomaa-deployment-webhook\n'
                     '  - hostname: "hub.example.org"\n    path: ^/deploy$\n'
                     '    service: http://127.0.0.1:8091\n  - service: http_status:404\n')
-        config.write_text(original)
-        with mock.patch.object(deploy, "run") as run:
-            deploy.configure_tunnel(self.source, "hub.example.org")
+        self.assertEqual(self.configure(original), 0)
         self.assertEqual(config.read_text(), original)
-        run.assert_not_called()
+
+    def test_deployment_route_below_the_hub_route_is_refused(self):
+        config = self.source / "data/native/tunnel.yml"
+        hub = '  - hostname: "hub.example.org"\n    service: http://127.0.0.1:8080\n'
+        for path in ("^/deploy$", "^/__deployment$"):
+            with self.subTest(path=path):
+                original = ('tunnel: fixture\ningress:\n' + hub + '  # jomaa-deployment-webhook\n'
+                            f'  - hostname: "hub.example.org"\n    path: {path}\n'
+                            '    service: http://127.0.0.1:8091\n  - service: http_status:404\n')
+                with self.assertRaisesRegex(deploy.DeployError, "catches /deploy first"):
+                    self.configure(original)
+                self.assertEqual(config.read_text(), original)
+                self.assertEqual(sorted(p.name for p in config.parent.iterdir()), ["tunnel.yml"])
 
     def test_conflicting_existing_deployment_route_is_preserved(self):
         config = self.source / "data/native/tunnel.yml"
         original = ('ingress:\n  # jomaa-deployment-webhook\n'
                     '  - hostname: "another.example.org"\n    path: ^/__deployment$\n'
                     '    service: http://127.0.0.1:8091\n  - service: http_status:404\n')
-        config.write_text(original)
-        with mock.patch.object(deploy, "run") as run:
-            with self.assertRaisesRegex(deploy.DeployError, "differs from requested"):
-                deploy.configure_tunnel(self.source, "hub.example.org")
+        with self.assertRaisesRegex(deploy.DeployError, "differs from requested"):
+            self.configure(original)
         self.assertEqual(config.read_text(), original)
-        run.assert_not_called()
 
     def test_old_verified_run_cannot_roll_back_newer_deployment(self):
         deploy.make_release(self.repo, self.first, self.source, self.deploy_dir)
