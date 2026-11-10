@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 from pathlib import Path
 import sys
 
@@ -89,6 +90,12 @@ def main(argv=None):
         # Verify administrator access before erasing hardware, including when a UI credential is supplied.
         client = HubClient(prepared, args.hub_password_file)
         client.request("/api/devices/" + args.id)
+        # Rotation preserves the existing UI interval; use the requested bench interval for this run.
+        client.request("/api/devices/" + args.id, {"name": args.name, "intervalSeconds": args.interval}, method="PATCH")
+        config_file = prepared / "device_config.json"
+        config = json.loads(config_file.read_text())
+        config["interval_seconds"] = args.interval
+        config_file.write_text(json.dumps(config, indent=2) + "\n")
         print("Flashing trusted firmware onto the selected BOOTSEL volume.", flush=True)
         flash(args.uf2, args.sha256, args.bootsel_volume, args.chip)
         wait_for_port(args.port)

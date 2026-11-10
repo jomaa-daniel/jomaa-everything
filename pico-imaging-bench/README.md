@@ -69,6 +69,9 @@ selection are explicit; the script never guesses which attached board to image.
 Use `--rotate` for the already-enrolled dev Pico to replace its credential while retaining history. Omit it
 for a new ID. Alternatively, pass a private UI credential JSON with `--credential-file`; administrator
 access is still needed to verify persisted reports. Choose a new run directory for each run.
+Execution applies the requested name and report interval to the hub, including when replacing an existing
+credential. The default 15-second interval keeps three-report verification within the bench timeout;
+change the ongoing interval afterward through `/devices` if desired.
 
 The run directory contains `prepared/`, `image.json` with board identity and firmware digest, and
 `report.json` with the observed health result. A run passes only after new reports with a Wi-Fi IP and

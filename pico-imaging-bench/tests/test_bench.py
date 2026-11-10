@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import io
+import json
 from pathlib import Path
 import struct
 import sys
@@ -91,6 +92,34 @@ class FlashTests(unittest.TestCase):
             image_and_test.fresh_filesystem("/dev/selected", "expected", "esp8285")
         self.assertEqual(files, {})
         vfs.mount.assert_called_once()
+
+    def test_imaging_a_rotated_device_replaces_its_long_interval_before_install(self):
+        run_dir = self.root / "run"
+        module = Mock()
+        def prepare(arguments):
+            directory = Path(arguments[arguments.index("--output") + 1])
+            directory.mkdir(mode=0o700)
+            common.private_json(directory / "device_config.json", {"interval_seconds": 3600})
+            return 0
+        module.main.side_effect = prepare
+        observed = []
+        def install(port, directory):
+            observed.append(json.loads((directory / "device_config.json").read_text())["interval_seconds"])
+        module.install.side_effect = install
+        result = {"deviceId": "pico-test", "status": "online", "reportsAccepted": 3,
+                  "latest": {"ip": "192.168.1.240"}}
+        args = ["--uf2", str(self.source), "--sha256", self.digest, "--bootsel-volume", str(self.volume),
+                "--port", "/dev/selected", "--id", "pico-test", "--name", "Test Pico", "--ssid", "Test Wi-Fi",
+                "--ca-cert", str(self.source), "--run-dir", str(run_dir), "--rotate", "--execute"]
+        with patch.object(image_and_test, "provisioner", return_value=module), \
+                patch.object(image_and_test.importlib.util, "find_spec", return_value=object()), \
+                patch.object(image_and_test, "HubClient"), patch.object(image_and_test, "flash"), \
+                patch.object(image_and_test, "wait_for_port"), \
+                patch.object(image_and_test, "fresh_filesystem", return_value={"uniqueId": "expected"}), \
+                patch.object(image_and_test, "verify_reports", return_value=result), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(image_and_test.main(args), 0)
+        self.assertEqual(observed, [15])
 
 
 def entry(id, boot="boot-a", sequence=0):

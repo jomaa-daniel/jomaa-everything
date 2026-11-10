@@ -84,12 +84,12 @@ class HubClient:
         password = module.secret(password_file, "Hub password for report verification: ")
         self.token = self.request("/api/login", {"password": password})["token"]
 
-    def request(self, path: str, body=None):
+    def request(self, path: str, body=None, method=None):
         headers = {"User-Agent": "jomaa-home-hub/pico-imaging-bench", "Content-Type": "application/json"}
         if self.token:
             headers["Authorization"] = "Bearer " + self.token
         request = urllib.request.Request(self.origin + path,
-                                         None if body is None else json.dumps(body).encode(), headers)
+                                         None if body is None else json.dumps(body).encode(), headers, method=method)
         try:
             with self.opener.open(request, timeout=15) as response:
                 result = json.load(response)
