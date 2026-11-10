@@ -78,8 +78,6 @@ class HubApiTest {
         val targets = api.targets(base, "t")
         assertEquals("Bearer t", server.takeRequest().getHeader("Authorization"))
         assertTrue(targets[0].isRoom)
-        assertEquals(listOf("lamp"), targets[0].members)
-        assertNull(targets[1].members)
         assertEquals(Features.POWER_ONLY, targets[1].features)
 
         json(200, """{"state":{"on":true,"brightness":40,"colorTemperaturePct":10},"devices":{"lamp":{"on":true,"brightness":40,"colorTemperaturePct":10}},"failed":{}}""")

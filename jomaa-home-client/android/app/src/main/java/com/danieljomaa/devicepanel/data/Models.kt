@@ -22,14 +22,12 @@ data class Features(
 
 /**
  * A device or room the hub controls. kind is "room" or the driver behind it.
- * Only rooms have members; it is null for a device.
  */
 @Serializable
 data class Target(
     val id: String,
     val name: String,
     val kind: String,
-    val members: List<String>?,
     val features: Features,
 ) {
     val isRoom: Boolean get() = kind == "room"

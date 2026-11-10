@@ -20,19 +20,17 @@ public struct Features: Codable, Equatable, Sendable {
 }
 
 /// A device or room the hub controls. `kind` is "room" or the driver behind
-/// a single device. Only rooms have `members`; it is nil for a device.
+/// a single device.
 public struct Target: Codable, Equatable, Identifiable, Sendable {
     public let id: String
     public let name: String
     public let kind: String
-    public let members: [String]?
     public let features: Features
 
-    public init(id: String, name: String, kind: String, members: [String]?, features: Features) {
+    public init(id: String, name: String, kind: String, features: Features) {
         self.id = id
         self.name = name
         self.kind = kind
-        self.members = members
         self.features = features
     }
 

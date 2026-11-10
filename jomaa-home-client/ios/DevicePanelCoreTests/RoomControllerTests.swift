@@ -8,17 +8,15 @@ final class RoomControllerTests: XCTestCase {
         id: "living-room",
         name: "Living Room",
         kind: "room",
-        members: ["lamp-a", "lamp-b"],
         features: Features(brightness: true, colorTemperature: true, color: true)
     )
     private static let lamp = Target(
         id: "lamp-a",
         name: "Lamp A",
         kind: "govee",
-        members: nil,
         features: Features(brightness: true, colorTemperature: true, color: true)
     )
-    private static let plug = Target(id: "plug", name: "Plug", kind: "matter", members: nil, features: .powerOnly)
+    private static let plug = Target(id: "plug", name: "Plug", kind: "matter", features: .powerOnly)
 
     func testStartsSignedOutWithoutStoredSession() async throws {
         let controller = try await makeController(api: FakeAPI())

@@ -76,9 +76,7 @@ final class HTTPDevicePanelAPITests: XCTestCase {
 
         XCTAssertEqual(targets.map(\.id), ["living-room", "plug"])
         XCTAssertTrue(targets[0].isRoom)
-        XCTAssertEqual(targets[0].members, ["lamp-a", "lamp-b"])
         XCTAssertEqual(targets[0].features, Features(brightness: true, colorTemperature: true, color: true))
-        XCTAssertNil(targets[1].members)
         XCTAssertEqual(targets[1].features, .powerOnly)
         XCTAssertEqual(state.state, try LightState(on: true, brightness: 40, colorTemperaturePct: 10))
         XCTAssertEqual(state.failed, ["lamp-b": "offline"])
