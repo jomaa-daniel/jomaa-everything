@@ -10,21 +10,30 @@ their own hostnames through the hub's Cloudflare tunnel on jerry.
 ## Device panel
 
 `device-panel/` contains the web light controller at
-https://jomaa.org/lights. It controls rooms and individual devices with
-power, brightness, white temperature, and color settings, shares the hub's
-administrator sign-in, and reports device failures in one banner.
+https://jomaa.org/lights. It controls rooms with power, brightness, white
+temperature, and color settings, and shares the hub's administrator sign-in.
+The session stays signed in until it expires.
 
-The toolbar has a button for each room in the hub configuration; tapping
-buttons selects one or more rooms without changing their lights, and clearing
-every room disables the controls. The device picker selects one device.
+The screen fills the viewport from top to bottom:
 
-A large power card names the selection and shows its state ("On · 50%",
-"1 of 2 on", "Off"). When on, it glows with the light's color or white
-temperature at its brightness. The other controls are 10/50/75/100%
-brightness presets, a warm-to-cool temperature slider, and red, orange, and
-two custom color swatches. The pencil on a custom swatch edits it; custom
-colors are saved in the browser. On wide and landscape screens the power card
-sits left of the controls; on portrait phones it sits above them.
+- The top row shows the room name on the left and a dot for each device on
+  the right: green when the device answered, red when it failed or is
+  unreachable, and yellow after a command until that device reaches the
+  requested state. Short notes such as "1 of 2 on" or "last known" sit beside
+  the dots.
+- A round power button glows with the light's color or white temperature at
+  its brightness.
+- The remaining height is split evenly between 10/50/75/100% brightness
+  presets, a warm-to-cool temperature track, and red, orange, and two custom
+  color circles. Each control fills its band.
+- With more than one room, the bottom edge is a T split with one half per
+  room (Living Room and Bedroom). Without rooms, it lists devices.
+
+The pencil on a custom circle opens a grid of colors; picking one saves it in
+the browser and applies it. After a command the panel re-reads the hub about
+once a second until every device confirms or ten seconds pass, then names
+devices that didn't get there. It also re-reads the hub when it becomes
+visible and every minute.
 
 The hub serves this panel with its API. `jomaa-home-hub/scripts/build-web.mjs`
 copies the panel and its styles into the hub build. Run

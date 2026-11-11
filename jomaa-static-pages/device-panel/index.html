@@ -45,47 +45,6 @@
         <button id="reconnect" class="text-button" hidden>Try again</button>
       </section>
 
-      <header id="toolbar" class="toolbar" hidden>
-        <div id="picker" class="picker" hidden>
-          <select id="target-picker" aria-label="Device"></select>
-          <svg class="picker-chevron" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="m6 9 6 6 6-6" />
-          </svg>
-        </div>
-        <div
-          id="rooms"
-          class="rooms"
-          role="group"
-          aria-label="Rooms"
-          hidden
-        ></div>
-        <div class="toolbar-actions">
-          <button
-            id="refresh"
-            class="icon-button"
-            aria-label="Refresh"
-            title="Refresh"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M20 7v5h-5M4 17v-5h5" />
-              <path d="M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1" />
-            </svg>
-          </button>
-          <button
-            id="logout"
-            class="icon-button"
-            aria-label="Sign out"
-            title="Sign out"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M10 4H4v16h6M14 8l4 4-4 4M9 12h12" />
-            </svg>
-          </button>
-        </div>
-      </header>
-
-      <p id="notice" class="notice" hidden></p>
-
       <section
         id="controller"
         class="controller"
@@ -93,185 +52,163 @@
         aria-describedby="target-description"
         hidden
       >
-        <h2 id="target-title" class="sr-only"></h2>
+        <header class="status-row">
+          <h2 id="target-title" class="room-title"></h2>
+          <div class="status">
+            <span id="power-state" class="status-note"></span>
+            <span id="device-dots" class="dots" role="img" hidden></span>
+          </div>
+        </header>
         <p id="target-description" class="sr-only"></p>
-        <fieldset id="controls" class="controls">
-          <legend class="sr-only">Light settings</legend>
-          <button
-            id="power-toggle"
-            class="power"
-            role="switch"
-            aria-checked="false"
-            aria-labelledby="power-name"
-            aria-describedby="power-state"
-          >
-            <span class="power-glow" aria-hidden="true"></span>
-            <span class="power-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
+
+        <div
+          id="controls"
+          class="controls"
+          role="group"
+          aria-label="Light settings"
+        >
+          <div class="power-area">
+            <button
+              id="power-toggle"
+              class="power"
+              role="switch"
+              aria-checked="false"
+              aria-labelledby="target-title"
+              aria-describedby="power-state"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 3v8" />
                 <path d="M6.3 6.8a8 8 0 1 0 11.4 0" />
               </svg>
-            </span>
-            <span class="power-text">
-              <span id="power-name" class="power-name"></span>
-              <span id="power-state" class="power-state"></span>
-            </span>
-          </button>
+            </button>
+          </div>
 
-          <div class="settings">
-            <div
-              id="brightness-setting"
-              class="setting"
-              role="group"
-              aria-labelledby="brightness-title"
-              hidden
-            >
-              <div class="setting-head">
-                <h3 id="brightness-title">Brightness</h3>
-                <span id="brightness-value" class="setting-value"></span>
-              </div>
-              <div class="levels">
-                <button
-                  class="level-btn"
-                  data-brightness="10"
-                  aria-pressed="false"
-                >
-                  10%
-                </button>
-                <button
-                  class="level-btn"
-                  data-brightness="50"
-                  aria-pressed="false"
-                >
-                  50%
-                </button>
-                <button
-                  class="level-btn"
-                  data-brightness="75"
-                  aria-pressed="false"
-                >
-                  75%
-                </button>
-                <button
-                  class="level-btn"
-                  data-brightness="100"
-                  aria-pressed="false"
-                >
-                  100%
-                </button>
-              </div>
+          <div id="brightness-setting" class="band" hidden>
+            <div class="levels" role="group" aria-label="Brightness">
+              <button
+                class="level-btn"
+                data-brightness="10"
+                aria-pressed="false"
+              >
+                10%
+              </button>
+              <button
+                class="level-btn"
+                data-brightness="50"
+                aria-pressed="false"
+              >
+                50%
+              </button>
+              <button
+                class="level-btn"
+                data-brightness="75"
+                aria-pressed="false"
+              >
+                75%
+              </button>
+              <button
+                class="level-btn"
+                data-brightness="100"
+                aria-pressed="false"
+              >
+                100%
+              </button>
             </div>
+          </div>
 
-            <div
-              id="temperature-setting"
-              class="setting temperature"
-              role="group"
-              aria-labelledby="temperature-title"
-              hidden
-            >
-              <div class="setting-head">
-                <h3 id="temperature-title">Temperature</h3>
-                <output
-                  id="temperature-value"
-                  class="setting-value"
-                  for="temperature"
-                ></output>
-              </div>
-              <div id="temperature-wrap" class="slider-wrap">
-                <input
-                  id="temperature"
-                  class="slider"
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="1"
-                  value="50"
-                  aria-labelledby="temperature-title"
-                />
-                <span class="slider-thumb" aria-hidden="true"></span>
-              </div>
-              <div class="slider-ends" aria-hidden="true">
-                <span>Warm</span><span>Cool</span>
-              </div>
+          <div id="temperature-setting" class="band temperature" hidden>
+            <div id="temperature-wrap" class="slider-wrap">
+              <input
+                id="temperature"
+                class="slider"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value="50"
+                aria-label="Color temperature, warm to cool"
+              />
+              <span class="slider-end warm" aria-hidden="true">Warm</span>
+              <span class="slider-end cool" aria-hidden="true">Cool</span>
+              <span class="slider-thumb" aria-hidden="true"></span>
             </div>
+          </div>
 
-            <div
-              id="color-setting"
-              class="setting"
-              role="group"
-              aria-labelledby="color-title"
-              hidden
-            >
-              <div class="setting-head">
-                <h3 id="color-title">Color</h3>
+          <div id="color-setting" class="band" hidden>
+            <div class="swatches" role="group" aria-label="Color">
+              <div class="swatch-cell">
+                <button
+                  class="swatch"
+                  data-color="#ff0000"
+                  aria-label="Red"
+                  aria-pressed="false"
+                ></button>
               </div>
-              <div class="swatches">
-                <div class="swatch-cell">
-                  <button
-                    class="swatch"
-                    data-color="#ff0000"
-                    aria-label="Red"
-                    aria-pressed="false"
-                  ></button>
-                </div>
-                <div class="swatch-cell">
-                  <button
-                    class="swatch"
-                    data-color="#ff8000"
-                    aria-label="Orange"
-                    aria-pressed="false"
-                  ></button>
-                </div>
-                <div class="swatch-cell">
-                  <button
-                    class="swatch"
-                    data-custom="custom-1"
-                    aria-label="Custom color 1"
-                    aria-pressed="false"
-                  ></button>
-                  <button
-                    class="swatch-edit"
-                    data-edit="custom-1"
-                    aria-label="Edit custom color 1"
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M16 4l4 4L9 19H5v-4z" />
-                    </svg>
-                  </button>
-                </div>
-                <div class="swatch-cell">
-                  <button
-                    class="swatch"
-                    data-custom="custom-2"
-                    aria-label="Custom color 2"
-                    aria-pressed="false"
-                  ></button>
-                  <button
-                    class="swatch-edit"
-                    data-edit="custom-2"
-                    aria-label="Edit custom color 2"
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M16 4l4 4L9 19H5v-4z" />
-                    </svg>
-                  </button>
-                </div>
+              <div class="swatch-cell">
+                <button
+                  class="swatch"
+                  data-color="#ff8000"
+                  aria-label="Orange"
+                  aria-pressed="false"
+                ></button>
+              </div>
+              <div class="swatch-cell">
+                <button
+                  class="swatch"
+                  data-custom="custom-1"
+                  aria-label="Custom color 1"
+                  aria-pressed="false"
+                ></button>
+                <button
+                  class="swatch-edit"
+                  data-edit="custom-1"
+                  aria-label="Edit custom color 1"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M16 4l4 4L9 19H5v-4z" />
+                  </svg>
+                </button>
+              </div>
+              <div class="swatch-cell">
+                <button
+                  class="swatch"
+                  data-custom="custom-2"
+                  aria-label="Custom color 2"
+                  aria-pressed="false"
+                ></button>
+                <button
+                  class="swatch-edit"
+                  data-edit="custom-2"
+                  aria-label="Edit custom color 2"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M16 4l4 4L9 19H5v-4z" />
+                  </svg>
+                </button>
               </div>
             </div>
           </div>
-        </fieldset>
+        </div>
+        <p id="notice" class="notice" role="alert" hidden></p>
       </section>
 
+      <nav id="tabs" class="rooms" aria-label="Rooms" hidden>
+        <div id="tab-list" class="room-list"></div>
+      </nav>
+
       <dialog id="color-dialog" aria-labelledby="custom-title">
-        <form id="color-form">
-          <h2 id="custom-title">Custom color</h2>
-          <input id="color" type="color" aria-labelledby="custom-title" />
-          <div class="dialog-actions">
-            <button id="cancel-color" class="secondary" type="button">
-              Cancel</button
-            ><button class="primary" autofocus>Save</button>
-          </div>
-        </form>
+        <h2 id="custom-title">Custom color</h2>
+        <div
+          id="color-grid"
+          class="color-grid"
+          role="group"
+          aria-labelledby="custom-title"
+        ></div>
+        <div class="dialog-actions">
+          <button id="cancel-color" class="secondary" type="button">
+            Cancel
+          </button>
+        </div>
       </dialog>
     </main>
   </body>

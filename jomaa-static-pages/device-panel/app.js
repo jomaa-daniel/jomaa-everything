@@ -6,6 +6,8 @@
  * @typedef {{ devices: Record<string, LightState>, failed: Record<string, string> }} Observation
  * @typedef {{ on?: boolean, brightness?: number, colorTemperaturePct?: number, color?: string }} Changes
  * @typedef {{ text: string, error: boolean }} Message
+ * @typedef {{ key: string, name: string, ids: string[] }} Tab
+ * @typedef {"online" | "offline" | "pending" | "unknown"} DeviceStatus
  */
 
 const $ = (id) => document.getElementById(id);
@@ -17,8 +19,42 @@ const TEMPERATURE_STOPS = [
   [100, [222, 234, 255]],
 ];
 const CUSTOM_COLORS_KEY = "device-panel.custom-colors";
-const DEFAULT_CUSTOM_COLORS = { "custom-1": "#667eea", "custom-2": "#764ba2" };
+const DEFAULT_CUSTOM_COLORS = { "custom-1": "#007aff", "custom-2": "#af52de" };
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+const REFRESH_INTERVAL_MS = 60_000;
+const CONFIRM_INTERVAL_MS = 1_000;
+const CONFIRM_ATTEMPTS = 10;
+/** Percent points within which a device counts as having reached a value. */
+const TOLERANCE = 2;
+const NOT_REACHED = "didn't reach the requested state";
+
+/** Colors offered for the custom swatches: vivid hues, then softer tints. */
+const PALETTE = [
+  "#ff3b30",
+  "#ff6b2c",
+  "#ff9500",
+  "#ffcc00",
+  "#c7e600",
+  "#34c759",
+  "#00c7a3",
+  "#32ade6",
+  "#007aff",
+  "#5856d6",
+  "#af52de",
+  "#ff2d92",
+  "#ff8a80",
+  "#ffab80",
+  "#ffc680",
+  "#ffe680",
+  "#e3f280",
+  "#8fe0a4",
+  "#80e3d1",
+  "#99d6f2",
+  "#80bcff",
+  "#aaa9eb",
+  "#d7a8ee",
+  "#ff96c8",
+];
 
 class HttpError extends Error {
   /** @param {number} status @param {string} message @param {Record<string, string>} failed */
@@ -41,11 +77,18 @@ const app = {
   session: 0,
   /** Bumps when the selection or target list changes; older reads are dropped. */
   view: 0,
+  /** Bumps on every command; older confirmation loops stop. */
+  commandToken: 0,
   targets: /** @type {Map<string, Target>} */ (new Map()),
   targetsLoaded: false,
+  tabs: /** @type {Tab[]} */ ([]),
   selected: /** @type {string[]} */ ([]),
   selectionInitialized: false,
   observation: /** @type {Observation | null} */ (null),
+  /** Devices waiting to reach the state of the last command. */
+  pending: /** @type {Set<string>} */ (new Set()),
+  /** Devices that failed to answer or to reach the last command, with reasons. */
+  failed: /** @type {Record<string, string>} */ ({}),
   stale: false,
   loading: false,
   busy: false,
@@ -187,7 +230,10 @@ async function api(path, method = "GET", body = null) {
 const targetPath = (id, action) =>
   `/api/targets/${encodeURIComponent(id)}/${action}`;
 
-/** Reads every target's state and merges their devices and failures. */
+/**
+ * Reads every target's state and merges their devices and failures. A target
+ * whose read fails marks each of its devices as failed.
+ */
 async function readState(ids) {
   const results = await Promise.allSettled(
     ids.map((id) => api(targetPath(id, "state")).then(parseObservation)),
@@ -206,11 +252,14 @@ async function readState(ids) {
       Object.assign(merged.devices, result.value.devices);
       Object.assign(merged.failed, result.value.failed);
     } else {
-      merged.failed[ids[index]] = describe(result.reason);
+      const reason = describe(result.reason);
+      for (const id of targetDeviceIds(ids[index])) merged.failed[id] = reason;
     }
   });
   return merged;
 }
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Messages
 
@@ -230,6 +279,7 @@ function describe(error) {
 function reasonText(reason) {
   if (/HTTP (401|403)/.test(reason)) return "access refused";
   if (/HTTP 429/.test(reason)) return "too many requests, try again shortly";
+  if (reason === NOT_REACHED) return NOT_REACHED;
   return "not responding";
 }
 
@@ -288,6 +338,16 @@ function deviceIds(target, seen = new Set()) {
   });
 }
 
+function targetDeviceIds(id) {
+  const target = app.targets.get(id);
+  return target ? deviceIds(target) : [id];
+}
+
+/** The device ids under the selection, in a stable order. */
+const selectedDevices = () => [
+  ...new Set(app.selected.flatMap(targetDeviceIds)),
+];
+
 /** The selected targets combined, or null when nothing is selected. */
 function selection() {
   const chosen = app.selected.flatMap((id) => app.targets.get(id) ?? []);
@@ -295,7 +355,7 @@ function selection() {
   return {
     name: chosen.map((target) => target.name).join(" + "),
     single: chosen.length === 1 ? chosen[0] : null,
-    deviceCount: new Set(chosen.flatMap((target) => deviceIds(target))).size,
+    deviceCount: selectedDevices().length,
     features: Object.fromEntries(
       FEATURES.map((feature) => [
         feature,
@@ -335,31 +395,41 @@ function summarize() {
   };
 }
 
-/** @param {Observation} observation @param {Changes} changes */
-function optimistic(observation, changes) {
+/** @param {LightState} state @param {Changes} changes @param {Features} features */
+function applyChanges(state, changes, features) {
   return {
-    ...observation,
-    devices: Object.fromEntries(
-      Object.entries(observation.devices).map(([id, state]) => {
-        const features = featuresOf(id);
-        return [
-          id,
-          {
-            on: changes.on ?? state.on,
-            brightness:
-              features.brightness && changes.brightness !== undefined
-                ? changes.brightness
-                : state.brightness,
-            colorTemperaturePct:
-              features.colorTemperature &&
-              changes.colorTemperaturePct !== undefined
-                ? changes.colorTemperaturePct
-                : state.colorTemperaturePct,
-          },
-        ];
-      }),
-    ),
+    on: changes.on ?? state.on,
+    brightness:
+      features.brightness && changes.brightness !== undefined
+        ? changes.brightness
+        : state.brightness,
+    colorTemperaturePct:
+      features.colorTemperature && changes.colorTemperaturePct !== undefined
+        ? changes.colorTemperaturePct
+        : state.colorTemperaturePct,
   };
+}
+
+/** @param {LightState} state @param {Changes} changes @param {Features} features */
+function reached(state, changes, features) {
+  const near = (a, b) => Math.abs(a - b) <= TOLERANCE;
+  return (
+    (changes.on === undefined || state.on === changes.on) &&
+    (changes.brightness === undefined ||
+      !features.brightness ||
+      near(state.brightness, changes.brightness)) &&
+    (changes.colorTemperaturePct === undefined ||
+      !features.colorTemperature ||
+      near(state.colorTemperaturePct, changes.colorTemperaturePct))
+  );
+}
+
+/** @returns {DeviceStatus} */
+function deviceStatus(id) {
+  if (app.pending.has(id)) return "pending";
+  if (id in app.failed) return "offline";
+  if (app.observation && id in app.observation.devices) return "online";
+  return "unknown";
 }
 
 // Colors
@@ -436,11 +506,15 @@ function startSession(authenticated) {
     authenticated,
     session: app.session + 1,
     view: app.view + 1,
+    commandToken: app.commandToken + 1,
     targets: new Map(),
     targetsLoaded: false,
+    tabs: [],
     selected: [],
     selectionInitialized: false,
     observation: null,
+    pending: new Set(),
+    failed: {},
     stale: false,
     loading: false,
     busy: false,
@@ -450,6 +524,7 @@ function startSession(authenticated) {
     errorDetail: "",
     reconnect: false,
   });
+  $("tab-list").replaceChildren();
   $("color-dialog").close();
 }
 
@@ -466,11 +541,22 @@ function sessionEnded() {
 
 // Actions
 
-/** Loads the target list, keeps the selection, and reads its state. */
-async function refresh() {
+/** Stores a fresh read of the selection. */
+function observed(observation) {
+  app.observation = observation;
+  app.failed = { ...observation.failed };
+  app.stale = false;
+  showFailures(observation.failed, []);
+}
+
+/**
+ * Loads the target list, keeps the selection, and reads its state. A
+ * background refresh leaves the controls usable and shows no loading state.
+ */
+async function refresh(background = false) {
   const session = app.session;
   const view = ++app.view;
-  app.loading = true;
+  app.loading = !background;
   app.reconnect = false;
   render();
   try {
@@ -487,14 +573,12 @@ async function refresh() {
         ? [initial.id]
         : [];
     app.selectionInitialized = true;
-    buildToolbar();
+    buildTabs();
     showError("");
     if (app.selected.length) {
       const observation = await readState(app.selected);
       if (session !== app.session || view !== app.view) return;
-      app.observation = observation;
-      app.stale = false;
-      showFailures(observation.failed, []);
+      observed(observation);
     } else {
       app.observation = null;
     }
@@ -525,8 +609,11 @@ async function selectTargets(ids) {
   if (app.authenticated !== true) return;
   const session = app.session;
   const view = ++app.view;
+  app.commandToken += 1;
   app.selected = [...new Set(ids)].filter((id) => app.targets.has(id));
   app.observation = null;
+  app.pending = new Set();
+  app.failed = {};
   app.stale = false;
   app.selectedColor = null;
   app.queued = null;
@@ -537,8 +624,7 @@ async function selectTargets(ids) {
   try {
     const observation = await readState(app.selected);
     if (session !== app.session || view !== app.view) return;
-    app.observation = observation;
-    showFailures(observation.failed, []);
+    observed(observation);
   } catch (error) {
     if (
       session !== app.session ||
@@ -555,7 +641,7 @@ async function selectTargets(ids) {
   }
 }
 
-/** Sends changes to the selection; while a command runs, the latest changes wait. */
+/** Sends changes to the selection; while a command is being sent, the latest changes wait. */
 function command(changes) {
   if (app.authenticated !== true || !app.selected.length || app.loading) return;
   if (app.busy) {
@@ -565,57 +651,61 @@ function command(changes) {
   send(changes);
 }
 
-/** @param {Changes} changes */
+/**
+ * Sends a command, marks every selected device pending, and then confirms
+ * each device as it reaches the requested state.
+ * @param {Changes} changes
+ */
 async function send(changes) {
   const session = app.session;
   const view = app.view;
+  const token = ++app.commandToken;
   const ids = [...app.selected];
-  const previous = app.observation;
-  app.observation = previous && optimistic(previous, changes);
+  const devices = selectedDevices();
+  if (app.observation)
+    app.observation = {
+      ...app.observation,
+      devices: Object.fromEntries(
+        Object.entries(app.observation.devices).map(([id, state]) => [
+          id,
+          applyChanges(state, changes, featuresOf(id)),
+        ]),
+      ),
+    };
+  app.pending = new Set(devices);
+  for (const id of devices) delete app.failed[id];
   app.busy = true;
   showError("");
   announce("Applying…");
   render();
-  /** @type {Record<string, string>} */
-  const failed = {};
+
   const problems = [];
+  let accepted = false;
   try {
     const results = await Promise.allSettled(
       ids.map((id) => api(targetPath(id, "command"), "POST", changes)),
     );
-    if (session !== app.session || view !== app.view) return;
+    if (session !== app.session) return;
+    accepted = true;
     for (const [index, result] of results.entries()) {
       if (result.status === "fulfilled") continue;
       const error = result.reason;
       if (error instanceof SessionExpired) return;
-      if (error instanceof HttpError && Object.keys(error.failed).length)
-        Object.assign(failed, error.failed);
-      else problems.push(`${nameOf(ids[index])}: ${describe(error)}`);
+      const failed =
+        error instanceof HttpError && Object.keys(error.failed).length
+          ? error.failed
+          : Object.fromEntries(
+              targetDeviceIds(ids[index]).map((id) => [id, describe(error)]),
+            );
+      for (const [id, reason] of Object.entries(failed)) {
+        app.failed[id] = reason;
+        app.pending.delete(id);
+      }
     }
-    if (!problems.length && !Object.keys(failed).length) {
+    if (view === app.view && !Object.keys(app.failed).length) {
       if (changes.color !== undefined) app.selectedColor = changes.color;
       if (changes.colorTemperaturePct !== undefined) app.selectedColor = null;
     }
-    try {
-      const observation = await readState(ids);
-      if (session !== app.session || view !== app.view) return;
-      Object.assign(failed, observation.failed);
-      const answered = Object.keys(observation.devices).length > 0;
-      app.observation = answered ? observation : previous;
-      app.stale = !answered && previous !== null;
-    } catch (error) {
-      if (
-        session !== app.session ||
-        view !== app.view ||
-        error instanceof SessionExpired
-      )
-        return;
-      app.observation = previous;
-      app.stale = previous !== null;
-      problems.push(describe(error));
-    }
-    showFailures(failed, problems);
-    if (!app.error.text) announce("Done.");
   } finally {
     if (session === app.session) {
       app.busy = false;
@@ -625,56 +715,108 @@ async function send(changes) {
       if (next) command(next);
     }
   }
+  if (accepted) await confirm({ session, view, token }, ids, changes, problems);
+}
+
+/**
+ * Re-reads the selection until every pending device reaches the requested
+ * state, fails, or runs out of attempts. Pending devices keep showing the
+ * requested values so the controls don't jump back while they catch up.
+ */
+async function confirm(stamp, ids, changes, problems) {
+  const current = () =>
+    stamp.session === app.session &&
+    stamp.view === app.view &&
+    stamp.token === app.commandToken;
+  for (
+    let attempt = 0;
+    attempt < CONFIRM_ATTEMPTS && app.pending.size;
+    attempt++
+  ) {
+    if (attempt) await sleep(CONFIRM_INTERVAL_MS);
+    if (!current()) return;
+    let observation;
+    try {
+      observation = await readState(ids);
+    } catch (error) {
+      if (!current() || error instanceof SessionExpired) return;
+      problems.push(describe(error));
+      for (const id of app.pending) app.failed[id] = describe(error);
+      app.pending.clear();
+      app.stale = app.observation !== null;
+      break;
+    }
+    if (!current()) return;
+    for (const [id, reason] of Object.entries(observation.failed)) {
+      app.failed[id] = reason;
+      app.pending.delete(id);
+    }
+    for (const [id, state] of Object.entries(observation.devices))
+      if (app.pending.has(id) && reached(state, changes, featuresOf(id)))
+        app.pending.delete(id);
+    const shown = app.observation?.devices ?? {};
+    app.observation = {
+      devices: Object.fromEntries(
+        Object.entries(observation.devices).map(([id, state]) => [
+          id,
+          app.pending.has(id) && shown[id] ? shown[id] : state,
+        ]),
+      ),
+      failed: observation.failed,
+    };
+    app.stale = false;
+    render();
+  }
+  if (!current()) return;
+  for (const id of app.pending) app.failed[id] = NOT_REACHED;
+  app.pending.clear();
+  showFailures(app.failed, problems);
+  if (!app.error.text) announce("Done.");
+  render();
 }
 
 // Rendering
 
-/** Rebuilds the room buttons and device picker from the target list. */
-function buildToolbar() {
-  const rooms = [...app.targets.values()].filter(
-    (target) => target.kind === "room",
-  );
-  $("rooms").replaceChildren(
-    ...rooms.map((room) => {
+/** Builds the room selector: one entry per room, or one per device without rooms. */
+function buildTabs() {
+  const targets = [...app.targets.values()];
+  const rooms = targets.filter((target) => target.kind === "room");
+  /** @type {Tab[]} */
+  const tabs = (rooms.length ? rooms : targets).map((target) => ({
+    key: target.id,
+    name: target.name,
+    ids: [target.id],
+  }));
+  if (JSON.stringify(tabs) === JSON.stringify(app.tabs)) return;
+  app.tabs = tabs;
+  $("tab-list").replaceChildren(
+    ...tabs.map((tab) => {
       const button = document.createElement("button");
       button.className = "room-btn";
-      button.dataset.room = room.id;
-      button.textContent = room.name;
+      button.dataset.tab = tab.key;
+      button.textContent = tab.name;
       return button;
     }),
   );
-
-  const devices = [...app.targets.values()].filter(
-    (target) => target.kind !== "room",
-  );
-  const placeholder = document.createElement("option");
-  placeholder.value = "";
-  placeholder.textContent = "Device…";
-  placeholder.disabled = true;
-  $("target-picker").replaceChildren(
-    placeholder,
-    ...devices.map((device) => {
-      const option = document.createElement("option");
-      option.value = device.id;
-      option.textContent = device.name;
-      return option;
-    }),
-  );
 }
+
+const sameIds = (a, b) =>
+  a.length === b.length && a.every((id) => b.includes(id));
 
 function render() {
   const signedIn = app.authenticated === true;
   $("connecting").hidden = app.authenticated !== null;
   $("login-section").hidden = app.authenticated !== false;
-  $("toolbar").hidden = !signedIn;
   $("controller").hidden = !signedIn;
+  $("tabs").hidden = !signedIn || app.tabs.length < 2;
   renderLogin();
   renderNotice();
   if (!signedIn) return;
   const chosen = selection();
   const summary = summarize();
-  renderToolbar(chosen);
+  renderTabs();
   renderPower(chosen, summary);
+  renderDevices();
   renderSettings(chosen, summary);
 }
 
@@ -692,61 +834,46 @@ function renderNotice() {
   $("notice").hidden = !text;
 }
 
-function renderToolbar(chosen) {
-  $("rooms").hidden = !$("rooms").childElementCount;
-  $("rooms")
+function renderTabs() {
+  $("tab-list")
     .querySelectorAll(".room-btn")
     .forEach((button) => {
-      button.setAttribute(
-        "aria-pressed",
-        String(app.selected.includes(button.dataset.room)),
-      );
+      const tab = app.tabs.find((item) => item.key === button.dataset.tab);
+      if (tab && sameIds(tab.ids, app.selected))
+        button.setAttribute("aria-current", "true");
+      else button.removeAttribute("aria-current");
     });
-  const picker = $("target-picker");
-  $("picker").hidden = picker.options.length < 2;
-  picker.value =
-    chosen?.single && chosen.single.kind !== "room" ? chosen.single.id : "";
-  $("refresh").setAttribute("aria-busy", String(app.loading));
 }
 
+/** Text for what the controls can't show on their own, or "". */
 function powerState(chosen, summary) {
-  if (!app.targetsLoaded) return "Loading…";
-  if (!app.targets.size) return "Add devices in the hub configuration.";
-  if (!chosen) return "Choose a room to control.";
-  if (app.loading && !app.observation) return "Loading…";
+  if (!app.targetsLoaded || (app.loading && !app.observation))
+    return "Loading…";
+  if (!app.targets.size) return "No lights yet";
+  if (!chosen) return "No room selected";
   if (!summary.total) return "Not responding";
-  const last = app.stale ? " · last known" : "";
-  if (!summary.on) return `Off${last}`;
-  if (summary.on < summary.total)
-    return `${summary.on} of ${summary.total} on${last}`;
-  const { value, mixed } = summary.brightness;
-  return value === null || mixed ? `On${last}` : `On · ${value}%${last}`;
+  const notes = [];
+  if (summary.on && summary.on < summary.total)
+    notes.push(`${summary.on} of ${summary.total} on`);
+  if (app.stale) notes.push("last known");
+  return notes.join(" · ");
 }
 
 function renderPower(chosen, summary) {
   const power = $("power-toggle");
-  const name = !app.targetsLoaded
-    ? ""
-    : !app.targets.size
-      ? "No lights yet"
-      : (chosen?.name ?? "No room selected");
-  $("power-name").textContent = name;
-  $("power-state").textContent = powerState(chosen, summary);
-  $("target-title").textContent = name;
+  const tab = app.tabs.find((item) => sameIds(item.ids, app.selected));
+  $("target-title").textContent = chosen
+    ? (tab?.name ?? chosen.name)
+    : "Lights";
   $("target-description").textContent = !chosen
     ? ""
-    : chosen.single?.kind === "govee"
-      ? "Govee device"
-      : chosen.single?.kind === "matter"
-        ? "Matter device"
-        : `${chosen.deviceCount} ${chosen.deviceCount === 1 ? "device" : "devices"}`;
+    : `${chosen.deviceCount} ${chosen.deviceCount === 1 ? "device" : "devices"}`;
+  $("power-state").textContent = powerState(chosen, summary);
 
   const on = summary.on > 0;
   const partial = on && summary.on < summary.total;
-  power.disabled = !chosen;
   power.setAttribute("aria-checked", String(on));
   power.classList.toggle("on", on);
-  power.classList.toggle("partial", partial);
   power.classList.toggle("busy", app.busy || app.loading);
 
   const glow = app.selectedColor
@@ -761,9 +888,40 @@ function renderPower(chosen, summary) {
   );
 }
 
+const STATUS_TEXT = {
+  online: "online",
+  offline: "offline",
+  pending: "updating",
+  unknown: "unknown",
+};
+
+function renderDevices() {
+  const ids = selectedDevices();
+  const dots = $("device-dots");
+  dots.replaceChildren(
+    ...ids.map((id) => {
+      const status = deviceStatus(id);
+      const dot = document.createElement("span");
+      dot.className = `dot ${status}`;
+      dot.title = `${nameOf(id)}: ${app.failed[id] ?? STATUS_TEXT[status]}`;
+      return dot;
+    }),
+  );
+  dots.setAttribute(
+    "aria-label",
+    ids
+      .map((id) => `${nameOf(id)} ${STATUS_TEXT[deviceStatus(id)]}`)
+      .join(", "),
+  );
+  dots.hidden = !ids.length;
+}
+
 function renderSettings(chosen, summary) {
-  $("controls").disabled = !chosen;
+  $("controls").classList.toggle("disabled", !chosen);
   $("controls").classList.toggle("off", summary.total > 0 && !summary.on);
+  document
+    .querySelectorAll("#controls button")
+    .forEach((button) => (button.disabled = !chosen));
   for (const [id, feature] of [
     ["brightness-setting", "brightness"],
     ["temperature-setting", "colorTemperature"],
@@ -775,7 +933,6 @@ function renderSettings(chosen, summary) {
   }
 
   const brightness = summary.brightness;
-  $("brightness-value").textContent = brightness.mixed ? "Mixed" : "";
   document.querySelectorAll("[data-brightness]").forEach((button) => {
     button.setAttribute(
       "aria-pressed",
@@ -788,22 +945,13 @@ function renderSettings(chosen, summary) {
 
   const temperature = summary.temperature;
   const slider = $("temperature");
-  slider.disabled = temperature.value === null;
+  slider.disabled = !chosen || temperature.value === null;
   slider.value = String(temperature.value ?? 50);
   $("temperature-setting").classList.toggle(
     "inactive",
     app.selectedColor !== null,
   );
-  showTemperature(
-    temperature.value,
-    app.selectedColor !== null
-      ? "Color"
-      : temperature.mixed
-        ? "Mixed"
-        : temperature.value === null
-          ? ""
-          : temperatureWord(temperature.value),
-  );
+  showTemperature(temperature.value);
 
   document.querySelectorAll(".swatch").forEach((button) => {
     button.setAttribute(
@@ -813,12 +961,45 @@ function renderSettings(chosen, summary) {
   });
 }
 
-function showTemperature(value, label) {
+function showTemperature(value) {
   $("temperature-wrap").style.setProperty("--pct", `${value ?? 50}%`);
-  $("temperature-value").textContent = label;
   $("temperature").setAttribute(
     "aria-valuetext",
     value === null ? "Unknown" : temperatureWord(value),
+  );
+}
+
+function editCustom(id) {
+  app.editing = id;
+  $("custom-title").textContent = document
+    .querySelector(`[data-custom="${id}"]`)
+    .getAttribute("aria-label");
+  $("color-grid")
+    .querySelectorAll("[data-pick]")
+    .forEach((button) => {
+      button.setAttribute(
+        "aria-pressed",
+        String(button.dataset.pick === app.customColors[id]),
+      );
+    });
+  $("color-dialog").showModal();
+  (
+    $("color-grid").querySelector('[aria-pressed="true"]') ??
+    $("color-grid").querySelector("[data-pick]")
+  ).focus();
+}
+
+function buildColorGrid() {
+  $("color-grid").replaceChildren(
+    ...PALETTE.map((color) => {
+      const button = document.createElement("button");
+      button.className = "pick";
+      button.dataset.pick = color;
+      button.setAttribute("aria-label", color);
+      button.setAttribute("aria-pressed", "false");
+      button.style.setProperty("--swatch", color);
+      return button;
+    }),
   );
 }
 
@@ -845,41 +1026,12 @@ $("login-form").addEventListener("submit", async (event) => {
   }
 });
 
-$("logout").addEventListener("click", async () => {
-  try {
-    await api("/api/logout", "POST", {});
-  } catch (error) {
-    if (!(error instanceof SessionExpired)) {
-      showError(describe(error));
-      render();
-      return;
-    }
-  }
-  startSession(false);
-  app.loginMessage = { text: "Signed out.", error: false };
-  render();
-  $("password").focus();
-});
+$("reconnect").addEventListener("click", () => refresh());
 
-$("refresh").addEventListener("click", refresh);
-$("reconnect").addEventListener("click", refresh);
-
-$("target-picker").addEventListener("change", () =>
-  selectTargets([$("target-picker").value]),
-);
-
-$("rooms").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-room]");
-  if (!button) return;
-  const id = button.dataset.room;
-  const rooms = app.selected.filter(
-    (selected) => app.targets.get(selected)?.kind === "room",
-  );
-  selectTargets(
-    rooms.includes(id)
-      ? rooms.filter((selected) => selected !== id)
-      : [...rooms, id],
-  );
+$("tab-list").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-tab]");
+  const tab = app.tabs.find((item) => item.key === button?.dataset.tab);
+  if (tab && !sameIds(tab.ids, app.selected)) selectTargets(tab.ids);
 });
 
 $("power-toggle").addEventListener("click", () =>
@@ -893,9 +1045,8 @@ document.querySelectorAll("[data-brightness]").forEach((button) => {
 });
 
 $("temperature").addEventListener("input", () => {
-  const value = Number($("temperature").value);
   $("temperature-setting").classList.remove("inactive");
-  showTemperature(value, temperatureWord(value));
+  showTemperature(Number($("temperature").value));
 });
 $("temperature").addEventListener("change", () =>
   command({ on: true, colorTemperaturePct: Number($("temperature").value) }),
@@ -908,24 +1059,16 @@ document.querySelectorAll(".swatch").forEach((button) => {
 });
 
 document.querySelectorAll("[data-edit]").forEach((button) => {
-  button.addEventListener("click", () => {
-    const id = button.dataset.edit;
-    app.editing = id;
-    $("color").value = app.customColors[id];
-    $("custom-title").textContent = document
-      .querySelector(`[data-custom="${id}"]`)
-      .getAttribute("aria-label");
-    $("color-dialog").showModal();
-  });
+  button.addEventListener("click", () => editCustom(button.dataset.edit));
 });
 
 $("cancel-color").addEventListener("click", () => $("color-dialog").close());
 
-$("color-form").addEventListener("submit", (event) => {
-  event.preventDefault();
+$("color-grid").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-pick]");
   const id = app.editing;
-  if (id === null) return;
-  const color = $("color").value;
+  if (!button || id === null) return;
+  const color = button.dataset.pick;
   app.customColors = { ...app.customColors, [id]: color };
   saveCustomColors();
   paintSwatches();
@@ -937,6 +1080,21 @@ $("color-dialog").addEventListener("close", () => {
   app.editing = null;
 });
 
+const canRefreshQuietly = () =>
+  document.visibilityState === "visible" &&
+  app.authenticated === true &&
+  !app.busy &&
+  !app.loading &&
+  !app.pending.size &&
+  !$("color-dialog").open;
+
+document.addEventListener("visibilitychange", () => {
+  if (canRefreshQuietly()) refresh(true);
+});
+setInterval(() => {
+  if (canRefreshQuietly()) refresh(true);
+}, REFRESH_INTERVAL_MS);
+
 $("temperature-wrap").style.setProperty(
   "--track",
   `linear-gradient(to right, ${TEMPERATURE_STOPS.map(
@@ -944,6 +1102,7 @@ $("temperature-wrap").style.setProperty(
   ).join(", ")})`,
 );
 app.customColors = loadCustomColors();
+buildColorGrid();
 paintSwatches();
 render();
 refresh();
