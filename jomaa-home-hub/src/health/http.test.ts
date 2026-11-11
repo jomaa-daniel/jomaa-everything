@@ -18,6 +18,7 @@ const matter: MatterAdmin = {
   nodes: () => [],
   discover: () => Promise.resolve([]),
   register: () => Promise.reject(new Error("unused")),
+  rename: () => Promise.reject(new Error("unused")),
   commission: () => Promise.reject(new Error("unused")),
   setWiFiCredentials: () => Promise.resolve(),
   setThreadDataset: () => Promise.resolve(),
@@ -206,6 +207,9 @@ await test("device inventory includes registered Matter nodes without issuing Pi
     nodes: () => nodes,
     register: () => {
       nodes.push({
+        lastSeen: null,
+        uptimeSeconds: null,
+        uptimeObservedAt: null,
         nodeId: 42,
         available: true,
         isBridge: false,

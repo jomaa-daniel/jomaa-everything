@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MatterDeviceConfig } from "../config.js";
 import { noChange, noFeatures, RGB } from "../device.js";
+import { parseConfig } from "../config.js";
+import { GoveeClient } from "../govee.js";
+import { Hub } from "../hub.js";
 import { MatterLight } from "./light.js";
 import { MatterError, MatterNotReadyError, summarize, type MatterNode, type MatterNodes } from "./nodes.js";
 
@@ -12,6 +15,8 @@ interface Sent {
   command: string;
   payload: Record<string, unknown>;
 }
+
+const observation = { displayName: null, lastSeen: null, uptimeSeconds: null, uptimeObservedAt: null };
 
 /** Stands in for the controller: serves node attributes and records commands. */
 class FakeMatter implements MatterNodes {
@@ -35,6 +40,7 @@ class FakeMatter implements MatterNodes {
 }
 
 const colorBulb = (): MatterNode => ({
+  ...observation,
   nodeId: 1,
   available: true,
   isBridge: false,
@@ -50,7 +56,13 @@ const colorBulb = (): MatterNode => ({
   },
 });
 
-const plug = (): MatterNode => ({ nodeId: 2, available: true, isBridge: false, attributes: { "1/6/0": false } });
+const plug = (): MatterNode => ({
+  ...observation,
+  nodeId: 2,
+  available: true,
+  isBridge: false,
+  attributes: { "1/6/0": false },
+});
 const signal = new AbortController().signal;
 
 function light(m: MatterNodes, nodeId: number): MatterLight {
@@ -151,6 +163,9 @@ test("node summaries", () => {
     vendor: "Acme",
     product: "Bulb",
     label: null,
+    lastSeen: null,
+    uptimeSeconds: null,
+    uptimeObservedAt: null,
   });
   assert.deepEqual(summarize(plug()), {
     nodeId: 2,
@@ -160,5 +175,68 @@ test("node summaries", () => {
     vendor: null,
     product: null,
     label: null,
+    lastSeen: null,
+    uptimeSeconds: null,
+    uptimeObservedAt: null,
   });
+});
+
+test("living-room commands translate coffee-table and Govee controls through their existing drivers", async () => {
+  const cfg = parseConfig(
+    JSON.stringify({
+      devices: [
+        { id: "coffee-table", name: "coffee-table", driver: "matter", nodeId: 3, endpoint: 1 },
+        {
+          id: "other-light",
+          name: "Other",
+          driver: "govee",
+          sku: "test",
+          device: "test",
+          minKelvin: 2700,
+          maxKelvin: 6500,
+        },
+      ],
+      rooms: [{ id: "living-room", name: "Living Room", members: ["coffee-table", "other-light"] }],
+    }),
+  );
+  const matter = new FakeMatter({ ...colorBulb(), nodeId: 3 });
+  const govee = new GoveeClient("test", "http://127.0.0.1:1");
+  const requests: Array<Parameters<GoveeClient["post"]>[1]> = [];
+  govee.post = (_path, payload) => {
+    requests.push(payload);
+    return Promise.resolve({});
+  };
+  const hub = Hub.build(cfg, govee, matter);
+  await hub.command(
+    "living-room",
+    { ...noChange, on: true, brightness: 50, colorTemperaturePct: 25, color: RGB.parse("#ff0000") },
+    "test",
+    1,
+    signal,
+  );
+  assert.deepEqual(
+    matter.sent.map((call) => [call.command, call.payload]),
+    [
+      ["on", {}],
+      ["moveToLevelWithOnOff", { level: 127, transitionTime: 0, optionsMask: 0, optionsOverride: 0 }],
+      [
+        "moveToColorTemperature",
+        { colorTemperatureMireds: 319, transitionTime: 0, optionsMask: 0, optionsOverride: 0 },
+      ],
+      ["moveToHueAndSaturation", { hue: 0, saturation: 254, transitionTime: 0, optionsMask: 0, optionsOverride: 0 }],
+    ],
+  );
+  const capabilities = requests.map((request) => ("capability" in request ? request.capability : null));
+  assert.deepEqual(
+    capabilities.map((capability) => capability?.value),
+    [1, 50, 3650, 0xff0000],
+  );
+  matter.nodes.set(3, { ...colorBulb(), nodeId: 3, displayName: "Renamed coffee-table" });
+  assert.equal(hub.list().find((target) => target.id === "coffee-table")?.name, "Renamed coffee-table");
+  const count = matter.sent.length;
+  await hub.command("living-room", { ...noChange, on: false, brightness: 50 }, "test", 2, signal);
+  assert.deepEqual(
+    matter.sent.slice(count).map((call) => call.command),
+    ["off"],
+  );
 });

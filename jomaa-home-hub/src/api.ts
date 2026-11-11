@@ -93,6 +93,7 @@ export class Api {
       route("GET", "/api/matter/nodes", this.#matterNodes),
       route("GET", "/api/matter/discover", this.#matterDiscover),
       route("POST", "/api/matter/register", this.#matterRegister),
+      route("PATCH", "/api/matter/nodes/{nodeId}/name", this.#matterRename),
       route("DELETE", "/api/matter/nodes/{nodeId}", this.#matterRemove),
       route("POST", "/api/matter/commission", this.#matterCommission),
       route("POST", "/api/matter/wifi", this.#matterWiFi),
@@ -274,17 +275,7 @@ export class Api {
   }
 
   async #matterRegister({ req, res, signal }: RequestContext): Promise<void> {
-    if (req.headers["sec-fetch-site"] === "cross-site") throw new HttpError(403, "cross-site request refused");
-    const origin = req.headers.origin;
-    if (origin !== undefined) {
-      let host: string;
-      try {
-        host = new URL(origin).host;
-      } catch {
-        throw new HttpError(403, "cross-site request refused");
-      }
-      if (host !== req.headers.host) throw new HttpError(403, "cross-site request refused");
-    }
+    requireSameOrigin(req);
     const body = (await readBody(req)).only("code", "instanceName");
     const raw = (body.string("code") ?? "").trim();
     const code = raw.startsWith("MT:") ? raw : raw.replace(/[\s-]/g, "");
@@ -304,6 +295,21 @@ export class Api {
       }
       throw new HttpError(500, "Matter registration failed. Refresh the inventory before trying again.");
     }
+  }
+
+  async #matterRename({ req, res, params }: RequestContext): Promise<void> {
+    requireSameOrigin(req);
+    const raw = params[0] ?? "";
+    const nodeId = Number(raw);
+    if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(nodeId)) throw new HttpError(400, "invalid Matter node ID");
+    const name = ((await readBody(req)).only("name").string("name") ?? "").trim();
+    if (name.length < 1 || name.length > 80) throw new HttpError(400, "name must contain 1 to 80 characters");
+    const node = await this.#matterCall(async () => {
+      if (!this.matter.nodes().some((candidate) => candidate.nodeId === nodeId))
+        throw new HttpError(404, "Matter node not found");
+      return this.matter.rename(nodeId, name);
+    });
+    writeJSON(res, 200, { node });
   }
 
   async #matterRemove({ res, params, signal }: RequestContext): Promise<void> {
@@ -371,6 +377,19 @@ export class Api {
       throw err;
     }
   }
+}
+
+function requireSameOrigin(req: IncomingMessage): void {
+  if (req.headers["sec-fetch-site"] === "cross-site") throw new HttpError(403, "cross-site request refused");
+  const origin = req.headers.origin;
+  if (origin === undefined) return;
+  let host: string;
+  try {
+    host = new URL(origin).host;
+  } catch {
+    throw new HttpError(403, "cross-site request refused");
+  }
+  if (host !== req.headers.host) throw new HttpError(403, "cross-site request refused");
 }
 
 /** Decodes one path segment; a malformed escape like %E0%A4 is the client's mistake. */

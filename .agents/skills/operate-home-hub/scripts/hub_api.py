@@ -62,7 +62,7 @@ def request(url: str, method: str, token: str | None = None, body=None, timeout:
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("method", choices=("GET", "POST", "DELETE"))
+    p.add_argument("method", choices=("GET", "POST", "PATCH", "DELETE"))
     p.add_argument("path", help="/healthz or an /api/ path")
     p.add_argument("--url", default=os.getenv("JOMAA_HUB_URL", DEFAULT_URL), help="HTTPS hub origin")
     p.add_argument("--password-file", type=Path, help="private file containing HUB_PASSWORD or a password")

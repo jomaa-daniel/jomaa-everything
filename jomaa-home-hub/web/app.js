@@ -3,11 +3,14 @@ let devices = [];
 let matterNodes = [];
 let selected = null;
 let selectedMatter = null;
+let matterNameDirty = false;
 let dirty = false;
 let cursor = null;
 let credential = null;
 let refreshing = null;
 let refreshGeneration = 0;
+let inventoryGeneration = 0;
+let refreshInventoryGeneration = 0;
 let sessionGeneration = 0;
 let showingOlder = false;
 let scanController = null;
@@ -124,7 +127,15 @@ function render() {
     cell.append(button, node("span", `Matter · Node ${device.nodeId}`, "device-id"));
     const stateCell = node("td");
     stateCell.append(status(device.available ? "online" : "offline"));
-    row.append(cell, stateCell, node("td", "—"), node("td", "—"), node("td", "—"));
+    const uptimeCell = node("td", device.uptimeSeconds === null ? "Unavailable" : duration(device.uptimeSeconds));
+    if (device.uptimeObservedAt !== null) uptimeCell.title = `Reported ${stamp(device.uptimeObservedAt)}`;
+    row.append(
+      cell,
+      stateCell,
+      node("td", device.lastSeen === null ? "Not seen yet" : lastSeen(device.lastSeen)),
+      uptimeCell,
+      node("td", "—"),
+    );
     $("device-rows").append(row);
   }
   $("empty").hidden = visible.length + visibleMatter.length > 0;
@@ -149,6 +160,9 @@ function renderMatterDetail() {
   for (const [label, value] of [
     ["Matter node", device.nodeId],
     ["Connection", device.available ? "Connected" : "Offline"],
+    ["Last seen", device.lastSeen === null ? "Not seen yet" : stamp(device.lastSeen)],
+    ["Reported uptime", device.uptimeSeconds === null ? "Unavailable" : duration(device.uptimeSeconds)],
+    ["Uptime reported", device.uptimeObservedAt === null ? "Unavailable" : stamp(device.uptimeObservedAt)],
     ["Manufacturer", device.vendor || "—"],
     ["Product", device.product || "—"],
     ["Bridge", device.isBridge ? "Yes" : "No"],
@@ -158,11 +172,13 @@ function renderMatterDetail() {
     fact.append(node("dt", label), node("dd", value));
     $("matter-facts").append(fact);
   }
+  if (!matterNameDirty) $("matter-name").value = matterName(device);
 }
 
 function selectMatter(nodeId) {
   selected = null;
   selectedMatter = nodeId;
+  matterNameDirty = false;
   render();
 }
 
@@ -194,10 +210,12 @@ function renderDetail() {
 }
 
 async function refresh() {
-  if (refreshing && refreshGeneration === sessionGeneration) return refreshing;
+  if (refreshing && refreshGeneration === sessionGeneration && refreshInventoryGeneration === inventoryGeneration)
+    return refreshing;
   const operation = refreshInventory();
   refreshing = operation;
   refreshGeneration = sessionGeneration;
+  refreshInventoryGeneration = inventoryGeneration;
   try {
     await operation;
   } finally {
@@ -207,8 +225,9 @@ async function refresh() {
 
 async function refreshInventory() {
   const generation = sessionGeneration;
+  const inventoryRevision = inventoryGeneration;
   const result = await api("/api/devices");
-  if (generation !== sessionGeneration) return;
+  if (generation !== sessionGeneration || inventoryRevision !== inventoryGeneration) return;
   devices = result.devices;
   matterNodes = result.matterNodes;
   signedIn(true);
@@ -364,6 +383,8 @@ $("matter-pair-form").addEventListener("submit", async (event) => {
     if (generation !== sessionGeneration) return;
     selected = null;
     selectedMatter = result.node.node_id;
+    inventoryGeneration += 1;
+    matterNameDirty = false;
     $("matter-pair-dialog").close();
     $("notice").className = "success";
     $("notice").textContent = "Matter device registered.";
@@ -423,6 +444,32 @@ $("close-detail").addEventListener("click", () => {
 $("close-matter-detail").addEventListener("click", () => {
   selectedMatter = null;
   render();
+});
+$("matter-name").addEventListener("input", () => {
+  matterNameDirty = true;
+});
+$("matter-name-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const nodeId = selectedMatter;
+  if (nodeId === null || $("save-matter-name").disabled) return;
+  const generation = sessionGeneration;
+  $("save-matter-name").disabled = true;
+  $("matter-name").disabled = true;
+  try {
+    const result = await api(`/api/matter/nodes/${nodeId}/name`, "PATCH", { name: $("matter-name").value });
+    if (generation !== sessionGeneration) return;
+    inventoryGeneration += 1;
+    matterNodes = matterNodes.map((device) => (device.nodeId === nodeId ? result.node : device));
+    if (selectedMatter === nodeId) matterNameDirty = false;
+    render();
+    $("notice").className = "success";
+    $("notice").textContent = "Matter device name saved.";
+  } catch (reason) {
+    if (generation === sessionGeneration) error(reason);
+  } finally {
+    $("save-matter-name").disabled = false;
+    $("matter-name").disabled = false;
+  }
 });
 for (const id of ["device-name", "device-interval"])
   $(id).addEventListener("input", () => {

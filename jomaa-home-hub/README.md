@@ -304,6 +304,10 @@ pairing availability, and stops when closed. Scan again retries discovery.
 Pair and register on a discovered device asks for its setup code and pairs over
 the network. The controller stores paired nodes in its Matter fabric; they
 appear in the device inventory with connection status and device details.
+Matter details include a name editor, last-seen time and reported uptime.
+Names are stored in the hub's Matter data and used by configured Matter lights.
+Last seen records successful device contact. Diagnostic reads run every 30
+seconds; devices that omit uptime show Unavailable.
 Create device credential in that window opens Pico health enrollment.
 Pico W, Pico 2 W, and RP2040 boards with an ESP8285 UART radio report over verified HTTPS using individual credentials.
 Their first authenticated report registers them; missed reports mark them offline.

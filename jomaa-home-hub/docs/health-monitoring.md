@@ -29,6 +29,10 @@ sharing. Scans continue while the discovery window is open. Pair and register on
 a discovered device opens the setup-code form. Successful network pairing stores
 the node in the Matter fabric and lists it in the inventory with its connection
 status and device details. Create device credential opens the Pico enrollment form.
+Matter names can be edited in device details. The hub stores these names and
+contact timestamps in its Matter data. Last seen comes from successful Matter
+communication; uptime is the device's General Diagnostics report. Available
+nodes are checked every 30 seconds. Unsupported uptime displays Unavailable.
 The hub's root URL redirects to `/devices`, including on the Cloudflare hostname.
 
 The native hub stores health history in `data/health.sqlite`, shared between

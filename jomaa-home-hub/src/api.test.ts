@@ -45,6 +45,7 @@ class FakeMatter implements MatterAdmin {
   err: Error | null = null;
   instanceName = "";
   registered = false;
+  names = new Map<number, string>();
 
   nodes(): NodeSummary[] {
     return [
@@ -62,7 +63,19 @@ class FakeMatter implements MatterAdmin {
             },
           ]
         : []),
-    ];
+    ].map((node) => ({
+      ...node,
+      label: this.names.get(node.nodeId) ?? node.label,
+      lastSeen: null,
+      uptimeSeconds: null,
+      uptimeObservedAt: null,
+    }));
+  }
+  rename(nodeId: number, name: string): Promise<NodeSummary> {
+    if (this.err) return Promise.reject(this.err);
+    this.names.set(nodeId, name);
+    const node = this.nodes().find((candidate) => candidate.nodeId === nodeId);
+    return node ? Promise.resolve(node) : Promise.reject(new MatterError("unknown node"));
   }
   async register(code: string, instanceName: string): Promise<CommissionedNode> {
     this.instanceName = instanceName;
@@ -302,7 +315,18 @@ test("matter endpoints", async () => {
   res = await call(fresh, "GET", "/api/matter/nodes");
   assert.deepEqual(res.body, {
     nodes: [
-      { nodeId: 1, available: true, isBridge: false, lightEndpoints: [1], vendor: "Acme", product: null, label: null },
+      {
+        nodeId: 1,
+        available: true,
+        isBridge: false,
+        lightEndpoints: [1],
+        vendor: "Acme",
+        product: null,
+        label: null,
+        lastSeen: null,
+        uptimeSeconds: null,
+        uptimeObservedAt: null,
+      },
     ],
   });
   res = await call(fresh, "GET", "/api/matter/discover");
@@ -323,6 +347,35 @@ test("matter endpoints", async () => {
   assert.equal(res.body["error"], "Matter controller is not running");
   res = await call(fresh, "GET", "/healthz");
   assert.deepEqual(res.body, { ok: true, matterConnected: false });
+});
+
+test("Matter renaming returns the saved name and leaves contact timestamps unchanged", async () => {
+  const fresh = await setup();
+  const result = await call(fresh, "PATCH", "/api/matter/nodes/1/name", '{"name":" coffee-table "}');
+  assert.equal(result.status, 200);
+  const node = result.body["node"] as NodeSummary;
+  assert.equal(node.label, "coffee-table");
+  assert.equal(node.lastSeen, null);
+  const listing = await call(fresh, "GET", "/api/matter/nodes");
+  assert.equal((listing.body["nodes"] as NodeSummary[])[0]?.label, "coffee-table");
+});
+
+test("Matter rename validates the name and node and rejects cross-site requests", async () => {
+  const fresh = await setup();
+  assert.equal((await call(fresh, "PATCH", "/api/matter/nodes/999/name", '{"name":"Desk"}')).status, 404);
+  for (const name of ["", "   ", "x".repeat(81)]) {
+    assert.equal((await call(fresh, "PATCH", "/api/matter/nodes/1/name", JSON.stringify({ name }))).status, 400);
+  }
+  assert.equal(
+    (await call({ url: fresh.url, token: "" }, "PATCH", "/api/matter/nodes/1/name", '{"name":"Desk"}')).status,
+    401,
+  );
+  assert.equal(
+    (await call(fresh, "PATCH", "/api/matter/nodes/1/name", '{"name":"Desk"}', { Origin: "https://other.example" }))
+      .status,
+    403,
+  );
+  assert.equal(fresh.matter.names.size, 0);
 });
 
 test("selected-device registration normalizes the code and lists the paired node", async () => {

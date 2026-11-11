@@ -14,12 +14,13 @@ import {
   MatterController,
   ServerError,
 } from "@matter-server/ws-controller";
-import { MatterError as MatterJsError, NodeId } from "@matter/main";
+import { MatterError as MatterJsError, NodeConnectionState, NodeId, ObserverGroup } from "@matter/main";
 import { ClusterId, EndpointNumber, ManualPairingCodeCodec, QrPairingCodeCodec } from "@matter/main/types";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Log } from "../log.js";
+import { MatterInventory, MatterMonitor, uptimeAttribute, uptimeSeconds } from "./inventory.js";
 import {
   abortable,
   MatterError,
@@ -93,9 +94,21 @@ export class Matter implements MatterNodes, MatterAdmin {
   #starting: Promise<Running> | null = null;
   readonly #stopping = new AbortController();
   readonly #registering = new Set<string>();
+  readonly #inventory: MatterInventory;
+  #monitor: MatterMonitor | null = null;
+  #observers = new ObserverGroup();
+
+  #recordContact(nodeId: number, uptime?: number | null): void {
+    try {
+      this.#inventory.seen(nodeId, uptime);
+    } catch (err) {
+      this.#opts.log.warn("matter contact recording failed", { nodeId, err });
+    }
+  }
 
   constructor(opts: MatterOptions) {
     this.#opts = opts;
+    this.#inventory = new MatterInventory(join(opts.storagePath, "inventory.sqlite"));
     Logger.level = matterLogLevel(process.env["MATTER_LOG_LEVEL"] ?? "");
     // The hub handles SIGINT and SIGTERM and stops the controller itself.
     this.#env.vars.set("runtime.signals", false);
@@ -123,6 +136,25 @@ export class Matter implements MatterNodes, MatterAdmin {
           return;
         }
         this.#running = running;
+        this.#monitor = new MatterMonitor(
+          {
+            nodes: () =>
+              running.handler.getNodeIds().map((id) => {
+                const data = running.handler.getNodeDetails(id);
+                const listed = data.attributes["0/51/65531"];
+                return {
+                  nodeId: Number(id),
+                  available: data.available,
+                  supportsUptime: uptimeAttribute in data.attributes || (Array.isArray(listed) && listed.includes(2)),
+                };
+              }),
+            hasNode: (nodeId) => running.handler.hasNode(NodeId(BigInt(nodeId))),
+            read: (nodeId, paths) => running.handler.handleReadAttributes(NodeId(BigInt(nodeId)), paths, true),
+          },
+          this.#inventory,
+          log,
+        );
+        this.#monitor.start();
         log.info("matter controller started", {
           storage: this.#opts.storagePath,
           nodes: running.handler.getNodeIds().length,
@@ -161,6 +193,36 @@ export class Matter implements MatterNodes, MatterAdmin {
       { vendorId, fabricId },
     );
     this.#controller = controller;
+    const handler = controller.commandHandler;
+    this.#observers.on(handler.events.nodeStateChanged, (id, state) => {
+      if (state === NodeConnectionState.Connected) {
+        this.#recordContact(Number(id));
+        this.#monitor?.refreshCapabilities(Number(id));
+      }
+    });
+    this.#observers.on(handler.events.attributeChanged, (id, data) => {
+      if (data.value === undefined) return;
+      const { endpointId, clusterId, attributeId } = data.path;
+      this.#recordContact(
+        Number(id),
+        `${endpointId}/${clusterId}/${attributeId}` === uptimeAttribute ? uptimeSeconds(data.value) : undefined,
+      );
+    });
+    this.#observers.on(handler.events.eventChanged, (id, data) => {
+      if (data.events.length) this.#recordContact(Number(id));
+    });
+    this.#observers.on(handler.events.nodeAdded, (id) => {
+      this.#recordContact(Number(id));
+      this.#monitor?.refreshCapabilities(Number(id));
+    });
+    this.#observers.on(handler.events.nodeStructureChanged, (id) => this.#monitor?.refreshCapabilities(Number(id)));
+    this.#observers.on(handler.events.nodeDecommissioned, (id) => {
+      try {
+        this.#inventory.remove(Number(id));
+      } catch (err) {
+        this.#opts.log.warn("matter inventory removal failed", { nodeId: Number(id), err });
+      }
+    });
     await controller.otaUploads.cleanupOrphans();
     // Starts the controller, loads each node's attributes and connects to them.
     await controller.commandHandler.initializeNodes();
@@ -173,10 +235,15 @@ export class Matter implements MatterNodes, MatterAdmin {
     // Let a start in progress finish, so nothing it opens is left running.
     await this.#starting?.catch(() => undefined);
     await this.#teardown();
+    this.#inventory.close();
     await this.#env.runtime.close();
   }
 
   async #teardown(): Promise<void> {
+    this.#monitor?.stop();
+    this.#monitor = null;
+    this.#observers.close();
+    this.#observers = new ObserverGroup();
     this.#running = null;
     const log = this.#opts.log;
     try {
@@ -211,7 +278,13 @@ export class Matter implements MatterNodes, MatterAdmin {
       return null;
     }
     const d = handler.getNodeDetails(id);
-    return { nodeId, available: d.available, isBridge: d.is_bridge, attributes: d.attributes };
+    return {
+      nodeId,
+      available: d.available,
+      isBridge: d.is_bridge,
+      attributes: d.attributes,
+      ...this.#inventory.get(nodeId),
+    };
   }
 
   /** Every commissioned node, sorted by id. */
@@ -222,6 +295,18 @@ export class Matter implements MatterNodes, MatterAdmin {
       .filter((n) => n !== null)
       .map(summarize)
       .sort((a, b) => a.nodeId - b.nodeId);
+  }
+
+  /** Saves the node's display name in this hub. */
+  rename(nodeId: number, name: string): Promise<NodeSummary> {
+    return Promise.resolve().then(() => {
+      const { handler } = this.#require();
+      if (!handler.hasNode(NodeId(BigInt(nodeId)))) throw new MatterError("Matter node is not paired with this hub");
+      this.#inventory.rename(nodeId, name);
+      const node = this.node(nodeId);
+      if (node === null) throw new MatterError("Matter node is not paired with this hub");
+      return summarize(node);
+    });
   }
 
   /** Discovers commissioning advertisements over mDNS without Bluetooth. */
@@ -263,6 +348,7 @@ export class Matter implements MatterNodes, MatterAdmin {
         signal,
       ),
     );
+    this.#recordContact(nodeId);
   }
 
   /**

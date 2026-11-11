@@ -33,7 +33,7 @@ const maxLevel = 254;
  */
 export class MatterLight implements Device {
   readonly id: string;
-  readonly name: string;
+  readonly #configuredName: string;
   readonly #matter: MatterNodes;
   readonly #nodeId: number;
   readonly #endpoint: number;
@@ -44,11 +44,15 @@ export class MatterLight implements Device {
   constructor(matter: MatterNodes, cfg: MatterDeviceConfig) {
     this.#matter = matter;
     this.id = cfg.id;
-    this.name = cfg.name;
+    this.#configuredName = cfg.name;
     this.#nodeId = cfg.nodeId;
     this.#endpoint = cfg.endpoint;
     this.#minK = cfg.minKelvin;
     this.#maxK = cfg.maxKelvin;
+  }
+
+  get name(): string {
+    return this.#matter.node(this.#nodeId)?.displayName ?? this.#configuredName;
   }
 
   #path(cluster: number, attr: number): string {

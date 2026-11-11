@@ -11,6 +11,10 @@ export interface MatterNode {
   available: boolean;
   isBridge: boolean;
   attributes: Readonly<Record<string, unknown>>;
+  displayName: string | null;
+  lastSeen: number | null;
+  uptimeSeconds: number | null;
+  uptimeObservedAt: number | null;
 }
 
 /** The short form of a node, for listing. */
@@ -23,6 +27,9 @@ export interface NodeSummary {
   vendor: string | null;
   product: string | null;
   label: string | null;
+  lastSeen: number | null;
+  uptimeSeconds: number | null;
+  uptimeObservedAt: number | null;
 }
 
 /** What a newly paired node looks like in the commission response. */
@@ -67,6 +74,7 @@ export interface MatterAdmin {
   nodes(): NodeSummary[];
   discover(signal: AbortSignal): Promise<CommissionableDevice[]>;
   register(code: string, instanceName: string, signal: AbortSignal): Promise<CommissionedNode>;
+  rename(nodeId: number, name: string): Promise<NodeSummary>;
   commission(code: string, networkOnly: boolean, signal: AbortSignal): Promise<CommissionedNode>;
   setWiFiCredentials(ssid: string, password: string): Promise<void>;
   setThreadDataset(dataset: string): Promise<void>;
@@ -110,7 +118,10 @@ export function summarize(n: MatterNode): NodeSummary {
       .sort((a, b) => a - b),
     vendor: text(attrVendorName),
     product: text(attrProductName),
-    label: text(attrNodeLabel),
+    label: n.displayName ?? text(attrNodeLabel),
+    lastSeen: n.lastSeen,
+    uptimeSeconds: n.uptimeSeconds,
+    uptimeObservedAt: n.uptimeObservedAt,
   };
 }
 
