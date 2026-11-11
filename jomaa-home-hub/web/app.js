@@ -1,15 +1,20 @@
 const $ = (id) => document.getElementById(id);
 let devices = [];
+let matterNodes = [];
 let selected = null;
+let selectedMatter = null;
 let dirty = false;
 let cursor = null;
 let credential = null;
-let refreshing = false;
+let refreshing = null;
+let refreshGeneration = 0;
 let sessionGeneration = 0;
 let showingOlder = false;
 let scanController = null;
 let scanTimer = null;
 let scanGeneration = 0;
+let pairingDevice = null;
+let pairing = false;
 
 function node(tag, value, className) {
   const result = document.createElement(tag);
@@ -25,8 +30,12 @@ function signedIn(value) {
     sessionGeneration += 1;
     selected = null;
     devices = [];
+    matterNodes = [];
+    selectedMatter = null;
     $("detail").hidden = true;
+    $("matter-detail").hidden = true;
     $("discover-dialog").close();
+    $("matter-pair-dialog").close();
     $("enroll-dialog").close();
     $("credential-dialog").close();
   }
@@ -48,6 +57,7 @@ async function api(path, method = "GET", data, signal) {
 }
 
 function error(reason) {
+  $("notice").className = "";
   $("notice").textContent = reason.message || "Request failed";
 }
 function duration(seconds) {
@@ -72,8 +82,12 @@ function render() {
     all[device.status] = (all[device.status] || 0) + 1;
     return all;
   }, {});
+  for (const device of matterNodes) {
+    const state = device.available ? "online" : "offline";
+    counts[state] = (counts[state] || 0) + 1;
+  }
   $("summary").textContent =
-    `${devices.length} devices · ${counts.online || 0} online · ${counts.offline || 0} offline · ${counts.degraded || 0} degraded`;
+    `${devices.length + matterNodes.length} devices · ${counts.online || 0} online · ${counts.offline || 0} offline · ${counts.degraded || 0} degraded`;
   const search = $("search").value.toLowerCase();
   const filter = $("filter").value;
   const visible = devices.filter(
@@ -97,11 +111,59 @@ function render() {
     );
     $("device-rows").append(row);
   }
-  $("empty").hidden = visible.length > 0;
-  $("empty").textContent = devices.length
-    ? "No devices match your filters."
-    : "No devices yet. Add a device to get started.";
+  const visibleMatter = matterNodes.filter(
+    (device) =>
+      (filter === "all" || (device.available ? "online" : "offline") === filter) &&
+      `${matterName(device)} ${device.vendor || ""} ${device.nodeId}`.toLowerCase().includes(search),
+  );
+  for (const device of visibleMatter) {
+    const row = node("tr", undefined, device.nodeId === selectedMatter ? "selected" : "");
+    const cell = node("td");
+    const button = node("button", matterName(device), "device-link");
+    button.addEventListener("click", () => selectMatter(device.nodeId));
+    cell.append(button, node("span", `Matter · Node ${device.nodeId}`, "device-id"));
+    const stateCell = node("td");
+    stateCell.append(status(device.available ? "online" : "offline"));
+    row.append(cell, stateCell, node("td", "—"), node("td", "—"), node("td", "—"));
+    $("device-rows").append(row);
+  }
+  $("empty").hidden = visible.length + visibleMatter.length > 0;
+  $("empty").textContent =
+    devices.length + matterNodes.length
+      ? "No devices match your filters."
+      : "No devices yet. Add a device to get started.";
   renderDetail();
+  renderMatterDetail();
+}
+
+function matterName(device) {
+  return device.label || device.product || `Matter device ${device.nodeId}`;
+}
+
+function renderMatterDetail() {
+  const device = matterNodes.find((candidate) => candidate.nodeId === selectedMatter);
+  $("matter-detail").hidden = !device;
+  if (!device) return;
+  $("matter-detail-title").textContent = matterName(device);
+  $("matter-facts").replaceChildren();
+  for (const [label, value] of [
+    ["Matter node", device.nodeId],
+    ["Connection", device.available ? "Connected" : "Offline"],
+    ["Manufacturer", device.vendor || "—"],
+    ["Product", device.product || "—"],
+    ["Bridge", device.isBridge ? "Yes" : "No"],
+    ["Lights and plugs", device.lightEndpoints.length],
+  ]) {
+    const fact = node("div");
+    fact.append(node("dt", label), node("dd", value));
+    $("matter-facts").append(fact);
+  }
+}
+
+function selectMatter(nodeId) {
+  selected = null;
+  selectedMatter = nodeId;
+  render();
 }
 
 function renderDetail() {
@@ -132,20 +194,27 @@ function renderDetail() {
 }
 
 async function refresh() {
-  if (refreshing) return;
-  refreshing = true;
-  const generation = sessionGeneration;
+  if (refreshing && refreshGeneration === sessionGeneration) return refreshing;
+  const operation = refreshInventory();
+  refreshing = operation;
+  refreshGeneration = sessionGeneration;
   try {
-    const result = await api("/api/devices");
-    if (generation !== sessionGeneration) return;
-    devices = result.devices;
-    signedIn(true);
-    $("retention").textContent =
-      `Updates every 15 seconds. Offline after three missed reports (minimum 90 seconds). History retained for ${result.retentionDays} days.`;
-    render();
+    await operation;
   } finally {
-    refreshing = false;
+    if (refreshing === operation) refreshing = null;
   }
+}
+
+async function refreshInventory() {
+  const generation = sessionGeneration;
+  const result = await api("/api/devices");
+  if (generation !== sessionGeneration) return;
+  devices = result.devices;
+  matterNodes = result.matterNodes;
+  signedIn(true);
+  $("retention").textContent =
+    `Updates every 15 seconds. Offline after three missed reports (minimum 90 seconds). History retained for ${result.retentionDays} days.`;
+  render();
 }
 
 async function logs(append = false) {
@@ -175,6 +244,7 @@ async function logs(append = false) {
 }
 
 function select(id) {
+  selectedMatter = null;
   selected = id;
   dirty = false;
   cursor = null;
@@ -206,6 +276,10 @@ function renderDiscovered(found) {
     item.append(
       node("span", device.commissioningMode > 0 ? "Ready to pair" : "Pairing mode is off", "discovery-state"),
     );
+    const button = node("button", "Pair and register", "primary");
+    button.disabled = device.commissioningMode === 0;
+    button.addEventListener("click", () => beginPairing(device));
+    item.append(button);
     $("scan-results").append(item);
   }
   $("scan-empty").hidden = found.length > 0;
@@ -248,6 +322,68 @@ function startScan() {
   scan(scanGeneration);
 }
 
+function beginPairing(device) {
+  $("discover-dialog").close();
+  pairingDevice = device;
+  $("matter-code").value = "";
+  $("matter-pair-name").textContent = device.deviceName || "Matter device";
+  $("matter-pair-progress").textContent = "";
+  $("matter-pair-error").textContent = "";
+  $("matter-pair-dialog").showModal();
+  $("matter-code").focus();
+}
+
+$("matter-pair-dialog").addEventListener("cancel", (event) => {
+  if (pairing) event.preventDefault();
+});
+$("matter-pair-dialog").addEventListener("close", () => {
+  $("matter-code").value = "";
+  pairingDevice = null;
+});
+$("back-to-discovery").addEventListener("click", () => {
+  if (pairing) return;
+  $("matter-pair-dialog").close();
+  $("discover-dialog").showModal();
+  startScan();
+});
+$("matter-pair-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (pairing || !pairingDevice) return;
+  pairing = true;
+  const generation = sessionGeneration;
+  $("matter-register").disabled = true;
+  $("back-to-discovery").disabled = true;
+  $("matter-code").disabled = true;
+  $("matter-pair-error").textContent = "";
+  $("matter-pair-progress").textContent = "Pairing and registering… This can take a few minutes.";
+  try {
+    const result = await api("/api/matter/register", "POST", {
+      code: $("matter-code").value,
+      instanceName: pairingDevice.instanceName,
+    });
+    if (generation !== sessionGeneration) return;
+    selected = null;
+    selectedMatter = result.node.node_id;
+    $("matter-pair-dialog").close();
+    $("notice").className = "success";
+    $("notice").textContent = "Matter device registered.";
+    await refresh().catch(() => {
+      $("notice").textContent = "Matter device registered. Refresh to check its connection.";
+    });
+  } catch (reason) {
+    if (generation !== sessionGeneration) return;
+    $("matter-pair-progress").textContent = "";
+    $("matter-pair-error").textContent = reason.message;
+    await refresh().catch(() => {});
+  } finally {
+    pairing = false;
+    $("matter-register").disabled = false;
+    $("back-to-discovery").disabled = false;
+    $("matter-code").disabled = false;
+    $("matter-code").value = "";
+  }
+});
+
 $("login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = event.submitter;
@@ -282,6 +418,10 @@ $("refresh").addEventListener("click", () => {
 });
 $("close-detail").addEventListener("click", () => {
   selected = null;
+  render();
+});
+$("close-matter-detail").addEventListener("click", () => {
+  selectedMatter = null;
   render();
 });
 for (const id of ["device-name", "device-interval"])
@@ -379,7 +519,13 @@ refresh().catch((reason) => {
   else error(reason);
 });
 setInterval(() => {
-  if (!$("inventory").hidden && !$("discover-dialog").open && !$("enroll-dialog").open && !$("credential-dialog").open)
+  if (
+    !$("inventory").hidden &&
+    !$("discover-dialog").open &&
+    !$("matter-pair-dialog").open &&
+    !$("enroll-dialog").open &&
+    !$("credential-dialog").open
+  )
     refresh()
       .then(() => {
         if (!showingOlder) return logs();

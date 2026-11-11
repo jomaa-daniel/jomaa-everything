@@ -66,6 +66,7 @@ export interface MatterAdmin {
   readonly ready: boolean;
   nodes(): NodeSummary[];
   discover(signal: AbortSignal): Promise<CommissionableDevice[]>;
+  register(code: string, instanceName: string, signal: AbortSignal): Promise<CommissionedNode>;
   commission(code: string, networkOnly: boolean, signal: AbortSignal): Promise<CommissionedNode>;
   setWiFiCredentials(ssid: string, password: string): Promise<void>;
   setThreadDataset(dataset: string): Promise<void>;

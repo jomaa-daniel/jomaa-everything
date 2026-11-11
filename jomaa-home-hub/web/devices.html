@@ -13,7 +13,7 @@
       <div class="heading">
         <div>
           <h1>Device health</h1>
-          <p>Monitor and manage your Wi-Fi devices.</p>
+          <p>Register Matter devices and monitor your Wi-Fi devices.</p>
         </div>
         <button id="add" class="primary" hidden>Add device</button>
       </div>
@@ -95,6 +95,13 @@
         <p id="no-logs" hidden>No health reports received yet.</p>
         <button id="more" hidden>Load older reports</button>
       </section>
+      <section id="matter-detail" hidden aria-label="Selected Matter device">
+        <div class="detail-heading">
+          <h2 id="matter-detail-title"></h2>
+          <button id="close-matter-detail">Close details</button>
+        </div>
+        <dl id="matter-facts"></dl>
+      </section>
     </main>
     <dialog id="discover-dialog" aria-labelledby="discover-title" aria-describedby="discover-help">
       <h2 id="discover-title">Add device</h2>
@@ -115,6 +122,21 @@
         <p class="muted">Setting up a Pico for health reporting?</p>
         <button type="button" id="manual-enroll">Create device credential</button>
       </div>
+    </dialog>
+    <dialog id="matter-pair-dialog" aria-labelledby="matter-pair-title">
+      <form id="matter-pair-form">
+        <h2 id="matter-pair-title">Pair and register</h2>
+        <p id="matter-pair-name"></p>
+        <p class="muted">Enter this device's Matter setup code. For a shared device, use the code from its home app.</p>
+        <label for="matter-code">Matter setup code</label>
+        <input id="matter-code" type="password" autocomplete="off" spellcheck="false" required maxlength="512" />
+        <p id="matter-pair-progress" role="status" aria-live="polite"></p>
+        <p id="matter-pair-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button type="button" id="back-to-discovery">Back</button>
+          <button id="matter-register" class="primary">Pair and register</button>
+        </div>
+      </form>
     </dialog>
     <dialog id="enroll-dialog">
       <form id="enroll-form">

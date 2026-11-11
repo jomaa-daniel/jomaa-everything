@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { isHTTPS, LoginLimiter, clientIP } from "../limiter.js";
 import type { Log } from "../log.js";
+import type { MatterAdmin } from "../matter/nodes.js";
 import { HealthError, type HealthStore } from "./store.js";
 
 /** Shares the hub's administrator session, while pings use only device credentials. */
@@ -9,6 +10,7 @@ export class HealthHttp {
   constructor(
     private readonly store: HealthStore,
     private readonly log: Log,
+    private readonly matter: MatterAdmin,
   ) {}
 
   async handle(req: IncomingMessage, res: ServerResponse, authed: boolean): Promise<boolean> {
@@ -52,7 +54,12 @@ export class HealthHttp {
     }
     if (url.pathname === "/api/devices") {
       if (req.method !== "GET") throw new HealthError(405, "method not allowed");
-      json(res, 200, { devices: this.store.list(), retentionDays: this.store.retentionDays });
+      json(res, 200, {
+        devices: this.store.list(),
+        matterNodes: this.matter.ready ? this.matter.nodes() : [],
+        matterConnected: this.matter.ready,
+        retentionDays: this.store.retentionDays,
+      });
       return true;
     }
     if (url.pathname === "/api/devices/enroll" && req.method === "POST") {

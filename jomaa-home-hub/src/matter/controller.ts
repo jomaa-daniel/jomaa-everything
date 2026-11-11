@@ -15,7 +15,7 @@ import {
   ServerError,
 } from "@matter-server/ws-controller";
 import { MatterError as MatterJsError, NodeId } from "@matter/main";
-import { ClusterId, EndpointNumber } from "@matter/main/types";
+import { ClusterId, EndpointNumber, ManualPairingCodeCodec, QrPairingCodeCodec } from "@matter/main/types";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -76,6 +76,9 @@ interface Running {
   handler: MatterController["commandHandler"];
 }
 
+type CommissioningRequest = Parameters<MatterController["commandHandler"]["commissionNode"]>[0];
+type SelectedCommissioningRequest = Extract<CommissioningRequest, { passcode: number; longDiscriminator: number }>;
+
 /**
  * The embedded controller. Start it with run; until it has loaded the
  * commissioned nodes, calls fail with MatterNotReadyError.
@@ -89,6 +92,7 @@ export class Matter implements MatterNodes, MatterAdmin {
   #running: Running | null = null;
   #starting: Promise<Running> | null = null;
   readonly #stopping = new AbortController();
+  readonly #registering = new Set<string>();
 
   constructor(opts: MatterOptions) {
     this.#opts = opts;
@@ -267,6 +271,31 @@ export class Matter implements MatterNodes, MatterAdmin {
    * doesn't try Bluetooth. Wi-Fi and Thread devices need credentials set first.
    */
   async commission(code: string, networkOnly: boolean, signal: AbortSignal): Promise<CommissionedNode> {
+    return this.#commission(code.startsWith("MT:") ? { qrCode: code } : { manualCode: code }, networkOnly, signal);
+  }
+
+  /** Pairs the selected network advertisement with the supplied setup code. */
+  async register(code: string, instanceName: string, signal: AbortSignal): Promise<CommissionedNode> {
+    if (this.#registering.has(instanceName)) throw new MatterError("This device is already being paired.");
+    this.#registering.add(instanceName);
+    try {
+      const devices = await this.discover(signal);
+      const device = devices.find((candidate) => candidate.instanceName === instanceName);
+      if (device === undefined || device.commissioningMode === 0) {
+        throw new MatterError("This device is no longer accepting pairing. Enable pairing and scan again.");
+      }
+      const request = selectedCommissioningRequest(code, device);
+      return await this.#commission(request, true, signal);
+    } finally {
+      this.#registering.delete(instanceName);
+    }
+  }
+
+  async #commission(
+    request: CommissioningRequest,
+    networkOnly: boolean,
+    signal: AbortSignal,
+  ): Promise<CommissionedNode> {
     const { controller, config, handler } = this.#require();
 
     // Only hand over stored credentials whose values are actually present.
@@ -293,7 +322,7 @@ export class Matter implements MatterNodes, MatterAdmin {
           const { nodeId: paired } = await handler.commissionNode({
             nodeId,
             onNetworkOnly: networkOnly,
-            ...(code.startsWith("MT:") ? { qrCode: code } : { manualCode: code }),
+            ...request,
             ...credentials,
           });
           return paired;
@@ -333,6 +362,42 @@ export class Matter implements MatterNodes, MatterAdmin {
     const { handler } = this.#require();
     await call(abortable(handler.removeNode(NodeId(BigInt(nodeId))), signal));
   }
+}
+
+/** Decodes a setup code and restricts commissioning to the selected advertisement. */
+export function selectedCommissioningRequest(code: string, device: CommissionableDevice): SelectedCommissioningRequest {
+  let passcode: number;
+  let matches: boolean;
+  try {
+    if (code.startsWith("MT:")) {
+      const payloads = QrPairingCodeCodec.decode(code);
+      const payload = payloads[0];
+      if (payloads.length !== 1 || payload === undefined) {
+        throw new MatterError("Use the setup code for one device.");
+      }
+      passcode = payload.passcode;
+      matches =
+        payload.discriminator === device.longDiscriminator &&
+        (payload.vendorId === undefined || device.vendorId < 0 || payload.vendorId === device.vendorId) &&
+        (payload.productId === undefined || device.productId < 0 || payload.productId === device.productId);
+    } else {
+      const payload = ManualPairingCodeCodec.decode(code);
+      passcode = payload.passcode;
+      matches =
+        payload.shortDiscriminator === device.longDiscriminator >> 8 &&
+        (payload.vendorId === undefined || device.vendorId < 0 || payload.vendorId === device.vendorId) &&
+        (payload.productId === undefined || device.productId < 0 || payload.productId === device.productId);
+    }
+  } catch {
+    throw new MatterError("Invalid Matter setup code. Check the digits or paste the complete MT: QR payload.");
+  }
+  if (!matches) throw new MatterError("This setup code does not match the selected device.");
+  const ip = device.addresses[0];
+  return {
+    passcode,
+    longDiscriminator: device.longDiscriminator,
+    ...(ip === undefined ? {} : { knownAddress: { ip, port: device.port } }),
+  };
 }
 
 /**

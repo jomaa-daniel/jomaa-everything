@@ -86,7 +86,7 @@ def main() -> int:
                 password = getpass.getpass("Hub password: ")
             login = request(url + "/api/login", "POST", body={"password": password})
             token = login["token"]
-        timeout = 360 if args.path == "/api/matter/commission" else 30
+        timeout = 360 if args.path in ("/api/matter/commission", "/api/matter/register") else 30
         result = request(url + args.path, args.method, token=token, body=body, timeout=timeout)
         print(json.dumps(result, indent=2))
         return 0

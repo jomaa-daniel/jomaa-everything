@@ -43,11 +43,32 @@ class FakeMatter implements MatterAdmin {
   ready = true;
   code = "";
   err: Error | null = null;
+  instanceName = "";
+  registered = false;
 
   nodes(): NodeSummary[] {
     return [
       { nodeId: 1, available: true, isBridge: false, lightEndpoints: [1], vendor: "Acme", product: null, label: null },
+      ...(this.registered
+        ? [
+            {
+              nodeId: 5,
+              available: true,
+              isBridge: false,
+              lightEndpoints: [1],
+              vendor: "Acme",
+              product: "Lamp",
+              label: "Desk",
+            },
+          ]
+        : []),
     ];
+  }
+  async register(code: string, instanceName: string): Promise<CommissionedNode> {
+    this.instanceName = instanceName;
+    const result = await this.commission(code);
+    this.registered = true;
+    return result;
   }
   discover(): Promise<CommissionableDevice[]> {
     return this.err !== null
@@ -302,6 +323,53 @@ test("matter endpoints", async () => {
   assert.equal(res.body["error"], "Matter controller is not running");
   res = await call(fresh, "GET", "/healthz");
   assert.deepEqual(res.body, { ok: true, matterConnected: false });
+});
+
+test("selected-device registration normalizes the code and lists the paired node", async () => {
+  const fresh = await setup();
+  const response = await call(
+    fresh,
+    "POST",
+    "/api/matter/register",
+    JSON.stringify({ code: "1234-567-8901", instanceName: "lamp" }),
+  );
+  assert.equal(response.status, 201);
+  assert.equal(fresh.matter.code, "12345678901");
+  assert.equal(fresh.matter.instanceName, "lamp");
+  assert.equal((response.body["node"] as Json)["node_id"], 5);
+  const listing = await call(fresh, "GET", "/api/matter/nodes");
+  assert.ok((listing.body["nodes"] as NodeSummary[]).some((node) => node.nodeId === 5));
+});
+
+test("registration requires authentication, a selected device, and same-origin browser requests", async () => {
+  const fresh = await setup();
+  const body = JSON.stringify({ code: "private-code", instanceName: "lamp" });
+  assert.equal((await call({ url: fresh.url, token: "" }, "POST", "/api/matter/register", body)).status, 401);
+  assert.equal((await call(fresh, "POST", "/api/matter/register", '{"code":"private-code"}')).status, 400);
+  assert.equal(
+    (await call(fresh, "POST", "/api/matter/register", body, { "Sec-Fetch-Site": "cross-site" })).status,
+    403,
+  );
+  assert.equal(
+    (await call(fresh, "POST", "/api/matter/register", body, { Origin: "https://other.example" })).status,
+    403,
+  );
+  assert.equal(fresh.matter.code, "");
+});
+
+test("registration failures redact setup codes and keep the error status", async () => {
+  const fresh = await setup();
+  fresh.matter.err = new MatterError("cannot pair with 12345678901 or 1234-567-8901");
+  const result = await call(
+    fresh,
+    "POST",
+    "/api/matter/register",
+    JSON.stringify({ code: "1234-567-8901", instanceName: "lamp" }),
+  );
+  assert.equal(result.status, 502);
+  assert.equal(JSON.stringify(result.body).includes("12345678901"), false);
+  assert.equal(JSON.stringify(result.body).includes("1234-567-8901"), false);
+  assert.match(String(result.body["error"]), /redacted/);
 });
 
 test("login is rate limited", async () => {

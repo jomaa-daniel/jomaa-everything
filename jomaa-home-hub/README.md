@@ -345,6 +345,7 @@ Every request except `/healthz` and `/api/login` needs
 | POST   | `/api/targets/{id}/sync`     | `{"on","brightness","colorTemperaturePct","clientId","revision"}`         | fixes devices that drifted, returns `synchronized`                    |
 | GET    | `/api/matter/nodes`          |                                                                           | paired Matter devices                                                 |
 | GET    | `/api/matter/discover`       |                                                                           | commissionable devices advertised over local-network mDNS             |
+| POST   | `/api/matter/register`       | `{"code","instanceName"}`                                                 | Pair the selected network advertisement and persist its Matter node.  |
 | POST   | `/api/matter/commission`     | `{"code","networkOnly"}`                                                  | pair a device                                                         |
 | POST   | `/api/matter/wifi`           | `{"ssid","password"}`                                                     | Wi-Fi credentials for pairing                                         |
 | POST   | `/api/matter/thread`         | `{"dataset"}`                                                             | Thread dataset for pairing                                            |
@@ -380,6 +381,9 @@ The hub includes a device inventory, SQLite health history, and a management pag
 Add device opens a network discovery window for Matter devices advertising for
 pairing or sharing. It scans while open, lists device names, addresses and
 pairing availability, and stops when closed. Scan again retries discovery.
+Pair and register on a discovered device asks for its setup code and pairs over
+the network. The controller stores paired nodes in its Matter fabric; they
+appear in the device inventory with connection status and device details.
 Create device credential in that window opens Pico health enrollment.
 Pico W, Pico 2 W, and RP2040 boards with an ESP8285 UART radio report over verified HTTPS using individual credentials.
 Their first authenticated report registers them; missed reports mark them offline.

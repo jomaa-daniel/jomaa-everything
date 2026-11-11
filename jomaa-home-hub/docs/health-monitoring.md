@@ -25,8 +25,10 @@ node --env-file=.env dist/main.js --config config.json
 The build copies the management page into `dist/web`. Include that directory when packaging the compiled hub.
 Open `https://jomaa.org/devices` and sign in with the existing hub password.
 Add device scans the home network for Matter devices advertising for pairing or
-sharing. Scans continue while the discovery window is open. Create device
-credential opens the Pico enrollment form.
+sharing. Scans continue while the discovery window is open. Pair and register on
+a discovered device opens the setup-code form. Successful network pairing stores
+the node in the Matter fabric and lists it in the inventory with its connection
+status and device details. Create device credential opens the Pico enrollment form.
 The hub's root URL redirects to `/devices`, including on the Cloudflare hostname.
 
 For Docker, create the private bind-mount directory before starting the container:
@@ -157,7 +159,7 @@ requires HTTPS or loopback access; cookie mutations reject cross-origin requests
 
 | Method | Path                           | Purpose                                                                                                  |
 | ------ | ------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/devices`                 | List inventory and derived status.                                                                       |
+| GET    | `/api/devices`                 | List Pico inventory, paired Matter nodes, controller readiness and derived status.                       |
 | POST   | `/api/devices/enroll`          | Issue a credential; body: `id`, `name`, optional `intervalSeconds`. Returns the token once.              |
 | GET    | `/api/devices/{id}`            | Device details.                                                                                          |
 | PATCH  | `/api/devices/{id}`            | Update `name` and/or `intervalSeconds` (15–3600).                                                        |

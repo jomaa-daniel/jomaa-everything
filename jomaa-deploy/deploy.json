@@ -107,7 +107,7 @@
     },
     {
       "hostname": "jomaa.org",
-      "path": "^/(home(/.*)?|devices(/.*)?|lights(/.*)?|api/(login|logout|targets(/.*)?|devices(/.*)?|matter/discover))?$",
+      "path": "^/(home(/.*)?|devices(/.*)?|lights(/.*)?|api/(login|logout|targets(/.*)?|devices(/.*)?|matter/(discover|register)))?$",
       "service": "hub",
       "probes": [
         "/",
@@ -118,6 +118,7 @@
         "/devices/style.css",
         "/api/devices",
         "/api/matter/discover",
+        "/api/matter/register",
         "/lights",
         "/lights/app.js",
         "/api/login",

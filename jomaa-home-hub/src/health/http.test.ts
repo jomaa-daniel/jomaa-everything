@@ -10,13 +10,14 @@ import { test } from "node:test";
 import { Api, sessionToken } from "../api.js";
 import { Hub } from "../hub.js";
 import { silentLog } from "../log.js";
-import type { MatterAdmin } from "../matter/nodes.js";
+import type { MatterAdmin, NodeSummary } from "../matter/nodes.js";
 import { HealthStore } from "./store.js";
 
 const matter: MatterAdmin = {
   ready: false,
   nodes: () => [],
   discover: () => Promise.resolve([]),
+  register: () => Promise.reject(new Error("unused")),
   commission: () => Promise.reject(new Error("unused")),
   setWiFiCredentials: () => Promise.resolve(),
   setThreadDataset: () => Promise.resolve(),
@@ -194,5 +195,56 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     await Promise.all([close(secure), close(insecure)]);
     store.close();
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+await test("device inventory includes registered Matter nodes without issuing Pico credentials", async () => {
+  const nodes: NodeSummary[] = [];
+  const controller: MatterAdmin = {
+    ...matter,
+    ready: true,
+    nodes: () => nodes,
+    register: () => {
+      nodes.push({
+        nodeId: 42,
+        available: true,
+        isBridge: false,
+        lightEndpoints: [1],
+        vendor: "Acme",
+        product: "Lamp",
+        label: "Desk",
+      });
+      return Promise.resolve({ node_id: 42, available: true, is_bridge: false });
+    },
+  };
+  const store = new HealthStore(":memory:");
+  const server = httpServer(new Api(new Hub(), controller, "inventory-test-password", silentLog, store).handle);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const headers = {
+    Authorization: `Bearer ${sessionToken("inventory-test-password")}`,
+    "Content-Type": "application/json",
+  };
+  try {
+    const registration = await fetch(origin + "/api/matter/register", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ code: "12345678901", instanceName: "desk" }),
+    });
+    assert.equal(registration.status, 201);
+    const response = await fetch(origin + "/api/devices", { headers });
+    const inventory = (await response.json()) as {
+      devices: unknown[];
+      matterNodes: NodeSummary[];
+      matterConnected: boolean;
+    };
+    assert.deepEqual(inventory.devices, []);
+    assert.equal(inventory.matterConnected, true);
+    assert.deepEqual(inventory.matterNodes, nodes);
+    assert.equal(inventory.matterNodes[0]?.nodeId, 42);
+    assert.deepEqual(store.list(), []);
+  } finally {
+    await close(server);
+    store.close();
   }
 });

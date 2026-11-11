@@ -114,6 +114,9 @@ label {
   color: #ab3434;
   margin: 16px 0;
 }
+#notice.success {
+  color: var(--accent);
+}
 .toolbar {
   display: flex;
   align-items: center;
@@ -208,7 +211,8 @@ tr.selected {
   font-size: 12px;
   margin-top: 14px;
 }
-#detail {
+#detail,
+#matter-detail {
   border-top: 1px solid var(--border);
   margin-top: 36px;
   padding-top: 28px;
@@ -288,6 +292,12 @@ dialog input {
 #scan-error {
   color: #ab3434;
 }
+#matter-pair-error {
+  color: #ab3434;
+}
+#matter-pair-progress {
+  color: var(--accent);
+}
 #scan-status {
   color: var(--accent);
   font-weight: 550;
@@ -304,6 +314,9 @@ dialog input {
 }
 .discovered-device > * {
   display: block;
+}
+.discovered-device button {
+  margin-top: 12px;
 }
 .network-address {
   font-size: 13px;

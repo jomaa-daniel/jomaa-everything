@@ -74,7 +74,7 @@ export class Api {
     health?: HealthStore,
   ) {
     this.#token = sessionToken(password);
-    this.#healthHttp = health ? new HealthHttp(health, log.with({ component: "device-health" })) : undefined;
+    this.#healthHttp = health ? new HealthHttp(health, log.with({ component: "device-health" }), matter) : undefined;
     const route = (method: string, path: string, handler: Handler): Route => ({
       method,
       pattern: new RegExp("^" + path.replace(/\{\w+\}/g, "([^/]+)") + "$"),
@@ -92,6 +92,7 @@ export class Api {
       route("POST", "/api/targets/{id}/sync", this.#sync),
       route("GET", "/api/matter/nodes", this.#matterNodes),
       route("GET", "/api/matter/discover", this.#matterDiscover),
+      route("POST", "/api/matter/register", this.#matterRegister),
       route("DELETE", "/api/matter/nodes/{nodeId}", this.#matterRemove),
       route("POST", "/api/matter/commission", this.#matterCommission),
       route("POST", "/api/matter/wifi", this.#matterWiFi),
@@ -270,6 +271,39 @@ export class Api {
   async #matterDiscover({ res, signal }: RequestContext): Promise<void> {
     const devices = await this.#matterCall(() => this.matter.discover(withTimeout(signal, commandTimeoutMs)));
     writeJSON(res, 200, { devices });
+  }
+
+  async #matterRegister({ req, res, signal }: RequestContext): Promise<void> {
+    if (req.headers["sec-fetch-site"] === "cross-site") throw new HttpError(403, "cross-site request refused");
+    const origin = req.headers.origin;
+    if (origin !== undefined) {
+      let host: string;
+      try {
+        host = new URL(origin).host;
+      } catch {
+        throw new HttpError(403, "cross-site request refused");
+      }
+      if (host !== req.headers.host) throw new HttpError(403, "cross-site request refused");
+    }
+    const body = (await readBody(req)).only("code", "instanceName");
+    const raw = (body.string("code") ?? "").trim();
+    const code = raw.startsWith("MT:") ? raw : raw.replace(/[\s-]/g, "");
+    const instanceName = body.string("instanceName") ?? "";
+    if (code === "" || instanceName === "") throw new HttpError(400, "setup code and selected device are required");
+    if (!code.startsWith("MT:") && !/^(?:\d{11}|\d{21})$/.test(code)) {
+      throw new HttpError(400, "use an 11- or 21-digit Matter setup code or an MT: QR payload");
+    }
+    try {
+      const node = await this.#matterCall(() =>
+        this.matter.register(code, instanceName, withTimeout(signal, pairingTimeoutMs)),
+      );
+      writeJSON(res, 201, { node });
+    } catch (err) {
+      if (err instanceof HttpError) {
+        throw new HttpError(err.status, err.message.replaceAll(code, "[redacted]").replaceAll(raw, "[redacted]"));
+      }
+      throw new HttpError(500, "Matter registration failed. Refresh the inventory before trying again.");
+    }
   }
 
   async #matterRemove({ res, params, signal }: RequestContext): Promise<void> {

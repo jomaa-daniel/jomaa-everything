@@ -88,7 +88,7 @@ class ManifestTest(unittest.TestCase):
         route = next(r for r in self.config["routes"] if r["hostname"] == "jomaa.org")
         for path in route["probes"]:
             self.assertIsNotNone(re.search(route["path"], path), path)
-        for path in ("/devices", "/devices/app.js", "/api/devices", "/api/matter/discover"):
+        for path in ("/devices", "/devices/app.js", "/api/devices", "/api/matter/discover", "/api/matter/register"):
             self.assertIsNotNone(re.search(route["path"], path), path)
         for path in ("/deploy", "/api/matter/nodes", "/api/matter/commission", "/unknown", "/lights-other", "/devices-other"):
             self.assertIsNone(re.search(route["path"], path), path)
