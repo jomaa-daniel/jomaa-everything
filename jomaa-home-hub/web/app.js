@@ -18,12 +18,97 @@ let scanTimer = null;
 let scanGeneration = 0;
 let pairingDevice = null;
 let pairing = false;
+const columnFilters = { type: null, capabilities: null, group: null };
+const filterColumns = ["type", "capabilities", "group", "status"];
+const chipColors = ["green", "amber", "violet", "blue", "rose", "teal"];
+const capabilityColors = {
+  Power: "green",
+  Brightness: "amber",
+  Color: "violet",
+  "White temperature": "blue",
+  "Health reporting": "teal",
+};
 
 function node(tag, value, className) {
   const result = document.createElement(tag);
   if (value !== undefined) result.textContent = value;
   if (className) result.className = className;
   return result;
+}
+
+function chipColor(label) {
+  let hash = 0;
+  for (const character of label) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  return chipColors[hash % chipColors.length];
+}
+
+function chipCell(labels, kind, empty) {
+  const cell = node("td");
+  const list = node("div", undefined, "chip-list");
+  if (!labels.length) list.append(node("span", empty, "chip chip-neutral"));
+  for (const label of labels) {
+    const color = kind === "capabilities" ? capabilityColors[label] || chipColor(label) : chipColor(label);
+    list.append(node("span", label, `chip chip-${color}`));
+  }
+  cell.append(list);
+  return cell;
+}
+
+function selectedColumn(column) {
+  return column === "status" ? ($("filter").value === "all" ? null : $("filter").value) : columnFilters[column];
+}
+
+function columnChoices(column) {
+  const values = [];
+  for (const device of devices) {
+    values.push(
+      column === "type"
+        ? "Health reporter"
+        : column === "capabilities"
+          ? "Health reporting"
+          : column === "group"
+            ? "No group"
+            : device.status,
+    );
+  }
+  for (const device of matterNodes) {
+    if (column === "type") values.push(device.type);
+    else if (column === "capabilities")
+      values.push(...(device.capabilities.length ? device.capabilities : ["Not reported"]));
+    else if (column === "group") values.push(...(device.groups.length ? device.groups : ["No group"]));
+    else values.push(device.available ? "online" : "offline");
+  }
+  return [null, ...[...new Set(values)].sort((a, b) => a.localeCompare(b))];
+}
+
+function cycleColumn(column) {
+  const choices = columnChoices(column);
+  const next = choices[(choices.indexOf(selectedColumn(column)) + 1) % choices.length];
+  if (column === "status") $("filter").value = next || "all";
+  else columnFilters[column] = next;
+  render();
+}
+
+function matchesColumns(type, capabilities, groups) {
+  return (
+    (columnFilters.type === null || columnFilters.type === type) &&
+    (columnFilters.capabilities === null ||
+      (capabilities.length ? capabilities : ["Not reported"]).includes(columnFilters.capabilities)) &&
+    (columnFilters.group === null || (groups.length ? groups : ["No group"]).includes(columnFilters.group))
+  );
+}
+
+function renderColumnFilters() {
+  for (const column of filterColumns) {
+    const value = selectedColumn(column);
+    $("cycle-" + column).className = value === null ? "column-filter" : "column-filter filtered";
+    $(column + "-filter-value").textContent = value === null ? "All" : value;
+    $("cycle-" + column).setAttribute(
+      "aria-label",
+      `Cycle ${column} filter. Current: ${value === null ? "All" : value}`,
+    );
+  }
+  $("clear-filters").hidden = !$("search").value && filterColumns.every((column) => selectedColumn(column) === null);
 }
 
 function signedIn(value) {
@@ -81,6 +166,7 @@ function status(value) {
 }
 
 function render() {
+  renderColumnFilters();
   const counts = devices.reduce((all, device) => {
     all[device.status] = (all[device.status] || 0) + 1;
     return all;
@@ -94,7 +180,10 @@ function render() {
   const search = $("search").value.toLowerCase();
   const filter = $("filter").value;
   const visible = devices.filter(
-    (d) => (filter === "all" || d.status === filter) && `${d.name} ${d.id}`.toLowerCase().includes(search),
+    (d) =>
+      (filter === "all" || d.status === filter) &&
+      matchesColumns("Health reporter", ["Health reporting"], []) &&
+      `${d.name} ${d.id} Health reporter Health reporting No group`.toLowerCase().includes(search),
   );
   $("device-rows").replaceChildren();
   for (const device of visible) {
@@ -108,8 +197,8 @@ function render() {
     row.append(
       cell,
       node("td", "Health reporter"),
-      node("td", "Health reporting"),
-      node("td", "No group"),
+      chipCell(["Health reporting"], "capabilities", "Not reported"),
+      chipCell([], "group", "No group"),
       stateCell,
       node("td", lastSeen(device.lastSeen)),
       node("td", duration(device.latest?.uptimeSeconds)),
@@ -120,6 +209,7 @@ function render() {
   const visibleMatter = matterNodes.filter(
     (device) =>
       (filter === "all" || (device.available ? "online" : "offline") === filter) &&
+      matchesColumns(device.type, device.capabilities, device.groups) &&
       `${matterName(device)} ${device.vendor || ""} ${device.nodeId} ${device.type} ${device.capabilities.join(" ")} ${device.groups.join(" ")}`
         .toLowerCase()
         .includes(search),
@@ -137,8 +227,8 @@ function render() {
     row.append(
       cell,
       node("td", device.type),
-      node("td", device.capabilities.join(", ") || "Not reported"),
-      node("td", device.groups.join(", ") || "No group"),
+      chipCell(device.capabilities, "capabilities", "Not reported"),
+      chipCell(device.groups, "group", "No group"),
       stateCell,
       node("td", device.lastSeen === null ? "Not seen yet" : lastSeen(device.lastSeen)),
       uptimeCell,
@@ -439,6 +529,13 @@ $("logout").addEventListener("click", async () => {
 });
 $("search").addEventListener("input", render);
 $("filter").addEventListener("change", render);
+for (const column of filterColumns) $("cycle-" + column).addEventListener("click", () => cycleColumn(column));
+$("clear-filters").addEventListener("click", () => {
+  for (const column of ["type", "capabilities", "group"]) columnFilters[column] = null;
+  $("filter").value = "all";
+  $("search").value = "";
+  render();
+});
 $("refresh").addEventListener("click", () => {
   $("notice").textContent = "";
   refresh()

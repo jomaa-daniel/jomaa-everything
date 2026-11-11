@@ -159,6 +159,83 @@ td {
 td:first-child {
   min-width: 185px;
 }
+.column-filter {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  border: 0;
+  padding: 0;
+  min-height: 42px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.column-filter:hover {
+  background: transparent;
+  color: var(--accent);
+}
+.column-filter-value {
+  font-size: 12px;
+  font-weight: 400;
+  max-width: 160px;
+  overflow-wrap: anywhere;
+}
+.column-filter.filtered {
+  color: var(--accent);
+}
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 280px;
+  min-width: 150px;
+}
+.chip {
+  display: inline-block;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.chip-green {
+  background: #ecfdf5;
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+.chip-amber {
+  background: #fffbeb;
+  color: #854d0e;
+  border-color: #fde68a;
+}
+.chip-violet {
+  background: #f5f3ff;
+  color: #5b21b6;
+  border-color: #ddd6fe;
+}
+.chip-blue {
+  background: #eff6ff;
+  color: #1e40af;
+  border-color: #bfdbfe;
+}
+.chip-rose {
+  background: #fff1f2;
+  color: #9f1239;
+  border-color: #fecdd3;
+}
+.chip-teal {
+  background: #f0fdfa;
+  color: #115e59;
+  border-color: #99f6e4;
+}
+.chip-neutral {
+  background: #f3f4f6;
+  color: #4b5563;
+  border-color: #d1d5db;
+}
 .device-link {
   border: 0;
   padding: 0;

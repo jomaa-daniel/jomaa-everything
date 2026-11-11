@@ -41,7 +41,7 @@
               <option>offline</option>
               <option>pending</option>
               <option>revoked</option></select
-            ><button id="refresh">Refresh</button>
+            ><button id="clear-filters" hidden>Clear filters</button><button id="refresh">Refresh</button>
           </div>
         </div>
         <div class="table-wrap">
@@ -49,10 +49,27 @@
             <thead>
               <tr>
                 <th>Device</th>
-                <th>Type</th>
-                <th>Capabilities</th>
-                <th>Group</th>
-                <th>Status</th>
+                <th>
+                  <button id="cycle-type" class="column-filter" type="button">
+                    <span>Type ↻</span><span id="type-filter-value" class="column-filter-value">All</span>
+                  </button>
+                </th>
+                <th>
+                  <button id="cycle-capabilities" class="column-filter" type="button">
+                    <span>Capabilities ↻</span
+                    ><span id="capabilities-filter-value" class="column-filter-value">All</span>
+                  </button>
+                </th>
+                <th>
+                  <button id="cycle-group" class="column-filter" type="button">
+                    <span>Group ↻</span><span id="group-filter-value" class="column-filter-value">All</span>
+                  </button>
+                </th>
+                <th>
+                  <button id="cycle-status" class="column-filter" type="button">
+                    <span>Status ↻</span><span id="status-filter-value" class="column-filter-value">All</span>
+                  </button>
+                </th>
                 <th>Last seen</th>
                 <th>Uptime</th>
                 <th>Signal</th>
