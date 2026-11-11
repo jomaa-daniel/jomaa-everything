@@ -6,8 +6,8 @@ The scripts reuse the hub's provisioning code and require three **new persisted 
 The connected dev-server board uses an **ESP8285 on UART0, GP0/GP1, 115200 baud**. Select
 `--wifi-transport esp8285` for it. Select `native` for a board with a working Pico W / Pico 2 W radio.
 The firmware must include `ssl.SSLContext`, `CERT_REQUIRED`, and CA loading; a plain Pico firmware build
-without those capabilities cannot run this reporter. The tested board currently uses MicroPython 1.29.0
-with a Pico W build label. See [the Pico skill](SKILL.md) for hardware findings and recovery procedures.
+without those capabilities cannot run this reporter. The one-shot scripts pin MicroPython 1.29.0
+with a Pico W build label. See [the Pico skill](SKILL.md) for hardware and protocol constraints.
 
 ## One-shot setup
 
@@ -52,7 +52,7 @@ authentication, the script prompts through `sudo` for that mount operation in an
 
 ## Tools
 
-Run on the machine physically connected to USB, normally `jerry@192.168.1.239`:
+Run on the machine physically connected to USB:
 
 ```sh
 python3 pico-imaging-bench/scripts/setup_tools.py --venv pico-imaging-bench/data/tools
@@ -69,9 +69,9 @@ or a trusted build. Supply its trusted SHA-256 digest; the bench checks UF2 bloc
 Do not infer physical radio hardware from a firmware build label.
 
 Prepare private files containing only the Wi-Fi password and hub administrator password, with mode 600.
-The live hub's `HUB_PASSWORD` is in `/home/jerry/jomaa-everything/jomaa-home-hub/.env`; the bench accepts
-the password itself, rather than `.env` syntax. Existing GitHub secret values cannot be read back through
-the GitHub API. A trusted root CA must come from a trusted OS store or verified CA distribution.
+The hub's `HUB_PASSWORD` is in `jomaa-home-hub/.env`. The explicit imaging commands accept a file
+containing the password itself; `setup_pico.py` also accepts the env file. A trusted root CA must come
+from a trusted OS store or verified CA distribution.
 
 The administrator password stays on the host. Provisioning installs only the Wi-Fi settings, individual
 device token, and root certificate on the Pico. Run outputs use directories with mode 700 and files with
@@ -123,17 +123,6 @@ The default Wi-Fi transport is an ESP8285 on UART0, GP0/GP1. For a working nativ
 ```sh
 python3 pico-imaging-bench/scripts/setup_wifi.py --wifi-transport native
 ```
-
-Linux serial devices commonly belong to `dialout`. That group must be active in the running login;
-account membership alone does not update existing processes. Jerry's Cloudflare SSH endpoint uses a
-user SSH daemon that inherits its service manager's groups. To obtain a login from the system SSH
-daemon through the same tunnel, use:
-
-```sh
-ssh -o HostKeyAlias=192.168.1.239 -J jerry jerry@127.0.0.1
-```
-
-Check `id -nG` in that shell for `dialout` before running USB operations.
 
 ## Image from scratch
 
