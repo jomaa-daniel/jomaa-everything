@@ -152,6 +152,20 @@ export class Hub {
       .map((entry) => entry.device.id);
   }
 
+  directGroupsForTarget(id: string): string[] {
+    return [...this.#entries.values()]
+      .filter((entry) => entry.kind === "room" && entry.device.members.some((member) => member.id === id))
+      .map((entry) => entry.device.id);
+  }
+
+  groupNames(ids: string[]): string[] {
+    const contains = (group: Group): boolean =>
+      ids.includes(group.id) || group.members.some((member) => member instanceof Group && contains(member));
+    return [...this.#entries.values()]
+      .filter((entry) => entry.kind === "room" && contains(entry.device))
+      .map((entry) => entry.device.name);
+  }
+
   /** Rebuilds configured targets and rooms while retaining client revisions. */
   reload(config: Config): void {
     if (this.#build === null) throw new Error("hub has no configured device factory");

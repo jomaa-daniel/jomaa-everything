@@ -22,6 +22,7 @@ let scanGeneration = 0;
 let pairingDevice = null;
 let pairing = false;
 const columnFilters = { type: null, capabilities: null, group: null };
+let statusFilter = null;
 const filterColumns = ["type", "capabilities", "group", "status"];
 const chipColors = ["green", "amber", "violet", "blue", "rose", "teal"];
 const capabilityColors = {
@@ -47,8 +48,12 @@ function chipColor(label) {
   return chipColors[hash % chipColors.length];
 }
 
-function typeCell(label) {
-  if (!typeHues.has(label)) {
+function displayedType(device, reported) {
+  return device.assignedType?.name ?? reported;
+}
+
+function typeCell(label, preferredHue) {
+  if (preferredHue === undefined && !typeHues.has(label)) {
     let hash = 0;
     for (const character of label) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
     let hue = hash % 360;
@@ -58,7 +63,7 @@ function typeCell(label) {
   }
   const cell = node("td");
   const chip = node("span", label, "chip chip-type");
-  chip.style.setProperty("--chip-hue", typeHues.get(label));
+  chip.style.setProperty("--chip-hue", preferredHue ?? typeHues.get(label));
   cell.append(chip);
   return cell;
 }
@@ -76,7 +81,7 @@ function chipCell(labels, kind, empty) {
 }
 
 function selectedColumn(column) {
-  return column === "status" ? ($("filter").value === "all" ? null : $("filter").value) : columnFilters[column];
+  return column === "status" ? statusFilter : columnFilters[column];
 }
 
 function columnChoices(column) {
@@ -84,26 +89,28 @@ function columnChoices(column) {
   for (const device of devices) {
     values.push(
       column === "type"
-        ? "Health reporter"
+        ? displayedType(device, "Health reporter")
         : column === "capabilities"
           ? "Health reporting"
           : column === "group"
-            ? "No group"
+            ? device.groups.length
+              ? device.groups
+              : ["No group"]
             : device.status,
     );
   }
   for (const device of matterNodes) {
-    if (column === "type") values.push(device.type);
+    if (column === "type") values.push(displayedType(device, device.type));
     else if (column === "capabilities")
       values.push(...(device.capabilities.length ? device.capabilities : ["Not reported"]));
     else if (column === "group") values.push(...(device.groups.length ? device.groups : ["No group"]));
     else values.push(device.available ? "online" : "offline");
   }
-  return [null, ...[...new Set(values)].sort((a, b) => a.localeCompare(b))];
+  return [null, ...[...new Set(values.flat())].sort((a, b) => a.localeCompare(b))];
 }
 
 function selectColumn(column, value) {
-  if (column === "status") $("filter").value = value || "all";
+  if (column === "status") statusFilter = value;
   else columnFilters[column] = value;
   render();
 }
@@ -125,16 +132,20 @@ function renderColumnFilters() {
     const select = $("select-filter-" + column);
     const choices = columnChoices(column);
     if (!choices.includes(value)) choices.push(value);
-    select.replaceChildren();
-    for (const choice of choices) {
-      const option = node("option", choice === null ? "All" : choice);
-      option.value = JSON.stringify(choice);
-      select.append(option);
+    const serialized = JSON.stringify(choices);
+    if (select.dataset.choices !== serialized) {
+      select.replaceChildren();
+      for (const choice of choices) {
+        const option = node("option", choice === null ? "All" : choice);
+        option.value = JSON.stringify(choice);
+        select.append(option);
+      }
+      select.dataset.choices = serialized;
     }
     select.value = JSON.stringify(value);
     select.title = `Filter by ${column}. Current: ${value === null ? "All" : value}`;
   }
-  $("clear-filters").hidden = !$("search").value && filterColumns.every((column) => selectedColumn(column) === null);
+  $("clear-filters").hidden = filterColumns.every((column) => selectedColumn(column) === null);
 }
 
 function signedIn(value) {
@@ -192,6 +203,14 @@ function status(value) {
 }
 
 function render() {
+  assignedTypeHues.clear();
+  for (const device of [...devices, ...matterNodes]) {
+    if (device.assignedType) assignedTypeHues.add(device.assignedType.hue);
+  }
+  for (const [label, hue] of typeHues) {
+    if (assignedTypeHues.has(hue)) typeHues.delete(label);
+    else assignedTypeHues.add(hue);
+  }
   renderColumnFilters();
   const counts = devices.reduce((all, device) => {
     all[device.status] = (all[device.status] || 0) + 1;
@@ -203,13 +222,11 @@ function render() {
   }
   $("summary").textContent =
     `${devices.length + matterNodes.length} devices · ${counts.online || 0} online · ${counts.offline || 0} offline · ${counts.degraded || 0} degraded`;
-  const search = $("search").value.toLowerCase();
-  const filter = $("filter").value;
+  const filter = statusFilter;
   const visible = devices.filter(
     (d) =>
-      (filter === "all" || d.status === filter) &&
-      matchesColumns("Health reporter", ["Health reporting"], []) &&
-      `${d.name} ${d.id} Health reporter Health reporting No group`.toLowerCase().includes(search),
+      (filter === null || d.status === filter) &&
+      matchesColumns(displayedType(d, "Health reporter"), ["Health reporting"], d.groups),
   );
   $("device-rows").replaceChildren();
   for (const device of visible) {
@@ -222,9 +239,9 @@ function render() {
     stateCell.append(status(device.status));
     row.append(
       cell,
-      typeCell("Health reporter"),
+      typeCell(displayedType(device, "Health reporter"), device.assignedType?.hue),
       chipCell(["Health reporting"], "capabilities", "Not reported"),
-      chipCell([], "group", "No group"),
+      chipCell(device.groups, "group", "No group"),
       stateCell,
       node("td", lastSeen(device.lastSeen)),
       node("td", duration(device.latest?.uptimeSeconds)),
@@ -234,11 +251,8 @@ function render() {
   }
   const visibleMatter = matterNodes.filter(
     (device) =>
-      (filter === "all" || (device.available ? "online" : "offline") === filter) &&
-      matchesColumns(device.type, device.capabilities, device.groups) &&
-      `${matterName(device)} ${device.vendor || ""} ${device.nodeId} ${device.type} ${device.capabilities.join(" ")} ${device.groups.join(" ")}`
-        .toLowerCase()
-        .includes(search),
+      (filter === null || (device.available ? "online" : "offline") === filter) &&
+      matchesColumns(displayedType(device, device.type), device.capabilities, device.groups),
   );
   for (const device of visibleMatter) {
     const row = node("tr", undefined, device.nodeId === selectedMatter ? "selected" : "");
@@ -252,7 +266,7 @@ function render() {
     if (device.uptimeObservedAt !== null) uptimeCell.title = `Reported ${stamp(device.uptimeObservedAt)}`;
     row.append(
       cell,
-      typeCell(device.type),
+      typeCell(displayedType(device, device.type), device.assignedType?.hue),
       chipCell(device.capabilities, "capabilities", "Not reported"),
       chipCell(device.groups, "group", "No group"),
       stateCell,
@@ -283,6 +297,8 @@ function renderMatterDetail() {
   $("matter-facts").replaceChildren();
   for (const [label, value] of [
     ["Matter node", device.nodeId],
+    ["Reported type", device.type],
+    ["Assigned type", device.assignedType?.name || "Use reported type"],
     ["Connection", device.available ? "Connected" : "Offline"],
     ["Last seen", device.lastSeen === null ? "Not seen yet" : stamp(device.lastSeen)],
     ["Reported uptime", device.uptimeSeconds === null ? "Unavailable" : duration(device.uptimeSeconds)],
@@ -580,8 +596,6 @@ $("logout").addEventListener("click", async () => {
     error(reason);
   }
 });
-$("search").addEventListener("input", render);
-$("filter").addEventListener("change", render);
 for (const column of filterColumns) {
   $("select-filter-" + column).addEventListener("change", () =>
     selectColumn(column, JSON.parse($("select-filter-" + column).value)),
@@ -589,8 +603,7 @@ for (const column of filterColumns) {
 }
 $("clear-filters").addEventListener("click", () => {
   for (const column of ["type", "capabilities", "group"]) columnFilters[column] = null;
-  $("filter").value = "all";
-  $("search").value = "";
+  statusFilter = null;
   render();
 });
 $("refresh").addEventListener("click", () => {

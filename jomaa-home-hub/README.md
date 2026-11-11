@@ -68,14 +68,31 @@ state lives in `data/matter`.
 
 ## Home page
 
-`https://jomaa.org/home` links to lights, device health, hub status, the Pico imaging guide,
+`https://jomaa.org/home` links to lights, device health, device organization, hub status, the Pico imaging guide,
 and the project documentation. The hub serves the page at `/home` and its CSS under
 `/home/`; edit `web/home.html` to add another page. It needs no administrator session.
 
 The locally managed Cloudflare tunnel also routes hostname `jomaa.org`, paths `/`,
-`/home`, `/lights` (including assets), and the panel's API requests to the hub on port 8080. Its proxied DNS record
+`/home`, `/devices`, `/manage`, `/lights` (including assets), and the panel's API requests to the hub on port 8080. Its proxied DNS record
 points to the same tunnel as `hub.jomaa.org`. The apex `/` redirects to `/home`;
 the hub subdomain's `/` continues to open device health.
+
+## Device organization
+
+`https://jomaa.org/manage` manages custom device types, groups, and assignments
+for configured Govee lights, paired Matter devices, and health reporters. It
+shares the hub administrator session. Types have distinct colors; assigning a
+custom type changes the inventory category while hardware types and capabilities
+stay device-reported. Deleting a type clears its assignments.
+
+Groups are the configured rooms. Assigning lights updates their room membership
+and the hub's light controls without restarting the controller. Reporting-only
+devices have group membership for organization. Deleting a group removes its
+memberships. Types and reporting-only memberships persist in
+`data/organization.sqlite`; light memberships persist in `config.json`.
+
+The device inventory uses column filter dropdowns for type, capabilities,
+group, and status.
 
 ## Web light controller
 
@@ -308,10 +325,11 @@ Matter details include a name editor, last-seen time and reported uptime.
 Names are stored in the hub's Matter data and used by configured Matter lights.
 Last seen records successful device contact. Diagnostic reads run every 30
 seconds; devices that omit uptime show Unavailable.
-The inventory includes Type, Capabilities and Group columns. Matter types and
-functional capabilities come from reported descriptors and attributes; groups
-come from configured room membership. Health reporters show their reporting
-role and No group when no room membership is configured.
+The inventory includes Type, Capabilities and Group columns. Type shows the
+assigned category when present, otherwise the reported type. Matter details
+show reported and assigned types separately. Functional capabilities come from
+reported descriptors and attributes. Groups show room membership, including
+organization membership for reporting-only devices.
 Matter light details include a Group selector. Save group moves configured
 endpoints to the selected room or No group and persists the room membership.
 Create device credential in that window opens Pico health enrollment.

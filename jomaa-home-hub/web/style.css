@@ -132,9 +132,6 @@ label {
   color: var(--muted);
   font-size: 14px;
 }
-#search {
-  max-width: 220px;
-}
 .table-wrap {
   overflow-x: auto;
   border-top: 1px solid var(--border);
@@ -489,11 +486,6 @@ dialog input {
   }
   .filters {
     flex-wrap: wrap;
-  }
-  #search {
-    flex: 1;
-    max-width: none;
-    width: 140px;
   }
   th,
   td {

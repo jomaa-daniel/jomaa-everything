@@ -3,6 +3,7 @@ import { isHTTPS, LoginLimiter, clientIP } from "../limiter.js";
 import type { Log } from "../log.js";
 import type { MatterAdmin } from "../matter/nodes.js";
 import type { Hub } from "../hub.js";
+import type { Organization } from "../organization.js";
 import { HealthError, type HealthStore } from "./store.js";
 
 /** Shares the hub's administrator session, while pings use only device credentials. */
@@ -13,6 +14,7 @@ export class HealthHttp {
     private readonly log: Log,
     private readonly matter: MatterAdmin,
     private readonly hub: Hub,
+    private readonly organization?: Organization,
   ) {}
 
   async handle(req: IncomingMessage, res: ServerResponse, authed: boolean): Promise<boolean> {
@@ -57,12 +59,22 @@ export class HealthHttp {
     if (url.pathname === "/api/devices") {
       if (req.method !== "GET") throw new HealthError(405, "method not allowed");
       json(res, 200, {
-        devices: this.store.list(),
+        devices: this.store.list().map((device) => ({
+          ...device,
+          assignedType: this.organization?.assignedType(`health:${device.id}`) ?? null,
+          groupIds: this.organization?.groups(`health:${device.id}`) ?? [],
+          groups: this.hub.groupNames(this.organization?.groups(`health:${device.id}`) ?? []),
+        })),
         matterNodes: this.matter.ready
           ? this.matter.nodes().map((node) => ({
               ...node,
-              groups: this.hub.groupsForMatter(node.nodeId),
-              groupIds: this.hub.directGroupsForMatter(node.nodeId),
+              assignedType: this.organization?.assignedType(`matter:${node.nodeId}`) ?? null,
+              groups: node.lightEndpoints.length
+                ? this.hub.groupsForMatter(node.nodeId)
+                : this.hub.groupNames(this.organization?.groups(`matter:${node.nodeId}`) ?? []),
+              groupIds: node.lightEndpoints.length
+                ? this.hub.directGroupsForMatter(node.nodeId)
+                : (this.organization?.groups(`matter:${node.nodeId}`) ?? []),
             }))
           : [],
         matterConnected: this.matter.ready,

@@ -55,6 +55,10 @@ export class Fields {
     return this;
   }
 
+  has(key: string): boolean {
+    return Object.hasOwn(this.#obj, key);
+  }
+
   string(key: string): string | null {
     return this.#read(key, "a string", (v): v is string => typeof v === "string");
   }

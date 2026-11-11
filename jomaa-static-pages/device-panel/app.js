@@ -228,6 +228,11 @@ function render() {
   );
   document.querySelectorAll("[data-room]").forEach((button) => {
     const id = button.dataset.room;
+    const room = targets.find(
+      (target) => target.kind === "room" && target.id === id,
+    );
+    button.hidden = !room;
+    if (room) button.textContent = room.name;
     button.setAttribute("aria-pressed", String(selected.includes(id)));
     button.disabled =
       busy ||
@@ -437,7 +442,10 @@ async function command(changes) {
       devices: Object.fromEntries(
         Object.entries(observed.devices).map(([id, state]) => [
           id,
-          apply(state, targets.find((target) => target.id === id).features),
+          apply(
+            state,
+            targets.find((target) => target.id === id)?.features ?? {},
+          ),
         ]),
       ),
     };

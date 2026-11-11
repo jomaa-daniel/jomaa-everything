@@ -5,6 +5,17 @@ import type { NodeSummary } from "./matter/nodes.js";
 
 /** Saves room membership with the onboarding script's config lock. */
 export function assignMatterGroup(path: string, node: NodeSummary, groupId: string | null): Promise<Config> {
+  return editLayout(path, {
+    action: "assign",
+    nodeId: node.nodeId,
+    endpoints: node.lightEndpoints,
+    name: node.label || node.product || `Matter device ${node.nodeId}`,
+    groupIds: groupId === null ? [] : [groupId],
+    targetIds: [],
+  });
+}
+
+export function editLayout(path: string, operation: Record<string, unknown>): Promise<Config> {
   const root = fileURLToPath(new URL("../", import.meta.url));
   const script = fileURLToPath(new URL("../scripts/assign_matter_group.py", import.meta.url));
   return new Promise((resolve, reject) => {
@@ -24,13 +35,6 @@ export function assignMatterGroup(path: string, node: NodeSummary, groupId: stri
         }
       },
     );
-    child.stdin?.end(
-      JSON.stringify({
-        nodeId: node.nodeId,
-        endpoints: node.lightEndpoints,
-        name: node.label || node.product || `Matter device ${node.nodeId}`,
-        groupId,
-      }),
-    );
+    child.stdin?.end(JSON.stringify(operation));
   });
 }

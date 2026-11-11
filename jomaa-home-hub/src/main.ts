@@ -9,6 +9,8 @@ import { loadConfig, parseListen, usesDriver } from "./config.js";
 import { GoveeClient, defaultBaseURL } from "./govee.js";
 import { Hub } from "./hub.js";
 import { HealthStore } from "./health/store.js";
+import { Organization } from "./organization.js";
+import { dirname, join } from "node:path";
 import { stderrLog, type Log } from "./log.js";
 import { MatterNotReadyError, type MatterAdmin, type MatterNodes } from "./matter/nodes.js";
 
@@ -63,6 +65,7 @@ async function run(log: Log): Promise<void> {
   });
   const matter = await startMatter(log);
   let health: HealthStore | undefined;
+  let organization: Organization | undefined;
   let cleanup: ReturnType<typeof setInterval> | undefined;
   try {
     const govee = new GoveeClient(goveeKey, process.env["GOVEE_BASE_URL"] || defaultBaseURL);
@@ -71,7 +74,12 @@ async function run(log: Log): Promise<void> {
       Number(process.env["HEALTH_RETENTION_DAYS"] ?? 30),
     );
     health = store;
-    const api = new Api(Hub.build(cfg, govee, matter), matter, password, log, store, cliOptions.config);
+    organization = new Organization(
+      process.env["HEALTH_DB_PATH"] === ":memory:"
+        ? ":memory:"
+        : join(dirname(process.env["HEALTH_DB_PATH"] ?? "data/health.sqlite"), "organization.sqlite"),
+    );
+    const api = new Api(Hub.build(cfg, govee, matter), matter, password, log, store, cliOptions.config, organization);
     const cert = process.env["HUB_TLS_CERT"];
     const key = process.env["HUB_TLS_KEY"];
     if (Boolean(cert) !== Boolean(key)) throw new Error("set both HUB_TLS_CERT and HUB_TLS_KEY");
@@ -112,6 +120,7 @@ async function run(log: Log): Promise<void> {
     if (cleanup) clearInterval(cleanup);
     try {
       health?.close();
+      organization?.close();
     } finally {
       await matter.stop();
     }

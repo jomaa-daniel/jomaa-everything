@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Device organization · Jomaa Home</title>
+    <link rel="stylesheet" href="/devices/style.css" />
+    <link rel="stylesheet" href="/manage/style.css" />
+    <script type="module" src="/manage/app.js"></script>
+  </head>
+  <body>
+    <header><a href="/home">Jomaa Home</a><button id="logout" hidden>Sign out</button></header>
+    <main>
+      <div class="heading">
+        <div>
+          <h1>Device organization</h1>
+          <p>Manage types, groups, and where your devices belong.</p>
+        </div>
+        <button id="refresh" hidden>Refresh</button>
+      </div>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <section id="login-section" hidden>
+        <form id="login-form" class="login">
+          <h2>Sign in to your hub</h2>
+          <label for="password">Hub password</label
+          ><input id="password" type="password" autocomplete="current-password" required /><button class="primary">
+            Sign in
+          </button>
+        </form>
+      </section>
+      <div id="management" hidden>
+        <div class="management-panels">
+          <section class="management-card" aria-labelledby="types-title">
+            <h2 id="types-title">Types</h2>
+            <p class="muted">
+              Custom categories for your devices. Hardware types and capabilities remain device-reported.
+            </p>
+            <form id="type-create" class="create-form">
+              <label class="sr-only" for="type-name">New type name</label
+              ><input id="type-name" maxlength="80" placeholder="Type name, e.g. Light strips" required /><button
+                class="primary"
+              >
+                Add type
+              </button>
+            </form>
+            <ul id="type-list" class="management-list"></ul>
+            <p id="types-empty" class="muted" hidden>No custom types yet.</p>
+          </section>
+          <section class="management-card" aria-labelledby="groups-title">
+            <h2 id="groups-title">Groups</h2>
+            <p class="muted">
+              Groups appear in the Lights picker. Light controls use the lights assigned to each group.
+            </p>
+            <form id="group-create" class="create-form">
+              <label class="sr-only" for="group-name">New group name</label
+              ><input id="group-name" maxlength="80" placeholder="Group name, e.g. Office" required /><button
+                class="primary"
+              >
+                Add group
+              </button>
+            </form>
+            <ul id="group-list" class="management-list"></ul>
+            <p id="groups-empty" class="muted" hidden>No groups yet.</p>
+          </section>
+        </div>
+        <section aria-labelledby="assignments-title">
+          <h2 id="assignments-title">Device assignments</h2>
+          <p id="matter-unavailable" class="muted" hidden>Matter controller offline. Matter devices are unavailable.</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Device</th>
+                  <th scope="col">Reported type</th>
+                  <th scope="col">Assigned type</th>
+                  <th scope="col">Groups</th>
+                  <th scope="col"><span class="sr-only">Save assignment</span></th>
+                </tr>
+              </thead>
+              <tbody id="assignment-rows"></tbody>
+            </table>
+          </div>
+          <p id="devices-empty" class="muted" hidden>No devices are available.</p>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

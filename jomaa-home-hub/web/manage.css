@@ -1,0 +1,116 @@
+.management-panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-bottom: 36px;
+}
+.management-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px;
+}
+.management-card h2 {
+  margin-bottom: 8px;
+}
+.create-form {
+  display: flex;
+  gap: 8px;
+  margin: 20px 0;
+}
+.create-form input {
+  flex: 1;
+  width: 0;
+}
+.management-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.management-list li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.management-list input {
+  flex: 1;
+  width: 0;
+}
+.type-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  background: hsl(var(--type-hue) 65% 48%);
+}
+.group-choice {
+  min-width: 180px;
+}
+.group-choice summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+.group-choice label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 400;
+}
+.group-choice input {
+  padding: 0;
+  min-height: 0;
+  width: 16px;
+  height: 16px;
+}
+#assignment-rows select {
+  min-width: 180px;
+  max-width: 240px;
+}
+@media (max-width: 750px) {
+  .management-panels {
+    grid-template-columns: 1fr;
+  }
+  .management-card {
+    padding: 18px;
+  }
+  .management-list {
+    font-size: 14px;
+  }
+  .management-list li {
+    flex-wrap: wrap;
+  }
+  .management-list input {
+    flex-basis: calc(100% - 30px);
+  }
+  #assignment-rows,
+  #assignment-rows tr,
+  #assignment-rows td {
+    display: block;
+    width: 100%;
+  }
+  #management thead {
+    display: none;
+  }
+  #assignment-rows tr {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-top: 16px;
+  }
+  #assignment-rows td {
+    border-bottom: 0;
+    padding: 8px 16px;
+  }
+  #assignment-rows td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  #assignment-rows select,
+  #assignment-rows button {
+    width: 100%;
+    max-width: none;
+  }
+}

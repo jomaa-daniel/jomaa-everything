@@ -8,12 +8,13 @@
     <script type="module" src="/devices/app.js"></script>
   </head>
   <body>
-    <header><a href="/devices">Jomaa Home</a><button id="logout" hidden>Sign out</button></header>
+    <header><a href="/home">Jomaa Home</a><button id="logout" hidden>Sign out</button></header>
     <main>
       <div class="heading">
         <div>
           <h1>Device health</h1>
           <p>Register Matter devices and monitor your Wi-Fi devices.</p>
+          <p><a href="/manage">Manage types and groups</a></p>
         </div>
         <button id="add" class="primary" hidden>Add device</button>
       </div>
@@ -31,17 +32,7 @@
         <div class="toolbar">
           <p id="summary"></p>
           <div class="filters">
-            <label class="sr-only" for="search">Search devices</label
-            ><input id="search" type="search" placeholder="Search devices" /><label class="sr-only" for="filter"
-              >Filter by status</label
-            ><select id="filter">
-              <option value="all">All statuses</option>
-              <option>online</option>
-              <option>degraded</option>
-              <option>offline</option>
-              <option>pending</option>
-              <option>revoked</option></select
-            ><button id="clear-filters" hidden>Clear filters</button><button id="refresh">Refresh</button>
+            <button id="clear-filters" hidden>Clear filters</button><button id="refresh">Refresh</button>
           </div>
         </div>
         <div class="table-wrap">

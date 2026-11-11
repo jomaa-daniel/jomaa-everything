@@ -248,7 +248,7 @@ await test("device inventory includes registered Matter nodes without issuing Pi
     assert.equal(inventory.matterConnected, true);
     assert.deepEqual(
       inventory.matterNodes,
-      nodes.map((node) => ({ ...node, groups: [], groupIds: [] })),
+      nodes.map((node) => ({ ...node, assignedType: null, groups: [], groupIds: [] })),
     );
     assert.equal(inventory.matterNodes[0]?.nodeId, 42);
     assert.deepEqual(store.list(), []);
