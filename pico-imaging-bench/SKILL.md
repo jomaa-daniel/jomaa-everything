@@ -10,9 +10,49 @@ arguments and the complete imaging procedure. The implementation shares provisio
 `../jomaa-home-hub/scripts/init_pico.py` and firmware with `../jomaa-home-hub/devices/pico-health/`.
 Use `jomaa-daniel/jomaa-everything` as the upstream repository.
 
+## One-shot enrollment and heartbeats
+
+Use `python3 pico-imaging-bench/scripts/setup_pico.py --execute` on the USB host for complete setup
+from BOOTSEL through hub registration and verified heartbeats. This needs Python 3.13+ and internet
+access. It downloads verified tools and the pinned UF2, obtains Wi-Fi from a configured Pico or prompts,
+and reads the administrator password from the hub's private `.env` or a supplied private file.
+
+Enrollment uses the existing Add Device `/api/devices/enroll` endpoint. The device ID defaults to
+the installed ID or `pico-UNIQUE_ID`; matching installed credentials are reused. Credential replacement requires `--rotate`.
+The root CA is extracted from an OS-verified TLS chain. The installed reporter retains certificate
+and hostname verification. Success requires three new persisted heartbeats from one boot.
+
+Use `--configure-port` to install startup reporting on a selected MicroPython Pico while retaining its
+filesystem, existing ID, and credential. Use `--target-port` to reimage a connected Pico via BOOTSEL.
+Private run files include prepared configuration, a startup backup, image metadata, and the health result.
+Linux mounting can prompt for administrator authentication for the selected volume; serial operations
+use the current login's existing permissions.
+
+## Standalone firmware and Wi-Fi
+
+For base firmware and Wi-Fi setup, use `scripts/setup_wifi.py` on the USB host. It is a standalone
+Python 3 script that downloads verified USB tools and the pinned MicroPython UF2. It requires serial
+read/write access and a writable BOOTSEL mount. Linux uses `udisksctl` for user mounting; host policy
+can require administrator access for mounting. macOS uses `diskutil`. It does not change host permissions.
+
+Connect exactly one RP2040 Pico in BOOTSEL and run `python3 pico-imaging-bench/scripts/setup_wifi.py`
+on Linux. To reimage a connected MicroPython Pico, add `--target-port` with its explicit serial path.
+This reboots the selected target into BOOTSEL and checks its returning identity before filesystem erasure.
+Use `--configure-port` with an explicit serial path to finish setup using installed MicroPython. This
+checks target identity, erases its filesystem, installs Wi-Fi startup, and verifies the connection after restart.
+The default radio transport is `esp8285`; select `--wifi-transport native` for a working native Pico W radio.
+
+One additional configured Pico can supply Wi-Fi settings. Reading those settings interrupts its
+program, and the script restarts it afterward. With no source Pico, the script prompts for the network
+name and password. It installs `wifi_config.json` and `main.py` on the target and requires a Wi-Fi IP
+after restart. Use `image_and_test.py` for hub enrollment and persisted health-report verification.
+
 ## Known dev-server hardware
 
 - SSH: `jerry@192.168.1.239`; use the existing SSH access and keepalive configuration.
+- The `jerry` SSH alias reaches a user SSH daemon through Cloudflare. For a fresh login with current
+  account groups, use the system SSH daemon through that tunnel:
+  `ssh -o HostKeyAlias=192.168.1.239 -J jerry jerry@127.0.0.1`. Check `id -nG` for `dialout`.
 - Stable USB path: `/dev/serial/by-id/usb-MicroPython_Board_in_FS_mode_5303284720e42a9c-if00`;
   normally resolves to `/dev/ttyACM0`. Unique ID: `5303284720e42a9c`.
 - The usable radio is an **external ESP8285**, UART0, TX GP0 / RX GP1, 115200 baud.

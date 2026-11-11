@@ -82,6 +82,17 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual(json.loads((output / "device_config.json").read_text())["wifi_transport"], "esp8285")
         self.assertEqual((output / "esp8285.py").stat().st_mode & 0o777, 0o600)
 
+    def test_install_passes_the_isolated_tools_environment_to_all_usb_operations(self):
+        output = self.root / "usb-environment"
+        output.mkdir()
+        (output / "device_config.json").write_text(json.dumps({"wifi_transport": "esp8285"}))
+        env = {"PYTHONPATH": "/private/usb-tools"}
+        with patch.object(init_pico.subprocess, "run") as run:
+            run.return_value.returncode = 0
+            init_pico.install("/dev/selected", output, env=env)
+        self.assertTrue(run.call_args_list)
+        self.assertTrue(all(call.kwargs["env"] == env for call in run.call_args_list))
+
     def test_insecure_origins_and_redirects_are_refused(self):
         for url in ("http://hub.jomaa.org", "https://user:password@hub.jomaa.org", "https://hub.jomaa.org/api",
                     "https://hub.jomaa.org?query", "https://hub.jomaa.org#fragment", "https://[::1]"):

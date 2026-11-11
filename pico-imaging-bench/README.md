@@ -9,6 +9,47 @@ The firmware must include `ssl.SSLContext`, `CERT_REQUIRED`, and CA loading; a p
 without those capabilities cannot run this reporter. The tested board currently uses MicroPython 1.29.0
 with a Pico W build label. See [the Pico skill](SKILL.md) for hardware findings and recovery procedures.
 
+## One-shot setup
+
+Connect one RP2040 Pico in BOOTSEL mode and run on its USB host:
+
+```sh
+python3 pico-imaging-bench/scripts/setup_pico.py --execute
+```
+
+This requires Python 3.13+ and internet access. The script downloads verified USB tools and firmware,
+obtains Wi-Fi settings, flashes MicroPython, creates a credential through the hub's existing Add Device
+enrollment API, installs startup health reporting, and requires **three new persisted heartbeats from
+one boot** before reporting success. Flashing erases the target filesystem. Without `--execute`, it
+prints the plan and performs no USB or enrollment operations.
+
+Wi-Fi settings come from the selected Pico or one additional configured Pico; otherwise the script
+prompts for the network and password. It reads the hub administrator password from
+`jomaa-home-hub/.env` by default, or prompts if that file is absent. `--hub-password-file` accepts a
+private env file or password file. The administrator password stays on the host. The trusted root CA
+comes from a TLS chain verified by the host OS; `--ca-cert` accepts an explicitly supplied trusted root.
+
+The device ID defaults to the installed ID or `pico-UNIQUE_ID`. The name defaults to the enrolled name or `Pico UNIQUE_ID`;
+`--id` and `--name` override those values. The default report interval is 15 seconds. Existing target
+credentials are reused when the device ID matches. `--rotate` explicitly replaces an existing
+credential while retaining its device history.
+
+For a Pico with MicroPython installed, run:
+
+```sh
+python3 pico-imaging-bench/scripts/setup_pico.py --execute \
+  --configure-port /dev/serial/by-id/usb-MicroPython_Board_in_FS_mode_530328472857581c-if00
+```
+
+This installs the health reporter and verifies heartbeats while retaining the filesystem. It replaces
+`main.py` and the health configuration/modules, saving the target's prior startup in the private run
+directory. Use `--target-port` to reimage a connected MicroPython Pico through BOOTSEL.
+
+Runs are stored in `data/runs/` with private prepared firmware, `image.json`, a startup backup when
+available, and `report.json`. `--run-dir` selects a new output directory. Serial read/write permissions
+must be active in the current login. Linux mounting uses `udisksctl`; if mounting requires administrator
+authentication, the script prompts through `sudo` for that mount operation in an interactive terminal.
+
 ## Tools
 
 Run on the machine physically connected to USB, normally `jerry@192.168.1.239`:
@@ -35,6 +76,64 @@ the GitHub API. A trusted root CA must come from a trusted OS store or verified 
 The administrator password stays on the host. Provisioning installs only the Wi-Fi settings, individual
 device token, and root certificate on the Pico. Run outputs use directories with mode 700 and files with
 mode 600; `data/`, firmware files, and certificates are ignored by Git.
+
+## Base firmware and Wi-Fi
+
+`scripts/setup_wifi.py` is a standalone setup for an RP2040 Pico. Connect one Pico in BOOTSEL mode and
+run on the Linux USB host:
+
+```sh
+python3 pico-imaging-bench/scripts/setup_wifi.py
+```
+
+The script supports Linux and macOS and needs Python 3 and internet access. It downloads and verifies
+its USB tools and the official MicroPython firmware, mounts the BOOTSEL volume if necessary, flashes
+the firmware, finds the returning serial device, **erases the Pico filesystem**, and installs Wi-Fi
+startup. It requires a successful connection with an IP address after restarting. The current login
+must have read/write serial access and write access to the mounted BOOTSEL volume. On Linux, the script
+uses `udisksctl` to mount as the current user; if host policy denies mounting, it requests administrator
+authentication for the selected mount in an interactive terminal. On macOS it uses
+`diskutil`. The script checks device access and does not change host permissions.
+
+To reimage a Pico already running MicroPython, select its serial port. The script puts that board into
+BOOTSEL, flashes it, and checks its identity before erasing its filesystem. Disconnect any other
+BOOTSEL boards before using this option:
+
+```sh
+python3 pico-imaging-bench/scripts/setup_wifi.py \
+  --target-port /dev/serial/by-id/usb-MicroPython_Board_in_FS_mode_530328472857581c-if00
+```
+
+To finish Wi-Fi setup on a Pico with MicroPython installed, including an interrupted setup after a
+successful flash, use `--configure-port`. This retains the installed firmware, **erases the target
+filesystem**, installs Wi-Fi startup, and verifies the connection after restart:
+
+```sh
+python3 pico-imaging-bench/scripts/setup_wifi.py \
+  --configure-port /dev/serial/by-id/usb-MicroPython_Board_in_FS_mode_530328472857581c-if00
+```
+
+If one configured Pico is connected, the script copies its Wi-Fi settings, interrupts its running
+program, and restarts it. Otherwise it prompts for the network name and password. The password is stored
+on the new Pico in `wifi_config.json`. Connect only one BOOTSEL Pico and at most one existing
+MicroPython Pico in addition to the selected target. The script stops if more than one new serial device appears.
+
+The default Wi-Fi transport is an ESP8285 on UART0, GP0/GP1. For a working native Pico W radio, run:
+
+```sh
+python3 pico-imaging-bench/scripts/setup_wifi.py --wifi-transport native
+```
+
+Linux serial devices commonly belong to `dialout`. That group must be active in the running login;
+account membership alone does not update existing processes. Jerry's Cloudflare SSH endpoint uses a
+user SSH daemon that inherits its service manager's groups. To obtain a login from the system SSH
+daemon through the same tunnel, use:
+
+```sh
+ssh -o HostKeyAlias=192.168.1.239 -J jerry jerry@127.0.0.1
+```
+
+Check `id -nG` in that shell for `dialout` before running USB operations.
 
 ## Image from scratch
 

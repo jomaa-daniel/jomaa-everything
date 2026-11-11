@@ -91,10 +91,10 @@ def private_write(path: Path, data: bytes) -> None:
         output.write(data)
 
 
-def install(port: str, output: Path) -> None:
+def install(port: str, output: Path, *, env=None) -> None:
     def remote(*args):
         result = subprocess.run([sys.executable, "-m", "mpremote", "connect", port, "resume", *args],
-                                capture_output=True, timeout=40)
+                                capture_output=True, timeout=40, env=env)
         if result.returncode:
             raise ProvisionError("USB installation failed; prepared files remain in the output directory")
     config = json.loads((output / "device_config.json").read_text())
