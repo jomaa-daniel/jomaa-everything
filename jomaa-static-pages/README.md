@@ -5,7 +5,7 @@ their own hostnames through the hub's Cloudflare tunnel on jerry.
 
 | Folder | Hostname |
 |--------|----------|
-| `sarah-portfolio/` | https://sarah.jomaa.org |
+| `sarah.jomaa.org/` | https://sarah.jomaa.org |
 
 ## Device panel
 
@@ -25,20 +25,21 @@ The hub serves this panel with its API. `jomaa-home-hub/scripts/build-web.mjs`
 copies the panel and its styles into the hub build. Run
 `npm run build` from `jomaa-home-hub/` after editing the panel. Changes to this
 folder trigger hub verification and deployment through GitHub Actions.
-The panel does not need a `sites.json` entry.
+The panel is part of the hub build and does not need a static site route.
 
 ```
 browser ── https ──▶ Cloudflare ── tunnel ──▶ jerry: serve.py on 127.0.0.1:8090
-                                               picks the folder by Host (sites.json)
+                                               picks the hostname directory by Host
 ```
 
 `serve.py` serves files only (no directory listings, no hidden files) to
-hostnames listed in `sites.json`, and answers 404 for anything else.
+hostnames discovered from its directory names, and answers 404 for anything else.
+`/healthz` returns the server's health independently of the site hostname.
 
 ## Edit the portfolio
 
-Each artwork is one entry in `sarah-portfolio/artworks.js`. Put the image in
-`sarah-portfolio/images/` and add an entry with its title, year, medium, size,
+Each artwork is one entry in `sarah.jomaa.org/artworks.js`. Put the image in
+`sarah.jomaa.org/images/` and add an entry with its title, year, medium, size,
 series and pixel width and height. The series filter buttons come from the
 `series` values. The current images are generated sample art; swap them for
 real photos or scans (JPEG or WebP, about 2000 px on the long side). Replace
@@ -47,33 +48,30 @@ the contact address `sarah@example.com` in `index.html`.
 Preview locally:
 
 ```bash
-python3 -m http.server 8765 --directory jomaa-static-pages/sarah-portfolio
+python3 -m http.server 8765 --directory jomaa-static-pages/sarah.jomaa.org
 ```
 
-## Publish
+## Publish and add sites
 
-Jerry serves the copy in `~/jomaa-static-pages`. Copy changes there; the
-server reads files on each request, so no restart is needed:
+Verified pushes to `main` discover hostname directories, deploy their files,
+restart the static server, and create the tunnel routes and DNS records.
 
-```bash
-rsync -a --delete --exclude __pycache__ jomaa-static-pages/ jerry:jomaa-static-pages/
+To publish `new.jomaa.org`, add its files under:
+
+```text
+jomaa-static-pages/new.jomaa.org/index.html
+jomaa-static-pages/new.jomaa.org/gallery/index.html
 ```
 
-## Add a site
+Push the new directory to `main`. Folder names define the hostnames, and each
+site's files define its URL paths. The example also publishes
+`https://new.jomaa.org/gallery/`. Removing a hostname directory removes its
+public route and managed DNS record at the next deployment.
 
-Add a folder with an `index.html` and a `"hostname": "folder"` line to
-`sites.json`, copy to jerry as above, then on jerry run:
-
-```bash
-export XDG_RUNTIME_DIR=/run/user/$(id -u)   # needed for systemctl --user over SSH
-python3 ~/jomaa-static-pages/setup_server.py --hub ~/jomaa-everything/jomaa-home-hub
-```
-
-It (re)starts the `jomaa-static-pages` user service, puts a tunnel rule for
-each new hostname first in the hub's `tunnel.yml`, restarts
-`jomaa-cloudflared`, and creates the DNS records. Rerunning is safe. The
-tunnel restart drops `ssh jerry` sessions (they ride the same tunnel); rerun
-the command after reconnecting if it was cut off before the DNS step.
+The static server and deployer use the same directory discovery. Hostname
+directories require an `index.html`. Support folders such as `device-panel/`
+are excluded. See [`../jomaa-deploy/README.md`](../jomaa-deploy/README.md) for
+receiver installation and infrastructure configuration.
 
 ```bash
 systemctl --user status jomaa-static-pages

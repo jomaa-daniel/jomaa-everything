@@ -22,18 +22,21 @@ they get no further.
 
 ## On jerry (once)
 
-Needs the hub's native tunnel (`jomaa-home-hub/scripts/setup_native.py
---tunnel`) and at least one key in `~/.ssh/authorized_keys`.
+Needs `openssh-server` and at least one key in `~/.ssh/authorized_keys`.
 
 ```bash
 python3 jomaa-ssh/setup_server.py
 ```
 
-This writes the sshd config and a host key to `~/.local/share/jomaa-ssh`,
-starts the `jomaa-ssh` user service (it comes back at boot), puts an
-`ssh.jomaa.org` rule first in the tunnel's `data/native/tunnel.yml`, restarts
-`jomaa-cloudflared`, and creates the DNS record. Rerunning is safe. It prints
-the host key; `known_hosts` here must match it.
+This writes the sshd config and a host key to `~/.local/share/jomaa-ssh`
+and starts the `jomaa-ssh` user service on loopback port 2222. It prints the
+host key; `known_hosts` here must match it.
+
+[`../jomaa-deploy/deploy.json`](../jomaa-deploy/deploy.json) declares the public
+`ssh.jomaa.org` route. Repository deployment supplies its tunnel ingress and
+DNS record. SSH provisioning manages the local sshd; it does not edit the
+tunnel. See [`../jomaa-deploy/README.md`](../jomaa-deploy/README.md) for deployment
+installation.
 
 ```bash
 systemctl --user status jomaa-ssh
@@ -72,8 +75,8 @@ ssh -o ProxyCommand="cloudflared access ssh --hostname %h" jerry@ssh.jomaa.org
 
 On jerry: `systemctl --user disable --now jomaa-ssh`, delete
 `~/.config/systemd/user/jomaa-ssh.service` and `~/.local/share/jomaa-ssh`,
-remove the `# jomaa-ssh` rule from `tunnel.yml`, restart
-`jomaa-cloudflared`, and delete the `ssh` DNS record in Cloudflare. On a
+remove the SSH route and external service from `jomaa-deploy/deploy.json`,
+and push to `main` to remove the public ingress and managed DNS record. On a
 laptop, delete the `jomaa-ssh` block from `~/.ssh/config`.
 
 ## Test

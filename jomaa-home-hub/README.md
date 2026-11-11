@@ -94,49 +94,23 @@ machine. Existing `data/native/tunnel.yml` settings are not overwritten. Keep
 
 The tunnel serves the hub over HTTPS at the chosen hostname. Find the hub
 password in the private `.env` file. The hub remains on loopback. Cloudflare account API tokens are not required
-for this native tunnel. The existing `cloudflare.py deploy` and GitHub workflow
-manage a different kind of tunnel and must not be used to manage this one.
+for this native tunnel. The Docker helper `cloudflare.py deploy`
+manages a remotely configured tunnel and must not be used to manage this one.
 
-## Deploy native hub changes from GitHub
+## Deploy from GitHub
 
-`.github/workflows/hub-deploy-native.yml` verifies hub changes pushed or merged
-to `main` on GitHub-hosted runners, then sends a signed HTTPS request to
-`https://hub.jomaa.org/deploy`. Cloudflare routes that path to a local
-deployment receiver; no inbound router port or self-hosted GitHub runner is
-needed. The receiver checks the signature, timestamp, repository, commit, and
-GitHub verification job before fetching the exact revision. The installer
-defaults to `jomaa-daniel/jomaa-everything` and accepts `--repo OWNER/REPOSITORY`.
-
-After committing the deployment scripts and running the native tunnel setup,
-install the receiver once from the hub checkout:
+[`../jomaa-deploy/`](../jomaa-deploy/README.md) owns repository deployment,
+service definitions, Cloudflare ingress, and DNS. Its manifest declares the
+hub, the apex home/light routes, and keys-only SSH. Static sites such as
+Sarah's portfolio are discovered from hostname directories. Verified
+pushes to `main` deploy an exact repository revision through a signed HTTPS
+receiver on jerry. The hub's `.env`, `config.json`, and `data/` stay in the local
+checkout and are linked into each release. Hub restart and Matter connection
+checks are part of activation.
 
 ```bash
-python3 scripts/deploy_native.py install --repo jomaa-daniel/jomaa-everything
-gh secret set HUB_DEPLOY_SECRET --repo jomaa-daniel/jomaa-everything < ~/.local/share/jomaa-home-deploy/webhook-secret
-systemctl --user status jomaa-deploy.service
-journalctl --user -u jomaa-deploy.service -n 50 --no-pager
+python3 ../jomaa-deploy/deploy.py plan
 ```
-
-Each verified revision is built in a separate release directory under
-`~/.local/share/jomaa-home-deploy`, with its own `npm ci` and build; the three
-newest releases are kept. Deployment switches the hub service to the new
-release and waits for both hub health and the Matter controller. On a failed
-restart or health check it restores the prior release. It preserves the
-working checkout, `.env`, `config.json`, Matter data, and Cloudflare tunnel;
-the tunnel is not restarted for a hub deployment, but the Matter controller
-restarts with the hub. A newer
-revision is never replaced by an older successful workflow run. The secret
-file is private and must match the GitHub Actions secret. Changes take effect
-after the GitHub verification job succeeds and its deployment request returns.
-Unsigned requests to `/deploy` are rejected; the normal hub routes still
-go to the hub service. The receiver listens only on this machine's loopback.
-
-Only successful `push` runs for `main`, including merges, deploy; a manually
-dispatched run only verifies. A failed verification, unreachable GitHub,
-non-fast-forward history, or a Matter controller that doesn't start prevents or rolls back
-deployment and is reported in the deployment service journal. Rerun a failed
-push workflow after correcting the issue. To use a different public hostname,
-set the `HUB_DEPLOY_URL` GitHub Actions variable to its `/deploy` URL.
 
 ## Home page
 
@@ -169,9 +143,9 @@ The panel source lives in `../jomaa-static-pages/device-panel/`. The hub build
 includes its HTML, JavaScript, and styles; native releases and Docker builds
 package the panel from the same repository revision as the API.
 
-On the hub machine, `python3 scripts/publish_panel.py` configures the `jomaa.org`
-tunnel route for the home page, light panel, sign-in, and target API. It validates
-the routing with cloudflared and restarts the tunnel when the route changes.
+`../jomaa-deploy/deploy.json` declares the `jomaa.org` path route for the home
+page, light panel, sign-in, and target API. The deployment workflow validates
+this routing with cloudflared and applies it automatically.
 
 ## Reach it from anywhere with Docker
 
@@ -202,11 +176,10 @@ starts `cloudflared`, and checks that the public URL answers. In the phone
 apps, sign in with `https://hub.yourdomain.com`; that address works at home
 and away.
 
-`scripts/cloudflare.py status` shows tunnel health. `scripts/cloudflare.py
-destroy` removes the tunnel and the DNS record. The `hub-deploy` GitHub
-workflow runs the tests and then `cloudflare.py deploy` on every push to
-`main`, using the `CLOUDFLARE_HOSTNAME`, `CLOUDFLARE_API_TOKEN` and
-`CLOUDFLARE_ACCOUNT_ID` repository secrets. It skips the deploy until `CLOUDFLARE_HOSTNAME` is set.
+`scripts/cloudflare.py status` shows Docker tunnel health.
+`scripts/cloudflare.py destroy` removes that tunnel and its DNS record.
+These commands manage the Docker tunnel; jerry's locally configured tunnel
+and automated deployments are managed by `../jomaa-deploy/`.
 
 Sign-in is rate limited: 5 wrong passwords per address every 15 minutes, and
 50 across all addresses.

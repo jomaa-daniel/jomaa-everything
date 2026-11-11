@@ -22,7 +22,7 @@ are discarded and require a fresh sign-in.
 Sign in with the hub password. There is no default password: the deployed
 hub reads `HUB_PASSWORD` from Jerry's private
 `/home/jerry/jomaa-everything/jomaa-home-hub/.env`. Deployment releases use
-that same file. GitHub's `HUB_DEPLOY_SECRET` authenticates deployments and is
+that same file. GitHub's `JOMAA_DEPLOY_SECRET` authenticates deployments and is
 separate from the login password. The app stores only the returned session
 token in Keychain, never the password.
 

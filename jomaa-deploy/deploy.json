@@ -1,0 +1,128 @@
+{
+  "checks": [
+    {
+      "directory": "jomaa-home-hub",
+      "command": [
+        "{python}",
+        "scripts/verify.py"
+      ]
+    },
+    {
+      "directory": "jomaa-deploy",
+      "command": [
+        "{python}",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        ".",
+        "-q"
+      ]
+    },
+    {
+      "directory": "jomaa-static-pages",
+      "command": [
+        "{python}",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        ".",
+        "-q"
+      ]
+    },
+    {
+      "directory": "jomaa-ssh",
+      "command": [
+        "{python}",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        ".",
+        "-q"
+      ]
+    }
+  ],
+  "state": [
+    "jomaa-home-hub/.env",
+    "jomaa-home-hub/config.json",
+    "jomaa-home-hub/data"
+  ],
+  "webhook": "hub.jomaa.org",
+  "services": {
+    "hub": {
+      "origin": "http://127.0.0.1:8080",
+      "unit": "jomaa-hub",
+      "directory": "jomaa-home-hub",
+      "command": [
+        "{python}",
+        "{release}/jomaa-home-hub/scripts/boot_native.py",
+        "hub"
+      ],
+      "build": [
+        [
+          "npm",
+          "ci",
+          "--no-audit",
+          "--no-fund"
+        ],
+        [
+          "npm",
+          "run",
+          "build"
+        ]
+      ],
+      "health": {
+        "url": "http://127.0.0.1:8080/healthz",
+        "json": {
+          "ok": true,
+          "matterConnected": true
+        }
+      }
+    },
+    "static": {
+      "origin": "http://127.0.0.1:8090",
+      "unit": "jomaa-static-pages",
+      "directory": "jomaa-static-pages",
+      "command": [
+        "{python}",
+        "{release}/jomaa-static-pages/serve.py"
+      ],
+      "health": {
+        "url": "http://127.0.0.1:8090/healthz",
+        "json": {
+          "ok": true
+        }
+      }
+    },
+    "ssh": {
+      "origin": "ssh://127.0.0.1:2222"
+    }
+  },
+  "routes": [
+    {
+      "hostname": "hub.jomaa.org",
+      "service": "hub"
+    },
+    {
+      "hostname": "jomaa.org",
+      "path": "^/(home(/.*)?|lights(/.*)?|api/(login|logout|targets(/.*)?))?$",
+      "service": "hub",
+      "probes": [
+        "/",
+        "/home",
+        "/home/style.css",
+        "/lights",
+        "/lights/app.js",
+        "/api/login",
+        "/api/logout",
+        "/api/targets/living-room/state"
+      ]
+    },
+    {
+      "hostname": "ssh.jomaa.org",
+      "service": "ssh"
+    }
+  ]
+}

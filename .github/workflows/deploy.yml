@@ -1,29 +1,22 @@
-name: Deploy native home hub
+name: Deploy Jomaa services and routes
 
 # A signed HTTPS request triggers the local deployment only after verification.
 on:
   push:
     branches: [main]
-    paths:
-      - 'jomaa-home-hub/**'
-      - 'jomaa-static-pages/device-panel/**'
-      - '.github/workflows/hub-deploy-native.yml'
-      - '.github/scripts/notify_hub.py'
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: native-hub-verify
+  group: jomaa-deploy-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   verify:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: jomaa-home-hub
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,10 +27,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python3 scripts/verify.py
+      - run: python3 jomaa-deploy/verify.py
 
   deploy:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -45,6 +38,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Trigger signed deployment
         env:
-          HUB_DEPLOY_SECRET: ${{ secrets.HUB_DEPLOY_SECRET }}
-          HUB_DEPLOY_URL: ${{ vars.HUB_DEPLOY_URL || 'https://hub.jomaa.org/deploy' }}
-        run: python3 .github/scripts/notify_hub.py
+          JOMAA_DEPLOY_SECRET: ${{ secrets.JOMAA_DEPLOY_SECRET }}
+          JOMAA_DEPLOY_URL: ${{ vars.JOMAA_DEPLOY_URL || 'https://hub.jomaa.org/deploy' }}
+        run: python3 jomaa-deploy/notify.py

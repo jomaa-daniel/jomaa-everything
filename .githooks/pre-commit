@@ -1,9 +1,15 @@
 #!/bin/sh
-# Blocks commits that break the hub's format, types or lint.
+# Checks hub format, types and lint, and deployment declarations and tests.
 # Enabled per clone with: git config core.hooksPath .githooks
 if git diff --cached --name-only | grep -q '^jomaa-home-hub/'; then
 	python3 jomaa-home-hub/scripts/verify.py --fast || {
 		echo "pre-commit: hub checks failed (run jomaa-home-hub/scripts/verify.py)" >&2
 		exit 1
 	}
+fi
+if git diff --cached --name-only | grep -qE '^(jomaa-deploy/|jomaa-static-pages/|jomaa-ssh/|\.github/workflows/deploy.yml)'; then
+	python3 jomaa-deploy/deploy.py plan >/dev/null || exit 1
+	python3 -m unittest discover -s jomaa-deploy -q || exit 1
+	python3 -m unittest discover -s jomaa-static-pages -q || exit 1
+	python3 -m unittest discover -s jomaa-ssh -q || exit 1
 fi

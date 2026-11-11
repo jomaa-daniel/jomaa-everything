@@ -19,23 +19,38 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def main() -> int:
     try:
-        key = os.environ.get("HUB_DEPLOY_SECRET", "")
+        key = os.environ.get("JOMAA_DEPLOY_SECRET", "")
         if len(key) < 32:
-            raise ValueError("HUB_DEPLOY_SECRET is not configured")
-        url = os.environ.get("HUB_DEPLOY_URL", "https://hub.jomaa.org/deploy")
+            raise ValueError("JOMAA_DEPLOY_SECRET is not configured")
+        url = os.environ.get("JOMAA_DEPLOY_URL", "https://hub.jomaa.org/deploy")
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
             raise ValueError("deployment URL must be HTTPS without credentials or fragment")
         payload = {"repo": os.environ["GITHUB_REPOSITORY"], "sha": os.environ["GITHUB_SHA"],
                    "run_id": int(os.environ["GITHUB_RUN_ID"]), "attempt": int(os.environ["GITHUB_RUN_ATTEMPT"]),
                    "timestamp": int(time.time())}
-        body = json.dumps(payload, separators=(",", ":")).encode()
-        signature = "sha256=" + hmac.new(key.encode(), body, hashlib.sha256).hexdigest()
-        request = urllib.request.Request(url, data=body, method="POST", headers={
-            "Content-Type": "application/json", "X-Jomaa-Signature": signature,
-            "User-Agent": "jomaa-home-hub-deployer/1.0"})
-        with urllib.request.build_opener(NoRedirect()).open(request, timeout=300) as response:
-            result = json.load(response)
+        opener = urllib.request.build_opener(NoRedirect())
+        deadline = time.monotonic() + 540
+        while True:
+            payload["timestamp"] = int(time.time())
+            body = json.dumps(payload, separators=(",", ":")).encode()
+            signature = "sha256=" + hmac.new(key.encode(), body, hashlib.sha256).hexdigest()
+            request = urllib.request.Request(url, data=body, method="POST", headers={
+                "Content-Type": "application/json", "X-Jomaa-Signature": signature,
+                "User-Agent": "jomaa-deploy/1.0"})
+            try:
+                with opener.open(request, timeout=60) as response:
+                    result = json.load(response)
+                break
+            except urllib.error.HTTPError as error:
+                error.close()
+                if error.code not in (409, 502, 503, 504, 520, 521, 522, 523, 524) or time.monotonic() >= deadline:
+                    raise
+            except (OSError, urllib.error.URLError):
+                if time.monotonic() >= deadline:
+                    raise
+            print("Waiting for the deployment receiver to reconnect...", flush=True)
+            time.sleep(5)
         if result.get("sha") != payload["sha"] or result.get("status") not in (
                 "deployed", "already-deployed", "older-revision-ignored"):
             raise ValueError("unexpected response from deployment receiver")

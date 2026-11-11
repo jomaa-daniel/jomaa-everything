@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """Serve each static site in this folder at its own hostname, on loopback only.
 
-sites.json maps a hostname to a folder here. The Cloudflare tunnel keeps the
-original Host header, so one server answers for every site. Requests for other
-hosts, hidden files and folders without an index.html get 404.
+Directories named with their full hostname are discovered automatically.
+The Cloudflare tunnel keeps the original Host header, so one server answers
+for every site. Site requests for other hosts and hidden files get 404.
 """
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "jomaa-deploy"))
+import manifest
 
 ROOT = Path(__file__).resolve().parent
 PORT = 8090
@@ -26,18 +29,8 @@ HEADERS = {
 
 
 def load_sites(root: Path) -> dict[str, Path]:
-    raw: object = json.loads((root / "sites.json").read_text())
-    if not isinstance(raw, dict):
-        raise ValueError("sites.json must be an object of hostname -> folder")
-    sites: dict[str, Path] = {}
-    for host, folder in raw.items():
-        if not isinstance(host, str) or not isinstance(folder, str) or "/" in folder or folder.startswith("."):
-            raise ValueError(f"bad sites.json entry {host!r}: {folder!r}")
-        path = root / folder
-        if not (path / "index.html").is_file():
-            raise ValueError(f"{path} has no index.html")
-        sites[host.lower()] = path
-    return sites
+    return {route["hostname"]: root.parent / route["site"]
+            for route in manifest.discover_sites(root.parent)}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -48,11 +41,23 @@ class Handler(SimpleHTTPRequestHandler):
         self.sites = sites
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
+    def do_GET(self) -> None:
+        if self.path == "/healthz":
+            body = b'{"ok":true}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        super().do_GET()
+
     def send_head(self):  # type: ignore[no-untyped-def]
         host = (self.headers.get("Host") or "").split(":")[0].lower()
         site = self.sites.get(host)
-        path = self.path.split("?", 1)[0].split("#", 1)[0]
-        if site is None or any(part.startswith(".") for part in path.split("/") if part):
+        path = unquote(urlsplit(self.path).path)
+        if (site is None or any(part.startswith(".") for part in path.split("/") if part)
+                or not (site / path.lstrip("/")).resolve().is_relative_to(site.resolve())):
             self.send_error(404)
             return None
         self.directory = str(site)

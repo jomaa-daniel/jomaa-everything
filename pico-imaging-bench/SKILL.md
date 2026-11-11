@@ -84,7 +84,7 @@ rejection from TLS failure and hub authentication failure.
 ## Credentials and validation
 
 Host administrator password: `HUB_PASSWORD` in `/home/jerry/jomaa-everything/jomaa-home-hub/.env`.
-`HUB_DEPLOY_SECRET` authenticates deployment webhooks and is a different credential. Existing GitHub
+`JOMAA_DEPLOY_SECRET` authenticates deployment webhooks and is a different credential. Existing GitHub
 secret values cannot be retrieved. Do not put either password in source, CLI history, logs, or skill text.
 
 Provisioning puts the actual Wi-Fi password and device token in private `device_config.json` on the host
