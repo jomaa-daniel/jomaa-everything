@@ -16,6 +16,7 @@ python3 scripts/hub_api.py GET /healthz
 python3 scripts/hub_api.py GET /api/targets --password-file /path/to/private-env
 python3 scripts/hub_api.py GET /api/targets/living-room/state --password-file /path/to/private-env
 python3 scripts/hub_api.py GET /api/matter/nodes --password-file /path/to/private-env
+python3 scripts/hub_api.py GET /api/matter/discover --password-file /path/to/private-env
 ```
 
 `healthz` reports hub availability and `matterConnected`. Target-state responses contain individual `devices`, a summary `state` when available, and possibly a `failed` map even on HTTP 200. Inspect failures before claiming every light responded. `matterConnected` means the hub's Matter controller is running; it may have no paired nodes; Govee lights are separate from Matter nodes.
@@ -28,6 +29,8 @@ printf '%s' '{"on":true}' | python3 scripts/hub_api.py POST /api/targets/TARGET_
 
 Supported fields: `on` boolean, `brightness` 1–100, `colorTemperaturePct` 0–100 (warm to cool), `color` as `#rrggbb`. Commands return HTTP 502 with per-device `failed` entries when any member fails; report partial failures. For multi-step control/reconciliation, use a stable `clientId` and increasing integer `revision`, and consult `jomaa-home-hub/README.md` for the sync endpoint. Avoid unsolicited commands or test changes to physical lights.
 
-To pair a requested device, POST `{"code":"...","networkOnly":false}` to `/api/matter/commission`; network-only is for a device already on the network. The helper allows 360 seconds for commissioning. Wi-Fi and Thread commissioning credentials go to `/api/matter/wifi` and `/api/matter/thread`; pass sensitive JSON via stdin, not command arguments or logs. Deleting `/api/matter/nodes/{nodeId}` unpairs a device. Use those operations only when requested.
+To pair a requested device already on the network, POST `{"code":"...","networkOnly":true}` to `/api/matter/commission`. Use network pairing by default; Bluetooth pairing requires an explicit request for Wi-Fi or Thread provisioning. `/api/matter/discover` scans local-network mDNS advertisements without Bluetooth or pairing. Enable pairing or sharing on the device first; discovery cannot replace the setup code. The helper allows 360 seconds for commissioning. Wi-Fi and Thread commissioning credentials go to `/api/matter/wifi` and `/api/matter/thread`; pass sensitive JSON via stdin, not command arguments or logs. Deleting `/api/matter/nodes/{nodeId}` unpairs a device. Use those operations only when requested.
+
+On Jerry, `python3 scripts/onboard_lights.py matter --pair` in the hub directory prompts privately for just the setup code, pairs over the network, discovers the name and light endpoint, registers an individual target, restarts the hub and verifies its state. `matter --code-stdin` reads one setup-code line from stdin without prompts for automation. Supply `--room` for room membership; `--id` and `--name` override discovered values. `python3 scripts/onboard_lights.py discover matter --commissionable` scans advertisements without changing the layout.
 
 If access fails, distinguish DNS/TLS/tunnel failures from authentication errors and from `matterConnected: false`. Do not repeatedly guess passwords: login is rate limited. On the hub machine inspect `systemctl --user status jomaa-hub jomaa-cloudflared`. This installation uses a locally managed tunnel; do not run the repo's remote-managed `cloudflare.py deploy` or change DNS while merely operating the API.

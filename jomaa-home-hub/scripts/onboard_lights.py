@@ -316,6 +316,9 @@ def activate(root: Path, env: dict[str, str], mode: str, hub: Hub, device_id: st
 
 def discover(args, env: dict[str, str], hub: Hub, layout: dict) -> None:
     if args.driver == "matter":
+        if args.commissionable:
+            print(json.dumps(hub.call("GET", "/api/matter/discover"), indent=2))
+            return
         nodes = matter_inventory(args.hub_dir, hub)
         for node in nodes:
             node["registered"] = [d["id"] for d in layout.get("devices", [])
@@ -346,7 +349,7 @@ def onboard(args, root: Path, env: dict[str, str], hub: Hub, secrets: list[str])
         nodes = None
         generated_id = not args.id
         paired_name = False
-        interactive = not args.id
+        interactive = not args.id and not (args.command == "matter" and args.pair)
         if args.command == "govee":
             inventory = govee_devices(env)
             remember_inventory(root, "govee", inventory, args.dry_run)
@@ -395,7 +398,8 @@ def onboard(args, root: Path, env: dict[str, str], hub: Hub, secrets: list[str])
                     node, args.endpoint = available[selection]
                     args.node_id = node["nodeId"]
             if not args.name:
-                interactive = True
+                if not args.pair:
+                    interactive = True
                 if args.node_id:
                     nodes = nodes if nodes is not None else matter_inventory(root, hub, args.dry_run)
                     node = next((n for n in nodes if n["nodeId"] == args.node_id), None)
@@ -410,16 +414,7 @@ def onboard(args, root: Path, env: dict[str, str], hub: Hub, secrets: list[str])
                 else:
                     args.name = default
             args.id = args.id or unique_id(args.name, layout)
-            if interactive and args.pair and not (args.network_only or args.wifi or args.thread):
-                connection = choose("How should the device connect?", ["Already on the network", "Wi-Fi", "Thread", "Use the hub's saved pairing credentials"])
-                if connection == 0:
-                    args.network_only = True
-                elif connection == 1:
-                    while not (ssid := input("Wi-Fi network name: ").strip()):
-                        print("Enter a Wi-Fi network name.")
-                    args.wifi = ssid
-                elif connection == 2:
-                    args.thread = True
+            args.network_only = not (args.wifi or args.thread)
             device = {"id": args.id, "name": args.name.strip(), "driver": "matter",
                       "nodeId": args.node_id or MAX_INTEGER, "endpoint": args.endpoint or 1}
         if interactive and not args.room:
@@ -446,7 +441,14 @@ def onboard(args, root: Path, env: dict[str, str], hub: Hub, secrets: list[str])
                 hub.call("GET", "/api/targets")
         if args.command == "matter":
             if args.pair:
-                code = prompt_secret("Matter setup code (MT: QR payload or manual code): ", secrets).strip()
+                if args.code_stdin:
+                    code = sys.stdin.readline().strip()
+                    secrets.append(code)
+                else:
+                    code = prompt_secret("Matter setup code (MT: QR payload or manual code): ", secrets).strip()
+                if not code.startswith("MT:"):
+                    code = re.sub(r"[\s-]", "", code)
+                    secrets.append(code)
                 if not code:
                     raise HubError("Matter setup code is required")
                 if args.wifi:
@@ -490,6 +492,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     discovery = sub.add_parser("discover", help="list account lights or paired Matter nodes")
     discovery.add_argument("driver", choices=["govee", "matter"])
+    discovery.add_argument("--commissionable", action="store_true", help="scan the local network for Matter devices in pairing mode")
     for driver in ("matter", "govee"):
         command = sub.add_parser(driver, help=f"register a {driver} light")
         command.add_argument("--id", help="target ID; generated from the selected light's name")
@@ -503,6 +506,7 @@ def build_parser() -> argparse.ArgumentParser:
         else:
             source = command.add_mutually_exclusive_group()
             source.add_argument("--pair", action="store_true", help="prompt for a Matter setup code and pair")
+            source.add_argument("--code-stdin", action="store_true", help="read a setup code from one stdin line and pair over the network without prompts")
             source.add_argument("--node-id", type=positive_int, help="register an already paired node")
             command.add_argument("--endpoint", type=positive_int, help="light endpoint; detected when the node has just one")
             command.add_argument("--network-only", action="store_true", help="pair a device already on the network")
@@ -515,6 +519,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.command == "discover" and args.commissionable and args.driver != "matter":
+        parser.error("--commissionable requires discover matter")
     if args.command and args.command != "discover":
         if (args.id and not VALID_ID.fullmatch(args.id)) or (args.room and not VALID_ID.fullmatch(args.room)):
             parser.error("IDs must be lowercase letters, digits and dashes")
@@ -523,6 +529,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.room_name and not args.room:
             parser.error("--room-name requires --room")
         if args.command == "matter":
+            if args.code_stdin:
+                args.pair = True
+                if args.wifi or args.thread:
+                    parser.error("--code-stdin pairs over the network without Wi-Fi or Thread credentials")
             if args.node_id and (args.network_only or args.wifi or args.thread):
                 parser.error("pairing options require --pair")
             if args.network_only and (args.wifi or args.thread):
@@ -535,8 +545,10 @@ def main(argv: list[str] | None = None) -> int:
             driver = ["govee", "matter"][choose("Choose a light provider", ["Govee", "Matter"])]
             args = parser.parse_args([*(argv if argv is not None else sys.argv[1:]), driver])
         if args.command == "discover":
-            layout = json.loads((args.hub_dir / "config.json").read_text())
-            validate_layout(args.hub_dir, layout)
+            layout = {}
+            if not args.commissionable:
+                layout = json.loads((args.hub_dir / "config.json").read_text())
+                validate_layout(args.hub_dir, layout)
             discover(args, env, hub, layout)
         else:
             onboard(args, args.hub_dir, env, hub, secrets)

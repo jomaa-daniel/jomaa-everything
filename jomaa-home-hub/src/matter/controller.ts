@@ -25,6 +25,7 @@ import {
   MatterError,
   MatterNotReadyError,
   summarize,
+  type CommissionableDevice,
   type CommissionedNode,
   type MatterAdmin,
   type MatterNode,
@@ -217,6 +218,23 @@ export class Matter implements MatterNodes, MatterAdmin {
       .filter((n) => n !== null)
       .map(summarize)
       .sort((a, b) => a.nodeId - b.nodeId);
+  }
+
+  /** Discovers commissioning advertisements over mDNS without Bluetooth. */
+  async discover(signal: AbortSignal): Promise<CommissionableDevice[]> {
+    const { handler } = this.#require();
+    const devices = await call(abortable(handler.handleDiscovery({}), signal));
+    return devices.map((device) => ({
+      instanceName: device.instanceName,
+      deviceName: device.deviceName,
+      vendorId: device.vendorId,
+      productId: device.productId,
+      deviceType: device.deviceType,
+      longDiscriminator: device.longDiscriminator,
+      commissioningMode: device.commissioningMode,
+      addresses: device.addresses ?? [],
+      port: device.port,
+    }));
   }
 
   /** Invokes a cluster command on one endpoint of a node. */

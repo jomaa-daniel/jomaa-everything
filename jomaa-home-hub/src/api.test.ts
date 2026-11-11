@@ -5,7 +5,13 @@ import { allFeatures, type Command, type Device, type Features, type State } fro
 import { Group } from "./group.js";
 import { Hub } from "./hub.js";
 import { silentLog } from "./log.js";
-import { MatterError, type CommissionedNode, type MatterAdmin, type NodeSummary } from "./matter/nodes.js";
+import {
+  MatterError,
+  type CommissionableDevice,
+  type CommissionedNode,
+  type MatterAdmin,
+  type NodeSummary,
+} from "./matter/nodes.js";
 import { serve } from "./testing.js";
 
 class Light implements Device {
@@ -42,6 +48,23 @@ class FakeMatter implements MatterAdmin {
     return [
       { nodeId: 1, available: true, isBridge: false, lightEndpoints: [1], vendor: "Acme", product: null, label: null },
     ];
+  }
+  discover(): Promise<CommissionableDevice[]> {
+    return this.err !== null
+      ? Promise.reject(this.err)
+      : Promise.resolve([
+          {
+            instanceName: "lamp",
+            deviceName: "Desk",
+            vendorId: 1,
+            productId: 2,
+            deviceType: 256,
+            longDiscriminator: 1234,
+            commissioningMode: 2,
+            addresses: ["fd00::1"],
+            port: 5540,
+          },
+        ]);
   }
   commission(code: string): Promise<CommissionedNode> {
     this.code = code;
@@ -261,13 +284,19 @@ test("matter endpoints", async () => {
       { nodeId: 1, available: true, isBridge: false, lightEndpoints: [1], vendor: "Acme", product: null, label: null },
     ],
   });
+  res = await call(fresh, "GET", "/api/matter/discover");
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body["devices"], await fresh.matter.discover());
+  assert.equal((await call({ url: fresh.url, token: "" }, "GET", "/api/matter/discover")).status, 401);
   assert.equal((await call(fresh, "DELETE", "/api/matter/nodes/abc")).status, 400);
   assert.equal((await call(fresh, "DELETE", "/api/matter/nodes/7")).status, 200);
   fresh.matter.err = new MatterError("pairing failed");
+  assert.equal((await call(fresh, "GET", "/api/matter/discover")).status, 502);
   assert.equal((await call(fresh, "POST", "/api/matter/thread", '{"dataset":"0e08"}')).status, 502);
   fresh.matter.err = new DOMException("timed out", "TimeoutError");
   assert.equal((await call(fresh, "POST", "/api/matter/commission", '{"code":"1"}')).status, 504);
   fresh.matter.ready = false;
+  assert.equal((await call(fresh, "GET", "/api/matter/discover")).status, 503);
   res = await call(fresh, "POST", "/api/matter/wifi", '{"ssid":"home","password":"x"}');
   assert.equal(res.status, 503);
   assert.equal(res.body["error"], "Matter controller is not running");

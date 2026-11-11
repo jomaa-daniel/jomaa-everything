@@ -285,6 +285,47 @@ dialog input {
 #enroll-error {
   color: #ab3434;
 }
+#scan-error {
+  color: #ab3434;
+}
+#scan-status {
+  color: var(--accent);
+  font-weight: 550;
+  margin-top: 20px;
+}
+#scan-results {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0;
+}
+.discovered-device {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.discovered-device > * {
+  display: block;
+}
+.network-address {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.discovery-state {
+  font-size: 13px;
+  color: var(--accent);
+  margin-top: 4px;
+}
+.scan-note {
+  font-size: 12px;
+}
+.manual-enrollment {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  margin-top: 24px;
+}
+.manual-enrollment p {
+  font-size: 13px;
+  margin-bottom: 12px;
+}
 #more {
   margin-top: 16px;
 }

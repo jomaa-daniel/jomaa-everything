@@ -20,6 +20,7 @@ const noMatter: MatterService = {
   ready: false,
   node: () => null,
   nodes: () => [],
+  discover: () => Promise.reject(new MatterNotReadyError()),
   invoke: () => Promise.reject(new MatterNotReadyError()),
   commission: () => Promise.reject(new MatterNotReadyError()),
   setWiFiCredentials: () => Promise.reject(new MatterNotReadyError()),

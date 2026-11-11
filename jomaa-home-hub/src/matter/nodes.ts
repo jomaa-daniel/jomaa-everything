@@ -32,6 +32,19 @@ export interface CommissionedNode {
   is_bridge: boolean;
 }
 
+/** A device advertising a commissioning window on the local IP network. */
+export interface CommissionableDevice {
+  instanceName: string;
+  deviceName: string;
+  vendorId: number;
+  productId: number;
+  deviceType: number;
+  longDiscriminator: number;
+  commissioningMode: number;
+  addresses: string[];
+  port: number;
+}
+
 /** Reading nodes and sending them cluster commands, which is all a light needs. */
 export interface MatterNodes {
   /** Whether the controller is running and has loaded the commissioned nodes. */
@@ -52,6 +65,7 @@ export interface MatterNodes {
 export interface MatterAdmin {
   readonly ready: boolean;
   nodes(): NodeSummary[];
+  discover(signal: AbortSignal): Promise<CommissionableDevice[]>;
   commission(code: string, networkOnly: boolean, signal: AbortSignal): Promise<CommissionedNode>;
   setWiFiCredentials(ssid: string, password: string): Promise<void>;
   setThreadDataset(dataset: string): Promise<void>;

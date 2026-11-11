@@ -7,6 +7,9 @@ let credential = null;
 let refreshing = false;
 let sessionGeneration = 0;
 let showingOlder = false;
+let scanController = null;
+let scanTimer = null;
+let scanGeneration = 0;
 
 function node(tag, value, className) {
   const result = document.createElement(tag);
@@ -23,16 +26,18 @@ function signedIn(value) {
     selected = null;
     devices = [];
     $("detail").hidden = true;
+    $("discover-dialog").close();
     $("enroll-dialog").close();
     $("credential-dialog").close();
   }
 }
 
-async function api(path, method = "GET", data) {
+async function api(path, method = "GET", data, signal) {
   const response = await fetch(path, {
     method,
     credentials: "same-origin",
     cache: "no-store",
+    signal,
     headers: data === undefined ? {} : { "Content-Type": "application/json" },
     body: data === undefined ? undefined : JSON.stringify(data),
   });
@@ -184,6 +189,65 @@ function showCredential(result) {
   $("credential-dialog").showModal();
 }
 
+function stopScan() {
+  scanGeneration += 1;
+  clearTimeout(scanTimer);
+  scanTimer = null;
+  scanController?.abort();
+  scanController = null;
+}
+
+function renderDiscovered(found) {
+  $("scan-results").replaceChildren();
+  for (const device of found) {
+    const item = node("li", undefined, "discovered-device");
+    item.append(node("strong", device.deviceName || "Matter device"));
+    item.append(node("span", device.addresses.join(", ") || device.instanceName, "muted network-address"));
+    item.append(
+      node("span", device.commissioningMode > 0 ? "Ready to pair" : "Pairing mode is off", "discovery-state"),
+    );
+    $("scan-results").append(item);
+  }
+  $("scan-empty").hidden = found.length > 0;
+  $("scan-status").textContent = found.length
+    ? `${found.length} ${found.length === 1 ? "device" : "devices"} found · Looking for more…`
+    : "Looking for devices…";
+}
+
+async function scan(generation) {
+  if (generation !== scanGeneration || !$("discover-dialog").open) return;
+  const controller = new AbortController();
+  scanController = controller;
+  $("rescan").disabled = true;
+  try {
+    const result = await api("/api/matter/discover", "GET", undefined, controller.signal);
+    if (generation !== scanGeneration || !$("discover-dialog").open) return;
+    renderDiscovered(result.devices);
+    $("scan-error").hidden = true;
+    scanTimer = setTimeout(() => scan(generation), 2000);
+  } catch (reason) {
+    if (generation !== scanGeneration || controller.signal.aborted || !$("discover-dialog").open) return;
+    $("scan-status").textContent = "Scan unavailable";
+    $("scan-error").textContent = reason.message;
+    $("scan-error").hidden = false;
+    $("scan-empty").hidden = true;
+  } finally {
+    if (generation === scanGeneration) {
+      scanController = null;
+      $("rescan").disabled = false;
+    }
+  }
+}
+
+function startScan() {
+  stopScan();
+  $("scan-results").replaceChildren();
+  $("scan-empty").hidden = true;
+  $("scan-error").hidden = true;
+  $("scan-status").textContent = "Scanning your network…";
+  scan(scanGeneration);
+}
+
 $("login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = event.submitter;
@@ -243,6 +307,14 @@ $("edit-form").addEventListener("submit", async (event) => {
   }
 });
 $("add").addEventListener("click", () => {
+  $("discover-dialog").showModal();
+  startScan();
+});
+$("close-discover").addEventListener("click", () => $("discover-dialog").close());
+$("discover-dialog").addEventListener("close", stopScan);
+$("rescan").addEventListener("click", startScan);
+$("manual-enroll").addEventListener("click", () => {
+  $("discover-dialog").close();
   $("enroll-error").textContent = "";
   $("enroll-dialog").showModal();
 });
@@ -307,7 +379,7 @@ refresh().catch((reason) => {
   else error(reason);
 });
 setInterval(() => {
-  if (!$("inventory").hidden && !$("enroll-dialog").open && !$("credential-dialog").open)
+  if (!$("inventory").hidden && !$("discover-dialog").open && !$("enroll-dialog").open && !$("credential-dialog").open)
     refresh()
       .then(() => {
         if (!showingOlder) return logs();

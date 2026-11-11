@@ -16,6 +16,7 @@ import { HealthStore } from "./store.js";
 const matter: MatterAdmin = {
   ready: false,
   nodes: () => [],
+  discover: () => Promise.resolve([]),
   commission: () => Promise.reject(new Error("unused")),
   setWiFiCredentials: () => Promise.resolve(),
   setThreadDataset: () => Promise.resolve(),

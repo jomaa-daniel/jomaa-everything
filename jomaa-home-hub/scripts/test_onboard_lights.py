@@ -136,6 +136,8 @@ class FakeAPI(BaseHTTPRequestHandler):
             self.reply(401, {"error": "sign in"})
         elif self.path == "/api/matter/nodes":
             self.reply(200, {"nodes": self.server.nodes})
+        elif self.path == "/api/matter/discover":
+            self.reply(200, {"devices": [{"deviceName": "Desk", "addresses": ["fd00::1"], "commissioningMode": 2}]})
         else:
             self.reply(404, {})
 
@@ -302,7 +304,7 @@ class CommandTest(unittest.TestCase):
 
     def test_pair_selector_gets_the_display_name_after_commissioning(self):
         self.server.nodes[0]["label"] = "New Desk Light"
-        with patch("builtins.input", side_effect=["2", "1", "1", "1"]), \
+        with patch("builtins.input", side_effect=["2", "1", "1"]), \
                 patch.object(onboarding.getpass, "getpass", return_value="private-setup-code"):
             code, _, err = self.run_command("matter", "--restart", "none")
         self.assertEqual(code, 0, err)
@@ -312,6 +314,54 @@ class CommandTest(unittest.TestCase):
         self.assertTrue(commission["networkOnly"])
         inventory = (self.root / "data/light-inventory/matter.json").read_text()
         self.assertNotIn("private-setup-code", inventory)
+
+    def test_network_scan_does_not_require_a_config_build_or_write_inventory(self):
+        self.config.unlink()
+        (self.root / "dist").unlink()
+        code, out, err = self.run_command("discover", "matter", "--commissionable")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["devices"][0]["addresses"], ["fd00::1"])
+        self.assertEqual([path for _, path, _ in self.server.calls], ["/api/login", "/api/matter/discover"])
+        self.assertFalse((self.root / "data").exists())
+
+    def test_stdin_pairing_uses_network_and_discovered_name_without_any_prompts(self):
+        self.server.nodes[0]["label"] = "Desk Lamp"
+        setup_code = "1234-567-8901"
+        with patch.object(onboarding.sys, "stdin", io.StringIO(setup_code + "\n")), \
+                patch("builtins.input", side_effect=AssertionError("prompted")), \
+                patch.object(onboarding.getpass, "getpass", side_effect=AssertionError("prompted")):
+            code, out, err = self.run_command("matter", "--code-stdin", "--restart", "none")
+        self.assertEqual(code, 0, err)
+        device = json.loads(self.config.read_text())["devices"][0]
+        self.assertEqual((device["id"], device["name"], device["nodeId"], device["endpoint"]),
+                         ("desk-lamp", "Desk Lamp", 7, 2))
+        commission = next(body for _, path, body in self.server.calls if path == "/api/matter/commission")
+        self.assertEqual(commission, {"code": "12345678901", "networkOnly": True})
+        self.assertNotIn(setup_code, out + err + self.config.read_text())
+        self.assertFalse(any(path in ("/api/matter/wifi", "/api/matter/thread") for _, path, _ in self.server.calls))
+
+    def test_explicit_pairing_prompts_only_for_setup_code_and_discovers_name(self):
+        self.server.nodes[0]["label"] = "Desk Lamp"
+        with patch("builtins.input", side_effect=AssertionError("prompted")), \
+                patch.object(onboarding.getpass, "getpass", return_value="private-setup-code") as prompt:
+            code, out, err = self.run_command("matter", "--pair", "--restart", "none")
+        self.assertEqual(code, 0, err)
+        prompt.assert_called_once()
+        self.assertEqual(json.loads(self.config.read_text())["devices"][0]["id"], "desk-lamp")
+        commission = next(body for _, path, body in self.server.calls if path == "/api/matter/commission")
+        self.assertTrue(commission["networkOnly"])
+        self.assertNotIn("private-setup-code", out + err)
+
+    def test_stdin_pairing_failure_redacts_both_code_formats_and_keeps_config(self):
+        self.server.pairing_error = True
+        initial = self.config.read_bytes()
+        with patch.object(onboarding.sys, "stdin", io.StringIO("1234-567-8901\n")):
+            code, out, err = self.run_command("matter", "--code-stdin", "--restart", "none")
+        self.assertEqual(code, 1)
+        self.assertIn("[redacted]", err)
+        self.assertNotIn("12345678901", out + err)
+        self.assertNotIn("1234-567-8901", out + err)
+        self.assertEqual(self.config.read_bytes(), initial)
 
     def test_pairing_preview_never_prompts_or_calls_matter(self):
         initial = self.config.read_bytes()

@@ -232,12 +232,42 @@ To select an existing node or pair a new device, run:
 python3 scripts/onboard_lights.py matter
 ```
 
-Select Pair a new Matter device, choose its connection method, and put it in
-pairing mode. The script prompts privately for the manual setup code or `MT:`
-QR payload and any Wi-Fi password or Thread dataset. After pairing it discovers
+Select Pair a new Matter device and put it in
+pairing mode. Pairing uses the local IP network by default. The script prompts
+privately for the manual setup code or `MT:` QR payload. After pairing it discovers
 the node's display name and light endpoints. Connect with `ssh -t jerry` for
 interactive prompts. Devices shared from Apple Home or Google Home use
-Already on the network; Wi-Fi and Thread pairing use Bluetooth.
+the pairing code from that app's sharing window. Explicit `--wifi` and `--thread`
+options use Bluetooth and prompt privately for their credentials.
+
+Scan for Matter devices advertising on the hub's local network:
+
+```bash
+python3 scripts/onboard_lights.py discover matter --commissionable
+```
+
+Discovery uses mDNS over IP and does not pair devices or use Bluetooth. A device
+must already be on the network; enable pairing or sharing in its current app.
+Advertisements include the device name when provided, vendor/product IDs,
+addresses, discriminator and commissioning mode. Registration still needs the
+setup code to authenticate the device.
+
+For repeatable registration without menus, prompt privately for just the setup code:
+
+```bash
+python3 scripts/onboard_lights.py matter --pair
+```
+
+For automated registration, supply one setup-code line on stdin:
+
+```bash
+python3 scripts/onboard_lights.py matter --code-stdin < /path/to/private/setup-code
+```
+
+This pairs over the network, discovers the name and light endpoint, registers
+an individual target, restarts the hub and verifies its state. Use `--room` to
+assign a room and `--id` or `--name` to override the discovered values. Setup
+codes accept printed hyphens and stay out of config and output.
 
 To list or register a node already paired with this hub:
 
@@ -314,6 +344,7 @@ Every request except `/healthz` and `/api/login` needs
 | POST   | `/api/targets/{id}/command`  | `{"on","brightness","colorTemperaturePct","color","clientId","revision"}` | 200 when every device took it, 502 with `failed` per device otherwise |
 | POST   | `/api/targets/{id}/sync`     | `{"on","brightness","colorTemperaturePct","clientId","revision"}`         | fixes devices that drifted, returns `synchronized`                    |
 | GET    | `/api/matter/nodes`          |                                                                           | paired Matter devices                                                 |
+| GET    | `/api/matter/discover`       |                                                                           | commissionable devices advertised over local-network mDNS             |
 | POST   | `/api/matter/commission`     | `{"code","networkOnly"}`                                                  | pair a device                                                         |
 | POST   | `/api/matter/wifi`           | `{"ssid","password"}`                                                     | Wi-Fi credentials for pairing                                         |
 | POST   | `/api/matter/thread`         | `{"dataset"}`                                                             | Thread dataset for pairing                                            |
@@ -345,7 +376,11 @@ for Govee-only homes and tests.
 
 ## Wi-Fi device health
 
-The hub includes a device inventory, SQLite health history, and a management page at `/devices`.
+The hub includes a device inventory, SQLite health history, and a management page at `https://jomaa.org/devices`.
+Add device opens a network discovery window for Matter devices advertising for
+pairing or sharing. It scans while open, lists device names, addresses and
+pairing availability, and stops when closed. Scan again retries discovery.
+Create device credential in that window opens Pico health enrollment.
 Pico W, Pico 2 W, and RP2040 boards with an ESP8285 UART radio report over verified HTTPS using individual credentials.
 Their first authenticated report registers them; missed reports mark them offline.
 See [Health monitoring](docs/health-monitoring.md) for setup, USB provisioning, API details, and tests.

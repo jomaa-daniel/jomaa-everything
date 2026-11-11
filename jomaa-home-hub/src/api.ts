@@ -91,6 +91,7 @@ export class Api {
       route("POST", "/api/targets/{id}/command", this.#command),
       route("POST", "/api/targets/{id}/sync", this.#sync),
       route("GET", "/api/matter/nodes", this.#matterNodes),
+      route("GET", "/api/matter/discover", this.#matterDiscover),
       route("DELETE", "/api/matter/nodes/{nodeId}", this.#matterRemove),
       route("POST", "/api/matter/commission", this.#matterCommission),
       route("POST", "/api/matter/wifi", this.#matterWiFi),
@@ -264,6 +265,11 @@ export class Api {
   async #matterNodes({ res }: RequestContext): Promise<void> {
     const nodes = await this.#matterCall(() => Promise.resolve(this.matter.nodes()));
     writeJSON(res, 200, { nodes });
+  }
+
+  async #matterDiscover({ res, signal }: RequestContext): Promise<void> {
+    const devices = await this.#matterCall(() => this.matter.discover(withTimeout(signal, commandTimeoutMs)));
+    writeJSON(res, 200, { devices });
   }
 
   async #matterRemove({ res, params, signal }: RequestContext): Promise<void> {

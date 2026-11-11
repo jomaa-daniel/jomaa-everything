@@ -96,6 +96,26 @@
         <button id="more" hidden>Load older reports</button>
       </section>
     </main>
+    <dialog id="discover-dialog" aria-labelledby="discover-title" aria-describedby="discover-help">
+      <h2 id="discover-title">Add device</h2>
+      <p id="discover-help" class="muted">
+        Put your Matter device in pairing mode, or enable sharing in its home app. It must be connected to your home
+        network.
+      </p>
+      <p id="scan-status" role="status" aria-live="polite" aria-atomic="true"></p>
+      <p id="scan-error" role="alert" hidden></p>
+      <ul id="scan-results" aria-label="Discovered devices"></ul>
+      <p id="scan-empty" class="muted" hidden>No devices found yet. Keep this window open while you enable pairing.</p>
+      <p class="muted scan-note">Scanning continues while this window is open.</p>
+      <div class="dialog-actions">
+        <button type="button" id="rescan">Scan again</button>
+        <button type="button" id="close-discover">Done</button>
+      </div>
+      <div class="manual-enrollment">
+        <p class="muted">Setting up a Pico for health reporting?</p>
+        <button type="button" id="manual-enroll">Create device credential</button>
+      </div>
+    </dialog>
     <dialog id="enroll-dialog">
       <form id="enroll-form">
         <h2>Add device</h2>

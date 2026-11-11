@@ -84,11 +84,13 @@ class ManifestTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "symlink"):
                 manifest.discover_sites(root)
 
-    def test_apex_path_route_keeps_matter_and_webhook_private(self):
+    def test_apex_path_route_serves_devices_and_scan_and_excludes_other_matter_routes(self):
         route = next(r for r in self.config["routes"] if r["hostname"] == "jomaa.org")
         for path in route["probes"]:
             self.assertIsNotNone(re.search(route["path"], path), path)
-        for path in ("/deploy", "/api/matter/nodes", "/unknown", "/lights-other"):
+        for path in ("/devices", "/devices/app.js", "/api/devices", "/api/matter/discover"):
+            self.assertIsNotNone(re.search(route["path"], path), path)
+        for path in ("/deploy", "/api/matter/nodes", "/api/matter/commission", "/unknown", "/lights-other", "/devices-other"):
             self.assertIsNone(re.search(route["path"], path), path)
 
     def test_rejects_invalid_routes_state_and_services(self):
