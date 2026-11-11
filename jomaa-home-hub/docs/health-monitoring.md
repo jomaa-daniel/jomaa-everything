@@ -36,6 +36,8 @@ nodes are checked every 30 seconds. Unsupported uptime displays Unavailable.
 Inventory rows include Type, Capabilities and Group. Matter rows describe
 reported device types and functions and list their configured rooms, including
 nested groups. Health reporter rows identify their reporting role.
+Matter lights and plugs can be assigned to an existing group or No group from
+their details. Saving updates the configured targets and room fan-out.
 The hub's root URL redirects to `/devices`, including on the Cloudflare hostname.
 
 The native hub stores health history in `data/health.sqlite`, shared between

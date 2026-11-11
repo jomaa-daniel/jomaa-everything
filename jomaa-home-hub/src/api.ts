@@ -11,6 +11,7 @@ import { HealthHttp } from "./health/http.js";
 import { HealthError, type HealthStore } from "./health/store.js";
 import { MatterError, MatterNotReadyError, type MatterAdmin } from "./matter/nodes.js";
 import { serveWeb } from "./web.js";
+import { assignMatterGroup } from "./group-assignment.js";
 
 const authCookie = "hub_auth";
 const commandTimeoutMs = 15_000;
@@ -64,6 +65,7 @@ export class Api {
   readonly #public: Route[];
   readonly #authed: Route[];
   readonly #healthHttp: HealthHttp | undefined;
+  #groupChange: Promise<void> = Promise.resolve();
 
   /** password must be non-empty; clients exchange it for a session token at POST /api/login. */
   constructor(
@@ -72,6 +74,7 @@ export class Api {
     password: string,
     private readonly log: Log,
     health?: HealthStore,
+    private readonly layoutPath?: string,
   ) {
     this.#token = sessionToken(password);
     this.#healthHttp = health
@@ -96,6 +99,7 @@ export class Api {
       route("GET", "/api/matter/discover", this.#matterDiscover),
       route("POST", "/api/matter/register", this.#matterRegister),
       route("PATCH", "/api/matter/nodes/{nodeId}/name", this.#matterRename),
+      route("PATCH", "/api/matter/nodes/{nodeId}/group", this.#matterGroup),
       route("DELETE", "/api/matter/nodes/{nodeId}", this.#matterRemove),
       route("POST", "/api/matter/commission", this.#matterCommission),
       route("POST", "/api/matter/wifi", this.#matterWiFi),
@@ -312,6 +316,40 @@ export class Api {
       return this.matter.rename(nodeId, name);
     });
     writeJSON(res, 200, { node });
+  }
+
+  async #matterGroup({ req, res, params }: RequestContext): Promise<void> {
+    requireSameOrigin(req);
+    if (this.layoutPath === undefined) throw new HttpError(503, "group editing is unavailable");
+    const raw = params[0] ?? "";
+    const nodeId = Number(raw);
+    if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(nodeId)) throw new HttpError(400, "invalid Matter node ID");
+    const groupId = (await readBody(req)).only("groupId").required("groupId").string("groupId");
+    if (groupId !== null && !this.hub.list().some((target) => target.kind === "room" && target.id === groupId)) {
+      throw new HttpError(400, "selected group does not exist");
+    }
+    const node = await this.#matterCall(() => {
+      const value = this.matter.nodes().find((candidate) => candidate.nodeId === nodeId);
+      if (!value) throw new HttpError(404, "Matter node not found");
+      return Promise.resolve(value);
+    });
+    const path = this.layoutPath;
+    if (groupId !== null && !node.lightEndpoints.length)
+      throw new HttpError(400, "this device has no light or plug endpoints");
+    const change = this.#groupChange.then(async () => {
+      const config = await assignMatterGroup(path, node, groupId);
+      this.hub.reload(config);
+    });
+    this.#groupChange = change.catch(() => {});
+    try {
+      await change;
+    } catch (err) {
+      this.log.warn("matter group assignment failed", { nodeId, err });
+      throw new HttpError(409, "Group could not be saved. Refresh and try again.");
+    }
+    writeJSON(res, 200, {
+      node: { nodeId, groups: this.hub.groupsForMatter(nodeId), groupIds: this.hub.directGroupsForMatter(nodeId) },
+    });
   }
 
   async #matterRemove({ res, params, signal }: RequestContext): Promise<void> {

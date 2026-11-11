@@ -71,7 +71,7 @@ async function run(log: Log): Promise<void> {
       Number(process.env["HEALTH_RETENTION_DAYS"] ?? 30),
     );
     health = store;
-    const api = new Api(Hub.build(cfg, govee, matter), matter, password, log, store);
+    const api = new Api(Hub.build(cfg, govee, matter), matter, password, log, store, cliOptions.config);
     const cert = process.env["HUB_TLS_CERT"];
     const key = process.env["HUB_TLS_KEY"];
     if (Boolean(cert) !== Boolean(key)) throw new Error("set both HUB_TLS_CERT and HUB_TLS_KEY");

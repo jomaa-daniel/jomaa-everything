@@ -144,9 +144,6 @@ function validateConfig(c: Config): void {
   for (const r of c.rooms) {
     // Check members before claiming the room's own id, so a room can't
     // contain itself and every reference points backwards (no cycles).
-    if (r.members.length === 0) {
-      throw new JsonShapeError(`room ${JSON.stringify(r.id)} has no members`);
-    }
     for (const m of r.members) {
       if (!seen.has(m)) {
         throw new JsonShapeError(

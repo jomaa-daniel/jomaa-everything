@@ -32,7 +32,6 @@ test("rejects bad layouts", () => {
     "node id not a number": '{"devices":[{"id":"a","driver":"matter","nodeId":"1"}]}',
     "unknown member": '{"rooms":[{"id":"r","members":["ghost"]}]}',
     "room contains itself": '{"rooms":[{"id":"r","members":["r"]}]}',
-    "empty room": '{"rooms":[{"id":"r","members":[]}]}',
     "not json": "{",
   };
   for (const [name, raw] of Object.entries(cases)) {
@@ -42,6 +41,12 @@ test("rejects bad layouts", () => {
 
 test("a missing file is an error", () => {
   assert.throws(() => loadConfig("does-not-exist.json"), { code: "ENOENT" });
+});
+
+test("rooms can remain configured after their last device is ungrouped", () => {
+  assert.deepEqual(parseConfig('{"rooms":[{"id":"living-room","name":"Living Room","members":[]}]}').rooms, [
+    { id: "living-room", name: "Living Room", members: [] },
+  ]);
 });
 
 test("listen addresses", () => {

@@ -4,6 +4,9 @@ let matterNodes = [];
 let selected = null;
 let selectedMatter = null;
 let matterNameDirty = false;
+let matterGroupDirty = false;
+let savingGroup = false;
+let groups = [];
 let dirty = false;
 let cursor = null;
 let credential = null;
@@ -271,12 +274,38 @@ function renderMatterDetail() {
     $("matter-facts").append(fact);
   }
   if (!matterNameDirty) $("matter-name").value = matterName(device);
+  const selectedGroup = matterGroupDirty
+    ? $("matter-group").value
+    : device.groupIds.length === 1
+      ? device.groupIds[0]
+      : device.groupIds.length
+        ? "__multiple__"
+        : "";
+  $("matter-group").replaceChildren();
+  const unassigned = node("option", "No group");
+  unassigned.value = "";
+  $("matter-group").append(unassigned);
+  if (device.groupIds.length > 1) {
+    const multiple = node("option", "Multiple groups");
+    multiple.value = "__multiple__";
+    multiple.disabled = true;
+    $("matter-group").append(multiple);
+  }
+  for (const group of groups) {
+    const option = node("option", group.name);
+    option.value = group.id;
+    $("matter-group").append(option);
+  }
+  $("matter-group").value = selectedGroup;
+  $("matter-group").disabled = savingGroup || !device.lightEndpoints.length;
+  $("save-matter-group").disabled = savingGroup || !device.lightEndpoints.length;
 }
 
 function selectMatter(nodeId) {
   selected = null;
   selectedMatter = nodeId;
   matterNameDirty = false;
+  matterGroupDirty = false;
   render();
 }
 
@@ -328,6 +357,7 @@ async function refreshInventory() {
   if (generation !== sessionGeneration || inventoryRevision !== inventoryGeneration) return;
   devices = result.devices;
   matterNodes = result.matterNodes;
+  groups = result.groups;
   signedIn(true);
   $("retention").textContent =
     `Updates every 15 seconds. Offline after three missed reports (minimum 90 seconds). History retained for ${result.retentionDays} days.`;
@@ -552,6 +582,34 @@ $("close-matter-detail").addEventListener("click", () => {
 });
 $("matter-name").addEventListener("input", () => {
   matterNameDirty = true;
+});
+$("matter-group").addEventListener("change", () => {
+  matterGroupDirty = true;
+});
+$("matter-group-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const nodeId = selectedMatter;
+  const value = $("matter-group").value;
+  if (nodeId === null || savingGroup || value === "__multiple__") return;
+  savingGroup = true;
+  const generation = sessionGeneration;
+  $("save-matter-group").disabled = true;
+  $("matter-group").disabled = true;
+  try {
+    const result = await api(`/api/matter/nodes/${nodeId}/group`, "PATCH", { groupId: value || null });
+    if (generation !== sessionGeneration) return;
+    inventoryGeneration += 1;
+    matterNodes = matterNodes.map((device) => (device.nodeId === nodeId ? { ...device, ...result.node } : device));
+    if (selectedMatter === nodeId) matterGroupDirty = false;
+    render();
+    $("notice").className = "success";
+    $("notice").textContent = "Matter device group saved.";
+  } catch (reason) {
+    if (generation === sessionGeneration) error(reason);
+  } finally {
+    savingGroup = false;
+    renderMatterDetail();
+  }
 });
 $("matter-name-form").addEventListener("submit", async (event) => {
   event.preventDefault();

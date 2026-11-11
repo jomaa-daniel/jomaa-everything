@@ -49,6 +49,12 @@ export class Fields {
     return this;
   }
 
+  required(...keys: string[]): this {
+    for (const key of keys)
+      if (!Object.hasOwn(this.#obj, key)) throw new JsonShapeError(`missing field ${JSON.stringify(key)}`);
+    return this;
+  }
+
   string(key: string): string | null {
     return this.#read(key, "a string", (v): v is string => typeof v === "string");
   }

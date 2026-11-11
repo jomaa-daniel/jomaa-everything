@@ -77,6 +77,7 @@ type Entry = { kind: Kind; device: Device } | { kind: "room"; device: Group };
 export class Hub {
   readonly #entries = new Map<string, Entry>();
   readonly #revs = new Revisions();
+  #build: ((config: Config) => Hub) | null = null;
 
   /** Registers a device under the driver that runs it. */
   addDevice(kind: Kind, d: Device): void {
@@ -98,6 +99,7 @@ export class Hub {
   /** Creates the hub from a validated config. */
   static build(cfg: Config, govee: GoveeClient, matter: MatterNodes): Hub {
     const h = new Hub();
+    h.#build = (config) => Hub.build(config, govee, matter);
     for (const d of cfg.devices) {
       h.addDevice(d.driver, d.driver === "govee" ? new GoveeLight(govee, d) : new MatterLight(matter, d));
     }
@@ -138,6 +140,24 @@ export class Hub {
           leaves(entry.device).some((device) => device instanceof MatterLight && device.nodeId === nodeId),
       )
       .map((entry) => entry.device.name);
+  }
+
+  directGroupsForMatter(nodeId: number): string[] {
+    return [...this.#entries.values()]
+      .filter(
+        (entry) =>
+          entry.kind === "room" &&
+          entry.device.members.some((device) => device instanceof MatterLight && device.nodeId === nodeId),
+      )
+      .map((entry) => entry.device.id);
+  }
+
+  /** Rebuilds configured targets and rooms while retaining client revisions. */
+  reload(config: Config): void {
+    if (this.#build === null) throw new Error("hub has no configured device factory");
+    const next = this.#build(config);
+    this.#entries.clear();
+    for (const [id, entry] of next.#entries) this.#entries.set(id, entry);
   }
 
   /** Reads the target and every device under it. */

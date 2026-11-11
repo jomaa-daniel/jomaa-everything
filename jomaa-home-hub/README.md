@@ -312,6 +312,8 @@ The inventory includes Type, Capabilities and Group columns. Matter types and
 functional capabilities come from reported descriptors and attributes; groups
 come from configured room membership. Health reporters show their reporting
 role and No group when no room membership is configured.
+Matter light details include a Group selector. Save group moves configured
+endpoints to the selected room or No group and persists the room membership.
 Create device credential in that window opens Pico health enrollment.
 Pico W, Pico 2 W, and RP2040 boards with an ESP8285 UART radio report over verified HTTPS using individual credentials.
 Their first authenticated report registers them; missed reports mark them offline.

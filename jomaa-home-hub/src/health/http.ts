@@ -59,10 +59,18 @@ export class HealthHttp {
       json(res, 200, {
         devices: this.store.list(),
         matterNodes: this.matter.ready
-          ? this.matter.nodes().map((node) => ({ ...node, groups: this.hub.groupsForMatter(node.nodeId) }))
+          ? this.matter.nodes().map((node) => ({
+              ...node,
+              groups: this.hub.groupsForMatter(node.nodeId),
+              groupIds: this.hub.directGroupsForMatter(node.nodeId),
+            }))
           : [],
         matterConnected: this.matter.ready,
         retentionDays: this.store.retentionDays,
+        groups: this.hub
+          .list()
+          .filter((target) => target.kind === "room")
+          .map((group) => ({ id: group.id, name: group.name })),
       });
       return true;
     }
