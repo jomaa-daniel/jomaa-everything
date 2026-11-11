@@ -70,6 +70,22 @@ class ServeTest(unittest.TestCase):
                         (host, "/../serve.py"), (host, "/%2e%2e/serve.py"), (host, "/missing.png")]:
             self.assertEqual(self.get(h, path)[0], 404, (h, path))
 
+    def test_device_panel_is_a_room_controller(self):
+        panel = serve.ROOT / "device-panel"
+        html = (panel / "index.html").read_text()
+        script = (panel / "app.js").read_text()
+        # Brightness is one continuous control with a visible readout, not presets.
+        self.assertIn('id="brightness"', html)
+        self.assertIn('id="brightness-value"', html)
+        self.assertNotIn("data-brightness", html)
+        self.assertIn("Mixed", script)
+        # Four fixed colours plus two customs are visible without opening a dialog.
+        self.assertEqual(html.count('class="swatch"'), 6)
+        self.assertEqual(html.count('data-custom="custom-'), 2)
+        # Device dots distinguish on from off, not just reachable from unreachable.
+        self.assertIn('"on"', script)
+        self.assertIn('"off"', script)
+
     def test_sarah_portfolio_references_only_files_that_exist(self):
         site = serve.ROOT / "sarah.jomaa.org"
         data = (site / "artworks.js").read_text()

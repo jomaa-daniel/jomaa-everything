@@ -118,6 +118,8 @@ input:disabled {
   display: flex;
   flex-direction: column;
   gap: var(--stack);
+  width: min(100%, 680px);
+  margin-inline: auto;
   min-height: 0;
   padding: max(var(--pad), env(safe-area-inset-top))
     max(var(--pad), env(safe-area-inset-right)) var(--pad)
@@ -174,8 +176,14 @@ input:disabled {
   transition: background 0.3s ease;
 }
 
-.dot.online {
+.dot.on {
   background: var(--online);
+  box-shadow: 0 0 8px rgb(76 208 125 / 55%);
+}
+
+.dot.off {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--muted);
 }
 
 .dot.offline {
@@ -208,6 +216,8 @@ input:disabled {
 }
 
 .power-area {
+  position: relative;
+  z-index: 0;
   display: flex;
   justify-content: center;
   flex: 0 0 auto;
@@ -251,10 +261,10 @@ input:disabled {
   background: var(--glow);
   color: var(--glow-ink);
   box-shadow:
-    0 0 0 calc(var(--level) * 12px)
+    0 0 0 calc(var(--level) * 8px)
       color-mix(in srgb, var(--glow) 12%, transparent),
-    0 0 calc(var(--level) * 100px)
-      color-mix(in srgb, var(--glow) 40%, transparent);
+    0 0 calc(var(--level) * 36px)
+      color-mix(in srgb, var(--glow) 30%, transparent);
 }
 
 .power.busy {
@@ -266,49 +276,57 @@ input:disabled {
 }
 
 .band {
+  position: relative;
+  z-index: 1;
   flex: 1 1 0;
   display: flex;
+  flex-direction: column;
+  gap: 8px;
   min-height: 0;
+}
+
+.band-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 4px;
+}
+
+.band-name {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.band-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.controls.off .band {
+  opacity: 0.45;
+  filter: saturate(0.35);
 }
 
 /* Brightness */
 
-.levels {
-  flex: 1;
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
-  border-radius: calc(var(--radius-lg) + 4px);
-  background: var(--card);
+#brightness-wrap {
+  --track: linear-gradient(to right, #4a3419, #ffb54d 55%, #ffe9c4);
 }
 
-.level-btn {
-  border: 0;
-  border-radius: var(--radius-lg);
-  background: transparent;
-  color: var(--muted);
-  font-size: clamp(1rem, 2.8vmin, 1.6rem);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
+.slider-end.dim {
+  left: calc(var(--inset) * 2.5);
+  color: rgb(255 220 170 / 85%);
 }
 
-.level-btn[aria-pressed="true"] {
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-
-.level-btn:focus-visible {
-  outline-offset: -4px;
-}
-
-.controls.off .level-btn[aria-pressed="true"] {
-  background: transparent;
-  box-shadow: inset 0 0 0 2px var(--accent);
-  color: var(--accent-text);
+.slider-end.bright {
+  right: calc(var(--inset) * 2.5);
+  color: rgb(70 40 0 / 65%);
 }
 
 /* Temperature */
@@ -411,8 +429,7 @@ input:disabled {
   filter: saturate(0.3);
 }
 
-.slider:disabled ~ .slider-thumb,
-.temperature.inactive .slider-thumb {
+.slider:disabled ~ .slider-thumb {
   display: none;
 }
 
@@ -421,7 +438,7 @@ input:disabled {
 .swatches {
   flex: 1;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: var(--gap);
   container-type: size;
 }
@@ -429,7 +446,7 @@ input:disabled {
 .swatch-cell {
   position: relative;
   place-self: center;
-  width: min(100cqh, (100cqw - var(--gap) * 3) / 4);
+  width: min(100cqh, (100cqw - var(--gap) * 5) / 6);
   aspect-ratio: 1;
 }
 
@@ -468,7 +485,7 @@ input:disabled {
   bottom: -4%;
   display: grid;
   place-items: center;
-  width: clamp(16px, 34%, 36px);
+  width: clamp(26px, 38%, 40px);
   aspect-ratio: 1;
   padding: 0;
   border: 2px solid var(--bg);
@@ -523,6 +540,8 @@ input:disabled {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
+  max-width: 680px;
+  margin-inline: auto;
 }
 
 .room-btn {
@@ -649,8 +668,7 @@ input:disabled {
 }
 
 @media (hover: hover) {
-  .room-btn:hover:not([aria-current="true"]),
-  .level-btn:hover:not([aria-pressed="true"]) {
+  .room-btn:hover:not([aria-current="true"]) {
     color: var(--text);
   }
 

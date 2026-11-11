@@ -3,8 +3,8 @@
 Static websites and the hub's web device panel. Standalone sites are served at
 their own hostnames through the hub's Cloudflare tunnel on jerry.
 
-| Folder | Hostname |
-|--------|----------|
+| Folder             | Hostname                |
+| ------------------ | ----------------------- |
 | `sarah.jomaa.org/` | https://sarah.jomaa.org |
 
 ## Device panel
@@ -16,18 +16,20 @@ The session stays signed in until it expires.
 
 The screen fills the viewport from top to bottom:
 
-- The top row shows the room name on the left and a dot for each device on
-  the right: green when the device answered, red when it failed or is
-  unreachable, and yellow after a command until that device reaches the
-  requested state. Short notes such as "1 of 2 on" or "last known" sit beside
-  the dots.
+- The top row shows the room name on the left and a dot for each device in
+  the room on the right: filled for on, hollow for off, yellow after a
+  command until that device reaches the requested state, and red when it
+  is not answering. Short notes such as "1 of 2 on" or "last known" sit
+  beside the dots.
 - A round power button glows with the light's color or white temperature at
   its brightness.
-- The remaining height is split evenly between 10/50/75/100% brightness
-  presets, a warm-to-cool temperature track, and red, orange, and two custom
-  color circles. Each control fills its band.
-- With more than one room, the bottom edge is a T split with one half per
-  room (Living Room and Bedroom). Without rooms, it lists devices.
+- The remaining height is split evenly between a brightness slider, a
+  warm-to-cool temperature track, and red, orange, green, pink, and two
+  custom color circles. Each band names its control and shows its current
+  value; brightness shows "Mixed" when the room's lit devices differ, and
+  sliding it sets the whole room to one level. Each control fills its band.
+- The bottom edge selects one room at a time. Without rooms, it lists
+  devices.
 
 The pencil on a custom circle opens a grid of colors; picking one saves it in
 the browser and applies it. After a command the panel re-reads the hub about

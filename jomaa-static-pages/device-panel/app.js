@@ -7,7 +7,7 @@
  * @typedef {{ on?: boolean, brightness?: number, colorTemperaturePct?: number, color?: string }} Changes
  * @typedef {{ text: string, error: boolean }} Message
  * @typedef {{ key: string, name: string, ids: string[] }} Tab
- * @typedef {"online" | "offline" | "pending" | "unknown"} DeviceStatus
+ * @typedef {"on" | "off" | "offline" | "pending" | "unknown"} DeviceStatus
  */
 
 const $ = (id) => document.getElementById(id);
@@ -94,6 +94,8 @@ const app = {
   busy: false,
   queued: /** @type {Changes | null} */ (null),
   selectedColor: /** @type {string | null} */ (null),
+  /** Which swatch the selected color came from, by identity, not hex value. */
+  selectedSwatch: /** @type {string | null} */ (null),
   customColors: { ...DEFAULT_CUSTOM_COLORS },
   editing: /** @type {string | null} */ (null),
   error: /** @type {Message} */ ({ text: "", error: true }),
@@ -428,7 +430,8 @@ function reached(state, changes, features) {
 function deviceStatus(id) {
   if (app.pending.has(id)) return "pending";
   if (id in app.failed) return "offline";
-  if (app.observation && id in app.observation.devices) return "online";
+  const state = app.observation?.devices[id];
+  if (state) return state.on ? "on" : "off";
   return "unknown";
 }
 
@@ -443,6 +446,15 @@ function interpolate(value) {
 }
 
 const rgb = (channels) => `rgb(${channels.join(" ")})`;
+
+/** A dim-to-bright gradient in one hue, for the brightness track. */
+function brightnessGradient(channels) {
+  const dim = channels.map((channel) => Math.round(channel * 0.25));
+  const bright = channels.map((channel) =>
+    Math.round(channel + (255 - channel) * 0.75),
+  );
+  return `linear-gradient(to right, ${rgb(dim)}, ${rgb(channels)} 55%, ${rgb(bright)})`;
+}
 
 const hexChannels = (hex) =>
   [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
@@ -520,6 +532,7 @@ function startSession(authenticated) {
     busy: false,
     queued: null,
     selectedColor: null,
+    selectedSwatch: null,
     error: { text: "", error: true },
     errorDetail: "",
     reconnect: false,
@@ -616,6 +629,7 @@ async function selectTargets(ids) {
   app.failed = {};
   app.stale = false;
   app.selectedColor = null;
+  app.selectedSwatch = null;
   app.queued = null;
   app.loading = app.selected.length > 0;
   showError("");
@@ -704,7 +718,10 @@ async function send(changes) {
     }
     if (view === app.view && !Object.keys(app.failed).length) {
       if (changes.color !== undefined) app.selectedColor = changes.color;
-      if (changes.colorTemperaturePct !== undefined) app.selectedColor = null;
+      if (changes.colorTemperaturePct !== undefined) {
+        app.selectedColor = null;
+        app.selectedSwatch = null;
+      }
     }
   } finally {
     if (session === app.session) {
@@ -855,6 +872,8 @@ function powerState(chosen, summary) {
   const notes = [];
   if (summary.on && summary.on < summary.total)
     notes.push(`${summary.on} of ${summary.total} on`);
+  const failed = Object.keys(app.failed).length;
+  if (failed) notes.push(`${failed} not answering`);
   if (app.stale) notes.push("last known");
   return notes.join(" · ");
 }
@@ -882,6 +901,8 @@ function renderPower(chosen, summary) {
   const brightness = summary.brightness.value ?? 100;
   power.style.setProperty("--glow", rgb(glow));
   power.style.setProperty("--glow-ink", isLight(glow) ? "#1d1405" : "#fff");
+  // The brightness track is a dim-to-bright scale of the light's own color.
+  $("brightness-wrap").style.setProperty("--track", brightnessGradient(glow));
   power.style.setProperty(
     "--level",
     String((0.35 + 0.65 * (brightness / 100)) * (partial ? 0.5 : 1)),
@@ -889,8 +910,9 @@ function renderPower(chosen, summary) {
 }
 
 const STATUS_TEXT = {
-  online: "online",
-  offline: "offline",
+  on: "on",
+  off: "off",
+  offline: "not answering",
   pending: "updating",
   unknown: "unknown",
 };
@@ -933,15 +955,16 @@ function renderSettings(chosen, summary) {
   }
 
   const brightness = summary.brightness;
-  document.querySelectorAll("[data-brightness]").forEach((button) => {
-    button.setAttribute(
-      "aria-pressed",
-      String(
-        !brightness.mixed &&
-          Number(button.dataset.brightness) === brightness.value,
-      ),
-    );
-  });
+  const brightnessSlider = $("brightness");
+  brightnessSlider.disabled = !chosen || brightness.value === null;
+  brightnessSlider.value = String(brightness.value ?? 100);
+  $("brightness-value").textContent =
+    brightness.value === null
+      ? ""
+      : brightness.mixed
+        ? "Mixed"
+        : `${brightness.value}%`;
+  showBrightness(brightness.value, brightness.mixed);
 
   const temperature = summary.temperature;
   const slider = $("temperature");
@@ -951,14 +974,49 @@ function renderSettings(chosen, summary) {
     "inactive",
     app.selectedColor !== null,
   );
+  $("temperature-value").textContent =
+    app.selectedColor !== null
+      ? "Color set"
+      : temperature.value === null
+        ? ""
+        : temperatureWord(temperature.value);
   showTemperature(temperature.value);
 
+  const swatchKey = (button) =>
+    button.dataset.custom
+      ? `custom:${button.dataset.custom}`
+      : `color:${button.dataset.color}`;
   document.querySelectorAll(".swatch").forEach((button) => {
     button.setAttribute(
       "aria-pressed",
-      String(app.selectedColor === swatchColor(button)),
+      String(
+        app.selectedSwatch !== null
+          ? app.selectedSwatch === swatchKey(button)
+          : app.selectedColor === swatchColor(button),
+      ),
     );
   });
+  const selectedSwatch = [...document.querySelectorAll(".swatch")].find(
+    (button) =>
+      app.selectedSwatch !== null
+        ? app.selectedSwatch === swatchKey(button)
+        : app.selectedColor === swatchColor(button),
+  );
+  $("color-value").textContent = selectedSwatch
+    ? (selectedSwatch.getAttribute("aria-label") ?? "")
+    : app.selectedColor
+      ? app.selectedColor
+      : chosen
+        ? "White"
+        : "";
+}
+
+function showBrightness(value, mixed = false) {
+  $("brightness-wrap").style.setProperty("--pct", `${value ?? 100}%`);
+  $("brightness").setAttribute(
+    "aria-valuetext",
+    value === null ? "Unknown" : mixed ? "Mixed" : `${value}%`,
+  );
 }
 
 function showTemperature(value) {
@@ -1038,24 +1096,37 @@ $("power-toggle").addEventListener("click", () =>
   command({ on: summarize().on === 0 }),
 );
 
-document.querySelectorAll("[data-brightness]").forEach((button) => {
-  button.addEventListener("click", () =>
-    command({ on: true, brightness: Number(button.dataset.brightness) }),
-  );
+$("brightness").addEventListener("input", () => {
+  showBrightness(Number($("brightness").value));
+  $("brightness-value").textContent = `${$("brightness").value}%`;
 });
+$("brightness").addEventListener("change", () =>
+  command({ on: true, brightness: Number($("brightness").value) }),
+);
 
 $("temperature").addEventListener("input", () => {
   $("temperature-setting").classList.remove("inactive");
+  $("temperature-value").textContent = temperatureWord(
+    Number($("temperature").value),
+  );
   showTemperature(Number($("temperature").value));
+  if (app.selectedColor === null)
+    $("brightness-wrap").style.setProperty(
+      "--track",
+      brightnessGradient(interpolate(Number($("temperature").value))),
+    );
 });
 $("temperature").addEventListener("change", () =>
   command({ on: true, colorTemperaturePct: Number($("temperature").value) }),
 );
 
 document.querySelectorAll(".swatch").forEach((button) => {
-  button.addEventListener("click", () =>
-    command({ on: true, color: swatchColor(button) }),
-  );
+  button.addEventListener("click", () => {
+    app.selectedSwatch = button.dataset.custom
+      ? `custom:${button.dataset.custom}`
+      : `color:${button.dataset.color}`;
+    command({ on: true, color: swatchColor(button) });
+  });
 });
 
 document.querySelectorAll("[data-edit]").forEach((button) => {
@@ -1070,6 +1141,7 @@ $("color-grid").addEventListener("click", (event) => {
   if (!button || id === null) return;
   const color = button.dataset.pick;
   app.customColors = { ...app.customColors, [id]: color };
+  app.selectedSwatch = `custom:${id}`;
   saveCustomColors();
   paintSwatches();
   $("color-dialog").close();

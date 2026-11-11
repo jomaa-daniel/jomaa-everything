@@ -84,39 +84,32 @@
           </div>
 
           <div id="brightness-setting" class="band" hidden>
-            <div class="levels" role="group" aria-label="Brightness">
-              <button
-                class="level-btn"
-                data-brightness="10"
-                aria-pressed="false"
-              >
-                10%
-              </button>
-              <button
-                class="level-btn"
-                data-brightness="50"
-                aria-pressed="false"
-              >
-                50%
-              </button>
-              <button
-                class="level-btn"
-                data-brightness="75"
-                aria-pressed="false"
-              >
-                75%
-              </button>
-              <button
-                class="level-btn"
-                data-brightness="100"
-                aria-pressed="false"
-              >
-                100%
-              </button>
+            <div class="band-head">
+              <span class="band-name">Brightness</span>
+              <span id="brightness-value" class="band-value"></span>
+            </div>
+            <div id="brightness-wrap" class="slider-wrap">
+              <input
+                id="brightness"
+                class="slider"
+                type="range"
+                min="1"
+                max="100"
+                step="1"
+                value="100"
+                aria-label="Brightness"
+              />
+              <span class="slider-end dim" aria-hidden="true">Dim</span>
+              <span class="slider-end bright" aria-hidden="true">Bright</span>
+              <span class="slider-thumb" aria-hidden="true"></span>
             </div>
           </div>
 
           <div id="temperature-setting" class="band temperature" hidden>
+            <div class="band-head">
+              <span class="band-name">Warmth</span>
+              <span id="temperature-value" class="band-value"></span>
+            </div>
             <div id="temperature-wrap" class="slider-wrap">
               <input
                 id="temperature"
@@ -135,11 +128,15 @@
           </div>
 
           <div id="color-setting" class="band" hidden>
+            <div class="band-head">
+              <span class="band-name">Color</span>
+              <span id="color-value" class="band-value"></span>
+            </div>
             <div class="swatches" role="group" aria-label="Color">
               <div class="swatch-cell">
                 <button
                   class="swatch"
-                  data-color="#ff0000"
+                  data-color="#ff3b30"
                   aria-label="Red"
                   aria-pressed="false"
                 ></button>
@@ -147,8 +144,24 @@
               <div class="swatch-cell">
                 <button
                   class="swatch"
-                  data-color="#ff8000"
+                  data-color="#ff9500"
                   aria-label="Orange"
+                  aria-pressed="false"
+                ></button>
+              </div>
+              <div class="swatch-cell">
+                <button
+                  class="swatch"
+                  data-color="#34c759"
+                  aria-label="Green"
+                  aria-pressed="false"
+                ></button>
+              </div>
+              <div class="swatch-cell">
+                <button
+                  class="swatch"
+                  data-color="#ff2d92"
+                  aria-label="Pink"
                   aria-pressed="false"
                 ></button>
               </div>

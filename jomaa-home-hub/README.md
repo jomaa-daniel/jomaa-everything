@@ -96,19 +96,18 @@ group, and status.
 
 ## Web light controller
 
-`https://jomaa.org/lights` controls rooms and individual devices. Sign in with
-the hub password; the page shares the administrator session with device health.
-Power, brightness, white temperature, and color use the same API as the phone
-apps. Controls appear according to each target's capabilities. Brightness,
-temperature, and color changes turn the selected lights on. The page reads
-device states after each command and shows individual failures. Use Refresh to
-read current states and update the list of configured targets.
+`https://jomaa.org/lights` controls rooms, one at a time. It does not control
+individual devices. Sign in with the hub password; the page shares the
+administrator session with device health. Power, brightness, white
+temperature, and color use the same API as the phone apps. Controls appear
+according to the selected room's capabilities. Brightness, temperature, and
+color changes turn the room on. The page reads device states after each
+command, shows failures by device name, and re-reads states when it becomes
+visible and every minute.
 
-The bottom row selects Living Room and Bedroom independently. Select either
-room or both; the existing power, color, brightness, and temperature controls
-apply to the selected rooms. Changing the selection reads states without
-changing lights. With neither room selected, the controls are disabled. The
-top picker selects an individual device or another room.
+The bottom row selects one room. Changing the selection reads its state
+without changing lights. A dot per member device shows it on, off, updating,
+or not answering.
 
 The panel source lives in `../jomaa-static-pages/device-panel/`. The hub build
 includes its HTML, JavaScript, and styles; releases
