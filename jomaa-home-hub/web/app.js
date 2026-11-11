@@ -31,6 +31,8 @@ const capabilityColors = {
   "White temperature": "blue",
   "Health reporting": "teal",
 };
+const typeHues = new Map();
+const assignedTypeHues = new Set();
 
 function node(tag, value, className) {
   const result = document.createElement(tag);
@@ -43,6 +45,22 @@ function chipColor(label) {
   let hash = 0;
   for (const character of label) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
   return chipColors[hash % chipColors.length];
+}
+
+function typeCell(label) {
+  if (!typeHues.has(label)) {
+    let hash = 0;
+    for (const character of label) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+    let hue = hash % 360;
+    while (assignedTypeHues.has(hue)) hue = (hue + 137.508) % 360;
+    typeHues.set(label, hue);
+    assignedTypeHues.add(hue);
+  }
+  const cell = node("td");
+  const chip = node("span", label, "chip chip-type");
+  chip.style.setProperty("--chip-hue", typeHues.get(label));
+  cell.append(chip);
+  return cell;
 }
 
 function chipCell(labels, kind, empty) {
@@ -84,11 +102,9 @@ function columnChoices(column) {
   return [null, ...[...new Set(values)].sort((a, b) => a.localeCompare(b))];
 }
 
-function cycleColumn(column) {
-  const choices = columnChoices(column);
-  const next = choices[(choices.indexOf(selectedColumn(column)) + 1) % choices.length];
-  if (column === "status") $("filter").value = next || "all";
-  else columnFilters[column] = next;
+function selectColumn(column, value) {
+  if (column === "status") $("filter").value = value || "all";
+  else columnFilters[column] = value;
   render();
 }
 
@@ -104,12 +120,19 @@ function matchesColumns(type, capabilities, groups) {
 function renderColumnFilters() {
   for (const column of filterColumns) {
     const value = selectedColumn(column);
-    $("cycle-" + column).className = value === null ? "column-filter" : "column-filter filtered";
+    $("column-filter-" + column).className = value === null ? "column-filter" : "column-filter filtered";
     $(column + "-filter-value").textContent = value === null ? "All" : value;
-    $("cycle-" + column).setAttribute(
-      "aria-label",
-      `Cycle ${column} filter. Current: ${value === null ? "All" : value}`,
-    );
+    const select = $("select-filter-" + column);
+    const choices = columnChoices(column);
+    if (!choices.includes(value)) choices.push(value);
+    select.replaceChildren();
+    for (const choice of choices) {
+      const option = node("option", choice === null ? "All" : choice);
+      option.value = JSON.stringify(choice);
+      select.append(option);
+    }
+    select.value = JSON.stringify(value);
+    select.title = `Filter by ${column}. Current: ${value === null ? "All" : value}`;
   }
   $("clear-filters").hidden = !$("search").value && filterColumns.every((column) => selectedColumn(column) === null);
 }
@@ -199,7 +222,7 @@ function render() {
     stateCell.append(status(device.status));
     row.append(
       cell,
-      node("td", "Health reporter"),
+      typeCell("Health reporter"),
       chipCell(["Health reporting"], "capabilities", "Not reported"),
       chipCell([], "group", "No group"),
       stateCell,
@@ -229,7 +252,7 @@ function render() {
     if (device.uptimeObservedAt !== null) uptimeCell.title = `Reported ${stamp(device.uptimeObservedAt)}`;
     row.append(
       cell,
-      node("td", device.type),
+      typeCell(device.type),
       chipCell(device.capabilities, "capabilities", "Not reported"),
       chipCell(device.groups, "group", "No group"),
       stateCell,
@@ -559,7 +582,11 @@ $("logout").addEventListener("click", async () => {
 });
 $("search").addEventListener("input", render);
 $("filter").addEventListener("change", render);
-for (const column of filterColumns) $("cycle-" + column).addEventListener("click", () => cycleColumn(column));
+for (const column of filterColumns) {
+  $("select-filter-" + column).addEventListener("change", () =>
+    selectColumn(column, JSON.parse($("select-filter-" + column).value)),
+  );
+}
 $("clear-filters").addEventListener("click", () => {
   for (const column of ["type", "capabilities", "group"]) columnFilters[column] = null;
   $("filter").value = "all";

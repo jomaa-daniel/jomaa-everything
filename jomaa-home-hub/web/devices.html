@@ -50,25 +50,72 @@
               <tr>
                 <th>Device</th>
                 <th>
-                  <button id="cycle-type" class="column-filter" type="button">
-                    <span>Type ↻</span><span id="type-filter-value" class="column-filter-value">All</span>
-                  </button>
+                  <div id="column-filter-type" class="column-filter">
+                    <div class="column-filter-heading">
+                      <span>Type</span
+                      ><span class="filter-control">
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path d="M4 5h16l-6 7v6l-4 2v-8L4 5Z" />
+                        </svg>
+                        <select id="select-filter-type" class="column-filter-select" aria-label="Filter by type">
+                          <option value="null">All</option>
+                        </select>
+                      </span>
+                    </div>
+                    <span id="type-filter-value" class="column-filter-value">All</span>
+                  </div>
                 </th>
                 <th>
-                  <button id="cycle-capabilities" class="column-filter" type="button">
-                    <span>Capabilities ↻</span
-                    ><span id="capabilities-filter-value" class="column-filter-value">All</span>
-                  </button>
+                  <div id="column-filter-capabilities" class="column-filter">
+                    <div class="column-filter-heading">
+                      <span>Capabilities</span
+                      ><span class="filter-control">
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path d="M4 5h16l-6 7v6l-4 2v-8L4 5Z" />
+                        </svg>
+                        <select
+                          id="select-filter-capabilities"
+                          class="column-filter-select"
+                          aria-label="Filter by capabilities"
+                        >
+                          <option value="null">All</option>
+                        </select>
+                      </span>
+                    </div>
+                    <span id="capabilities-filter-value" class="column-filter-value">All</span>
+                  </div>
                 </th>
                 <th>
-                  <button id="cycle-group" class="column-filter" type="button">
-                    <span>Group ↻</span><span id="group-filter-value" class="column-filter-value">All</span>
-                  </button>
+                  <div id="column-filter-group" class="column-filter">
+                    <div class="column-filter-heading">
+                      <span>Group</span
+                      ><span class="filter-control">
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path d="M4 5h16l-6 7v6l-4 2v-8L4 5Z" />
+                        </svg>
+                        <select id="select-filter-group" class="column-filter-select" aria-label="Filter by group">
+                          <option value="null">All</option>
+                        </select>
+                      </span>
+                    </div>
+                    <span id="group-filter-value" class="column-filter-value">All</span>
+                  </div>
                 </th>
                 <th>
-                  <button id="cycle-status" class="column-filter" type="button">
-                    <span>Status ↻</span><span id="status-filter-value" class="column-filter-value">All</span>
-                  </button>
+                  <div id="column-filter-status" class="column-filter">
+                    <div class="column-filter-heading">
+                      <span>Status</span
+                      ><span class="filter-control">
+                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path d="M4 5h16l-6 7v6l-4 2v-8L4 5Z" />
+                        </svg>
+                        <select id="select-filter-status" class="column-filter-select" aria-label="Filter by status">
+                          <option value="null">All</option>
+                        </select>
+                      </span>
+                    </div>
+                    <span id="status-filter-value" class="column-filter-value">All</span>
+                  </div>
                 </th>
                 <th>Last seen</th>
                 <th>Uptime</th>
