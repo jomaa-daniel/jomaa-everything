@@ -159,9 +159,10 @@ def build_release(release: Path, config: dict) -> None:
 
 def unit(service: dict, current: Path) -> str:
     command = " ".join(quote(arg) for arg in manifest.expand(service["command"], current))
+    working_directory = str(current / service["directory"]).replace("%", "%%")
     return ("[Unit]\nDescription=Jomaa deployed service\nAfter=network-online.target\n"
             "[Service]\nType=simple\n"
-            f"WorkingDirectory={quote(str(current / service['directory']))}\n"
+            f"WorkingDirectory={working_directory}\n"
             f"ExecStart={command}\nRestart=always\nRestartSec=2\n"
             "[Install]\nWantedBy=default.target\n")
 

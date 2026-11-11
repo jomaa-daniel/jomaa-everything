@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -86,6 +87,22 @@ class DeploymentTest(unittest.TestCase):
     def git(self, *args):
         return subprocess.run(["git", "-C", str(self.repo), *args], check=True, text=True,
                               stdout=subprocess.PIPE).stdout.strip()
+
+    def test_service_working_directory_is_accepted_by_systemd(self):
+        current = self.root / "release with spaces%"
+        (current / "jomaa-home-hub").mkdir(parents=True)
+        service = {"directory": "jomaa-home-hub", "command": ["/usr/bin/true"]}
+        content = deploy.unit(service, current)
+        value = next(line.partition("=")[2] for line in content.splitlines() if line.startswith("WorkingDirectory="))
+        self.assertEqual(value, str(current / "jomaa-home-hub").replace("%", "%%"))
+        self.assertTrue(value.startswith("/"))
+        checker = shutil.which("systemd-analyze")
+        if checker is None:
+            self.skipTest("systemd-analyze is not installed")
+        unit_file = self.root / "working-directory.service"
+        unit_file.write_text(content)
+        result = subprocess.run([checker, "verify", str(unit_file)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_release_uses_commit_and_preserves_runtime_state(self):
         release = deploy.make_release(self.repo, self.first, self.repo, self.deploy_dir)
