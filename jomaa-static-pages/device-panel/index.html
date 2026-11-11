@@ -10,16 +10,55 @@
       name="description"
       content="Control your Jomaa home lights and rooms."
     />
-    <title>Light Control Panel</title>
+    <title>Device Panel</title>
     <link rel="stylesheet" href="/lights/style.css" />
     <script type="module" src="/lights/app.js"></script>
   </head>
   <body>
     <main class="panel">
-      <h1 class="sr-only">Light Control Panel</h1>
-      <div id="toolbar" class="toolbar" hidden>
-        <label for="target-picker" class="sr-only">Room or device</label>
-        <select id="target-picker" aria-label="Room or device"></select>
+      <h1 class="sr-only">Device Panel</h1>
+      <p id="announcer" class="sr-only" aria-live="polite"></p>
+      <p id="connecting" class="connecting">Connecting to your hub…</p>
+      <noscript><p>Enable JavaScript to control your lights.</p></noscript>
+
+      <section
+        id="login-section"
+        class="login-section"
+        aria-labelledby="login-title"
+        hidden
+      >
+        <svg class="login-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M9 18h6m-5 3h4M8.5 15.5a6 6 0 1 1 7 0L15 18H9z" />
+        </svg>
+        <h2 id="login-title">Device Panel</h2>
+        <form id="login-form" class="login">
+          <label for="password">Hub password</label>
+          <input
+            id="password"
+            type="password"
+            autocomplete="current-password"
+            required
+          />
+          <p id="login-message" class="login-message" hidden></p>
+          <button class="primary">Sign in</button>
+        </form>
+        <button id="reconnect" class="text-button" hidden>Try again</button>
+      </section>
+
+      <header id="toolbar" class="toolbar" hidden>
+        <div id="picker" class="picker" hidden>
+          <select id="target-picker" aria-label="Device"></select>
+          <svg class="picker-chevron" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m6 9 6 6 6-6" />
+          </svg>
+        </div>
+        <div
+          id="rooms"
+          class="rooms"
+          role="group"
+          aria-label="Rooms"
+          hidden
+        ></div>
         <div class="toolbar-actions">
           <button
             id="refresh"
@@ -27,13 +66,7 @@
             aria-label="Refresh"
             title="Refresh"
           >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              aria-hidden="true"
-            >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M20 7v5h-5M4 17v-5h5" />
               <path d="M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1" />
             </svg>
@@ -44,263 +77,199 @@
             aria-label="Sign out"
             title="Sign out"
           >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              aria-hidden="true"
-            >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M10 4H4v16h6M14 8l4 4-4 4M9 12h12" />
             </svg>
           </button>
         </div>
-      </div>
-      <p id="notice" class="notice" role="status" aria-live="polite">
-        Connecting to your hub…
-      </p>
-      <noscript><p>Enable JavaScript to control your lights.</p></noscript>
-      <section id="login-section" class="login-section" hidden>
-        <div class="login-intro">
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.5"
-            aria-hidden="true"
-          >
-            <path d="M9 18h6m-5 3h4M8.5 15.5a6 6 0 1 1 7 0L15 18H9z" />
-          </svg>
-          <h2>Device Panel</h2>
-          <p>Your home hub, one touch away.</p>
-        </div>
-        <form id="login-form" class="login">
-          <label for="password">Hub password</label>
-          <input
-            id="password"
-            type="password"
-            autocomplete="current-password"
-            placeholder="Hub password"
-            required
-          />
-          <button class="primary">Sign in</button>
-        </form>
-        <button id="reconnect" class="text-button">Reconnect to hub</button>
-      </section>
+      </header>
+
+      <p id="notice" class="notice" hidden></p>
+
       <section
         id="controller"
         class="controller"
+        aria-labelledby="target-title"
+        aria-describedby="target-description"
         hidden
-        aria-label="Light controller"
       >
         <h2 id="target-title" class="sr-only"></h2>
         <p id="target-description" class="sr-only"></p>
-        <fieldset id="controls">
+        <fieldset id="controls" class="controls">
           <legend class="sr-only">Light settings</legend>
-          <div class="power-container">
-            <span
-              id="status-dot"
-              class="status-dot"
-              role="status"
-              aria-label="Not connected"
-              title="Not connected"
-            ></span>
-            <button
-              id="power-toggle"
-              class="power-toggle"
-              role="switch"
-              aria-checked="false"
-              aria-label="Power"
-            >
-              <span class="power-toggle-knob"></span>
-              <span id="power-state" class="sr-only">Unknown</span>
-            </button>
-          </div>
-          <section
-            id="color-setting"
-            class="row-1"
-            aria-labelledby="color-title"
-            hidden
+          <button
+            id="power-toggle"
+            class="power"
+            role="switch"
+            aria-checked="false"
+            aria-labelledby="power-name"
+            aria-describedby="power-state"
           >
-            <div class="colors-container">
-              <h3 id="color-title" class="section-title">Color Picker</h3>
-              <div class="colors-grid">
+            <span class="power-glow" aria-hidden="true"></span>
+            <span class="power-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M12 3v8" />
+                <path d="M6.3 6.8a8 8 0 1 0 11.4 0" />
+              </svg>
+            </span>
+            <span class="power-text">
+              <span id="power-name" class="power-name"></span>
+              <span id="power-state" class="power-state"></span>
+            </span>
+          </button>
+
+          <div class="settings">
+            <div
+              id="brightness-setting"
+              class="setting"
+              role="group"
+              aria-labelledby="brightness-title"
+              hidden
+            >
+              <div class="setting-head">
+                <h3 id="brightness-title">Brightness</h3>
+                <span id="brightness-value" class="setting-value"></span>
+              </div>
+              <div class="levels">
                 <button
-                  class="color-btn red"
-                  data-color="#ff0000"
-                  aria-label="Red"
+                  class="level-btn"
+                  data-brightness="10"
                   aria-pressed="false"
-                  title="Red"
-                ></button>
+                >
+                  10%
+                </button>
                 <button
-                  class="color-btn orange"
-                  data-color="#ff8000"
-                  aria-label="Orange"
+                  class="level-btn"
+                  data-brightness="50"
                   aria-pressed="false"
-                  title="Orange"
-                ></button>
+                >
+                  50%
+                </button>
                 <button
-                  id="custom-1"
-                  class="color-btn custom"
-                  aria-label="Custom 1"
+                  class="level-btn"
+                  data-brightness="75"
                   aria-pressed="false"
-                  title="Choose custom color 1"
-                ></button>
+                >
+                  75%
+                </button>
                 <button
-                  id="custom-2"
-                  class="color-btn custom"
-                  aria-label="Custom 2"
+                  class="level-btn"
+                  data-brightness="100"
                   aria-pressed="false"
-                  title="Choose custom color 2"
-                ></button>
+                >
+                  100%
+                </button>
               </div>
             </div>
-          </section>
-          <div
-            id="brightness-setting"
-            class="row-2"
-            role="group"
-            aria-label="Brightness"
-            aria-describedby="brightness-value"
-            hidden
-          >
-            <p id="brightness-value" class="sr-only"></p>
-            <button
-              class="brightness-btn"
-              data-brightness="10"
-              aria-label="10 percent brightness"
-              aria-pressed="false"
+
+            <div
+              id="temperature-setting"
+              class="setting temperature"
+              role="group"
+              aria-labelledby="temperature-title"
+              hidden
             >
-              <svg
-                class="icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="5" /></svg
-              >10%
-            </button>
-            <button
-              class="brightness-btn"
-              data-brightness="50"
-              aria-label="50 percent brightness"
-              aria-pressed="false"
-            >
-              <svg
-                class="icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="5" />
-                <path d="M12 1v2m0 18v2" /></svg
-              >50%
-            </button>
-            <button
-              class="brightness-btn"
-              data-brightness="75"
-              aria-label="75 percent brightness"
-              aria-pressed="false"
-            >
-              <svg
-                class="icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="5" />
-                <path d="M12 1v2m0 18v2M1 12h2m18 0h2" /></svg
-              >75%
-            </button>
-            <button
-              class="brightness-btn"
-              data-brightness="100"
-              aria-label="100 percent brightness"
-              aria-pressed="false"
-            >
-              <svg
-                class="icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                aria-hidden="true"
-              >
-                <circle cx="12" cy="12" r="5" />
-                <path
-                  d="M12 1v2m0 18v2M1 12h2m18 0h2m-18.78-7.78 1.42 1.42m12.72 12.72 1.42 1.42M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
-                /></svg
-              >100%
-            </button>
-          </div>
-          <section
-            id="temperature-setting"
-            class="row-3"
-            aria-labelledby="temperature-title"
-            hidden
-          >
-            <h3 id="temperature-title" class="section-title">
-              Color Temperature
-            </h3>
-            <div class="slider-container">
-              <div class="slider-wrap" id="temperature-wrap">
+              <div class="setting-head">
+                <h3 id="temperature-title">Temperature</h3>
+                <output
+                  id="temperature-value"
+                  class="setting-value"
+                  for="temperature"
+                ></output>
+              </div>
+              <div id="temperature-wrap" class="slider-wrap">
                 <input
                   id="temperature"
+                  class="slider"
                   type="range"
                   min="0"
                   max="100"
                   step="1"
                   value="50"
-                  class="slider"
-                  aria-label="Color temperature"
+                  aria-labelledby="temperature-title"
                 />
-                <div class="slider-crossbar" aria-hidden="true"></div>
+                <span class="slider-thumb" aria-hidden="true"></span>
               </div>
-              <div class="slider-labels">
-                <span class="label-end">Warm −100%</span
-                ><output
-                  class="label-value"
-                  id="temperature-value"
-                  for="temperature"
-                  >0%</output
-                ><span class="label-end">Cool +100%</span>
+              <div class="slider-ends" aria-hidden="true">
+                <span>Warm</span><span>Cool</span>
               </div>
             </div>
-          </section>
+
+            <div
+              id="color-setting"
+              class="setting"
+              role="group"
+              aria-labelledby="color-title"
+              hidden
+            >
+              <div class="setting-head">
+                <h3 id="color-title">Color</h3>
+              </div>
+              <div class="swatches">
+                <div class="swatch-cell">
+                  <button
+                    class="swatch"
+                    data-color="#ff0000"
+                    aria-label="Red"
+                    aria-pressed="false"
+                  ></button>
+                </div>
+                <div class="swatch-cell">
+                  <button
+                    class="swatch"
+                    data-color="#ff8000"
+                    aria-label="Orange"
+                    aria-pressed="false"
+                  ></button>
+                </div>
+                <div class="swatch-cell">
+                  <button
+                    class="swatch"
+                    data-custom="custom-1"
+                    aria-label="Custom color 1"
+                    aria-pressed="false"
+                  ></button>
+                  <button
+                    class="swatch-edit"
+                    data-edit="custom-1"
+                    aria-label="Edit custom color 1"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M16 4l4 4L9 19H5v-4z" />
+                    </svg>
+                  </button>
+                </div>
+                <div class="swatch-cell">
+                  <button
+                    class="swatch"
+                    data-custom="custom-2"
+                    aria-label="Custom color 2"
+                    aria-pressed="false"
+                  ></button>
+                  <button
+                    class="swatch-edit"
+                    data-edit="custom-2"
+                    aria-label="Edit custom color 2"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M16 4l4 4L9 19H5v-4z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </fieldset>
-        <p id="state-note" class="state-note" hidden></p>
-        <p id="empty" hidden>
-          No lights configured. Add devices and rooms to the hub configuration.
-        </p>
-        <div
-          id="room-selector"
-          class="room-selector"
-          role="group"
-          aria-label="Rooms to control"
-          hidden
-        >
-          <button class="room-btn" data-room="living-room" aria-pressed="false">
-            Living Room
-          </button>
-          <button class="room-btn" data-room="bedroom" aria-pressed="false">
-            Bedroom
-          </button>
-        </div>
       </section>
-      <dialog id="color-dialog">
+
+      <dialog id="color-dialog" aria-labelledby="custom-title">
         <form id="color-form">
           <h2 id="custom-title">Custom color</h2>
-          <label for="color">Choose color</label>
-          <input id="color" type="color" value="#667eea" />
+          <input id="color" type="color" aria-labelledby="custom-title" />
           <div class="dialog-actions">
-            <button id="cancel-color" type="button">Cancel</button
-            ><button class="primary">Apply color</button>
+            <button id="cancel-color" class="secondary" type="button">
+              Cancel</button
+            ><button class="primary" autofocus>Save</button>
           </div>
         </form>
       </dialog>

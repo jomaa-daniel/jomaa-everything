@@ -11,15 +11,20 @@ their own hostnames through the hub's Cloudflare tunnel on jerry.
 
 `device-panel/` contains the web light controller at
 https://jomaa.org/lights. It controls rooms and individual devices with
-power, brightness, white temperature, and color settings. The fullscreen panel
-has a sliding power switch, red and orange tiles, two custom color tiles,
-10/50/75/100% brightness presets, and a warm-to-cool temperature bar. It shares the hub's
-administrator sign-in and reports individual device failures.
+power, brightness, white temperature, and color settings, shares the hub's
+administrator sign-in, and reports device failures in one banner.
 
-The bottom row selects Living Room, Bedroom, or both. The existing controls
-apply to those rooms, and selecting a room does not change its lights.
-Clearing both selections disables the controls. The top picker selects one
-room or device directly.
+The toolbar has a button for each room in the hub configuration; tapping
+buttons selects one or more rooms without changing their lights, and clearing
+every room disables the controls. The device picker selects one device.
+
+A large power card names the selection and shows its state ("On · 50%",
+"1 of 2 on", "Off"). When on, it glows with the light's color or white
+temperature at its brightness. The other controls are 10/50/75/100%
+brightness presets, a warm-to-cool temperature slider, and red, orange, and
+two custom color swatches. The pencil on a custom swatch edits it; custom
+colors are saved in the browser. On wide and landscape screens the power card
+sits left of the controls; on portrait phones it sits above them.
 
 The hub serves this panel with its API. `jomaa-home-hub/scripts/build-web.mjs`
 copies the panel and its styles into the hub build. Run
