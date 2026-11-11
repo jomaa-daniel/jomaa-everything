@@ -31,3 +31,38 @@ test("a node without an OnOff attribute has no light endpoints", () => {
     [],
   );
 });
+
+test("device type and functional capabilities come from reported descriptors and attributes", () => {
+  const summary = summarize(
+    {
+      ...observation,
+      nodeId: 3,
+      available: true,
+      isBridge: false,
+      attributes: {
+        "0/29/0": [{ "0": 22, "1": 1 }],
+        "1/29/0": [{ "0": 269, "1": 5 }],
+        "1/6/0": true,
+        "1/8/0": 100,
+        "1/768/0": 0,
+        "1/768/7": 250,
+        "2/29/1": [1026],
+      },
+    },
+    (id) => (id === 269 ? "Extended Color Light" : null),
+  );
+  assert.equal(summary.type, "Extended Color Light");
+  assert.deepEqual(summary.capabilities, ["Power", "Brightness", "Color", "White temperature", "Temperature sensing"]);
+});
+
+test("temperature-only lights do not report color and unknown descriptors stay explicit", () => {
+  const summary = summarize({
+    ...observation,
+    nodeId: 3,
+    available: false,
+    isBridge: false,
+    attributes: { "1/768/7": null, "1/29/0": [{ "0": 0xffff, "1": 1 }] },
+  });
+  assert.equal(summary.type, "Device type 0xffff");
+  assert.deepEqual(summary.capabilities, ["White temperature"]);
+});

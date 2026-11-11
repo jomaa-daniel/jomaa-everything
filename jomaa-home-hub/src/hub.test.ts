@@ -221,3 +221,25 @@ test("build from config", () => {
   assert.ok(house !== null);
   assert.equal(leaves(house).length, 2);
 });
+
+test("Matter group membership uses configured endpoints and includes nested rooms", () => {
+  const config = parseConfig(
+    JSON.stringify({
+      devices: [
+        { id: "coffee-table", name: "Coffee", driver: "matter", nodeId: 3, endpoint: 1 },
+        { id: "bridge-bedroom", name: "Bedroom", driver: "matter", nodeId: 3, endpoint: 2 },
+        { id: "other", name: "Other", driver: "matter", nodeId: 4, endpoint: 1 },
+      ],
+      rooms: [
+        { id: "living-room", name: "Living Room", members: ["coffee-table"] },
+        { id: "bedroom", name: "Bedroom", members: ["bridge-bedroom", "other"] },
+        { id: "home", name: "Home", members: ["living-room", "bedroom"] },
+      ],
+    }),
+  );
+  const matter: MatterNodes = { ready: false, node: () => null, invoke: () => Promise.resolve() };
+  const hub = Hub.build(config, new GoveeClient("test", "http://127.0.0.1:1"), matter);
+  assert.deepEqual(hub.groupsForMatter(3), ["Living Room", "Bedroom", "Home"]);
+  assert.deepEqual(hub.groupsForMatter(4), ["Bedroom", "Home"]);
+  assert.deepEqual(hub.groupsForMatter(99), []);
+});

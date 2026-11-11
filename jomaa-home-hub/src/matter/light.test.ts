@@ -166,6 +166,8 @@ test("node summaries", () => {
     lastSeen: null,
     uptimeSeconds: null,
     uptimeObservedAt: null,
+    type: "Unknown",
+    capabilities: ["Power", "Brightness", "Color", "White temperature"],
   });
   assert.deepEqual(summarize(plug()), {
     nodeId: 2,
@@ -178,6 +180,8 @@ test("node summaries", () => {
     lastSeen: null,
     uptimeSeconds: null,
     uptimeObservedAt: null,
+    type: "Unknown",
+    capabilities: ["Power"],
   });
 });
 

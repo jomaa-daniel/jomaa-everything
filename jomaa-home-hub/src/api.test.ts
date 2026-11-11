@@ -69,6 +69,8 @@ class FakeMatter implements MatterAdmin {
       lastSeen: null,
       uptimeSeconds: null,
       uptimeObservedAt: null,
+      type: "Unknown",
+      capabilities: ["Power"],
     }));
   }
   rename(nodeId: number, name: string): Promise<NodeSummary> {
@@ -326,6 +328,8 @@ test("matter endpoints", async () => {
         lastSeen: null,
         uptimeSeconds: null,
         uptimeObservedAt: null,
+        type: "Unknown",
+        capabilities: ["Power"],
       },
     ],
   });

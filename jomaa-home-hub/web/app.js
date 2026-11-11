@@ -107,6 +107,9 @@ function render() {
     stateCell.append(status(device.status));
     row.append(
       cell,
+      node("td", "Health reporter"),
+      node("td", "Health reporting"),
+      node("td", "No group"),
       stateCell,
       node("td", lastSeen(device.lastSeen)),
       node("td", duration(device.latest?.uptimeSeconds)),
@@ -117,7 +120,9 @@ function render() {
   const visibleMatter = matterNodes.filter(
     (device) =>
       (filter === "all" || (device.available ? "online" : "offline") === filter) &&
-      `${matterName(device)} ${device.vendor || ""} ${device.nodeId}`.toLowerCase().includes(search),
+      `${matterName(device)} ${device.vendor || ""} ${device.nodeId} ${device.type} ${device.capabilities.join(" ")} ${device.groups.join(" ")}`
+        .toLowerCase()
+        .includes(search),
   );
   for (const device of visibleMatter) {
     const row = node("tr", undefined, device.nodeId === selectedMatter ? "selected" : "");
@@ -131,6 +136,9 @@ function render() {
     if (device.uptimeObservedAt !== null) uptimeCell.title = `Reported ${stamp(device.uptimeObservedAt)}`;
     row.append(
       cell,
+      node("td", device.type),
+      node("td", device.capabilities.join(", ") || "Not reported"),
+      node("td", device.groups.join(", ") || "No group"),
       stateCell,
       node("td", device.lastSeen === null ? "Not seen yet" : lastSeen(device.lastSeen)),
       uptimeCell,
@@ -459,7 +467,7 @@ $("matter-name-form").addEventListener("submit", async (event) => {
     const result = await api(`/api/matter/nodes/${nodeId}/name`, "PATCH", { name: $("matter-name").value });
     if (generation !== sessionGeneration) return;
     inventoryGeneration += 1;
-    matterNodes = matterNodes.map((device) => (device.nodeId === nodeId ? result.node : device));
+    matterNodes = matterNodes.map((device) => (device.nodeId === nodeId ? { ...device, ...result.node } : device));
     if (selectedMatter === nodeId) matterNameDirty = false;
     render();
     $("notice").className = "success";

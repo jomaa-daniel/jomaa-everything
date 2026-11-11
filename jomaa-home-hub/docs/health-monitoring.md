@@ -33,6 +33,9 @@ Matter names can be edited in device details. The hub stores these names and
 contact timestamps in its Matter data. Last seen comes from successful Matter
 communication; uptime is the device's General Diagnostics report. Available
 nodes are checked every 30 seconds. Unsupported uptime displays Unavailable.
+Inventory rows include Type, Capabilities and Group. Matter rows describe
+reported device types and functions and list their configured rooms, including
+nested groups. Health reporter rows identify their reporting role.
 The hub's root URL redirects to `/devices`, including on the Cloudflare hostname.
 
 The native hub stores health history in `data/health.sqlite`, shared between

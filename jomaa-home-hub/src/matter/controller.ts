@@ -15,6 +15,7 @@ import {
   ServerError,
 } from "@matter-server/ws-controller";
 import { MatterError as MatterJsError, NodeConnectionState, NodeId, ObserverGroup } from "@matter/main";
+import { DeviceClassification, Matter as MatterModel } from "@matter/main/model";
 import { ClusterId, EndpointNumber, ManualPairingCodeCodec, QrPairingCodeCodec } from "@matter/main/types";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -40,6 +41,12 @@ const vendorId = 0xfff1;
 const fabricId = 1;
 const maxNodeIdAttempts = 5;
 const credentialId = ConfigStorage.DEFAULT_CREDENTIAL_ID;
+
+function deviceTypeName(id: number): string | null {
+  const type = MatterModel.deviceTypes.find((candidate) => candidate.id === id);
+  if (type && DeviceClassification.isUtility(type.classification)) return null;
+  return type?.name.replace(/([a-z0-9])([A-Z])/g, "$1 $2") ?? `Device type 0x${id.toString(16)}`;
+}
 
 export interface MatterOptions {
   storagePath: string;
@@ -293,7 +300,7 @@ export class Matter implements MatterNodes, MatterAdmin {
       .handler.getNodeIds()
       .map((id) => this.node(Number(id)))
       .filter((n) => n !== null)
-      .map(summarize)
+      .map((node) => summarize(node, deviceTypeName))
       .sort((a, b) => a.nodeId - b.nodeId);
   }
 
@@ -305,7 +312,7 @@ export class Matter implements MatterNodes, MatterAdmin {
       this.#inventory.rename(nodeId, name);
       const node = this.node(nodeId);
       if (node === null) throw new MatterError("Matter node is not paired with this hub");
-      return summarize(node);
+      return summarize(node, deviceTypeName);
     });
   }
 

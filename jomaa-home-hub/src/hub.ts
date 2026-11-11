@@ -129,6 +129,17 @@ export class Hub {
     });
   }
 
+  /** Rooms containing any configured endpoint of a Matter node. */
+  groupsForMatter(nodeId: number): string[] {
+    return [...this.#entries.values()]
+      .filter(
+        (entry) =>
+          entry.kind === "room" &&
+          leaves(entry.device).some((device) => device instanceof MatterLight && device.nodeId === nodeId),
+      )
+      .map((entry) => entry.device.name);
+  }
+
   /** Reads the target and every device under it. */
   async state(id: string, signal: AbortSignal): Promise<StateResult> {
     const d = this.#find(id);

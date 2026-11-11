@@ -74,7 +74,9 @@ export class Api {
     health?: HealthStore,
   ) {
     this.#token = sessionToken(password);
-    this.#healthHttp = health ? new HealthHttp(health, log.with({ component: "device-health" }), matter) : undefined;
+    this.#healthHttp = health
+      ? new HealthHttp(health, log.with({ component: "device-health" }), matter, hub)
+      : undefined;
     const route = (method: string, path: string, handler: Handler): Route => ({
       method,
       pattern: new RegExp("^" + path.replace(/\{\w+\}/g, "([^/]+)") + "$"),

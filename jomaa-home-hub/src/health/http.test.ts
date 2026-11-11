@@ -210,6 +210,8 @@ await test("device inventory includes registered Matter nodes without issuing Pi
         lastSeen: null,
         uptimeSeconds: null,
         uptimeObservedAt: null,
+        type: "Unknown",
+        capabilities: ["Power"],
         nodeId: 42,
         available: true,
         isBridge: false,
@@ -244,7 +246,10 @@ await test("device inventory includes registered Matter nodes without issuing Pi
     };
     assert.deepEqual(inventory.devices, []);
     assert.equal(inventory.matterConnected, true);
-    assert.deepEqual(inventory.matterNodes, nodes);
+    assert.deepEqual(
+      inventory.matterNodes,
+      nodes.map((node) => ({ ...node, groups: [] })),
+    );
     assert.equal(inventory.matterNodes[0]?.nodeId, 42);
     assert.deepEqual(store.list(), []);
   } finally {

@@ -55,6 +55,10 @@ export class MatterLight implements Device {
     return this.#matter.node(this.#nodeId)?.displayName ?? this.#configuredName;
   }
 
+  get nodeId(): number {
+    return this.#nodeId;
+  }
+
   #path(cluster: number, attr: number): string {
     return `${this.#endpoint}/${cluster}/${attr}`;
   }
