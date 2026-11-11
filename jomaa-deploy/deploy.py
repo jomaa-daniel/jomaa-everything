@@ -23,6 +23,7 @@ import urllib.request
 from pathlib import Path
 
 import manifest
+import native
 import routing
 from cloudflare_api import Cloudflare, CloudflareError
 
@@ -173,6 +174,10 @@ def write_units(config: dict, current: Path) -> None:
             (UNIT_DIR / (name + ".service")).write_text(unit(service, current))
             (UNIT_DIR / (name + ".service.d/deployment.conf")).unlink(missing_ok=True)
 
+    tunnel = {"directory": "jomaa-deploy", "command": ["{python}", "{release}/jomaa-deploy/boot.py", "tunnel"]}
+    (UNIT_DIR / "jomaa-cloudflared.service").write_text(unit(tunnel, current))
+    (UNIT_DIR / "jomaa-cloudflared.service.d/deployment.conf").unlink(missing_ok=True)
+
 
 def atomic_write(path: Path, content: str) -> None:
     with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, prefix=".deploy-", delete=False) as file:
@@ -198,7 +203,7 @@ def activate(release: Path, deploy_dir: Path, source: Path) -> None:
     original = tunnel.read_text()
     dns = routing.DNS(Cloudflare(load_env(source / "jomaa-home-hub/.env").get("CLOUDFLARE_API_TOKEN", "")),
                       routing.tunnel_id(tunnel))
-    services = {s["unit"] for c in (config, old) for s in c["services"].values() if "unit" in s}
+    services = {"jomaa-cloudflared", *(s["unit"] for c in (config, old) for s in c["services"].values() if "unit" in s)}
     saved = {}
     for name in services:
         for suffix in (".service", ".service.d/deployment.conf"):
@@ -228,6 +233,10 @@ def activate(release: Path, deploy_dir: Path, source: Path) -> None:
         if tunnel_changed:
             atomic_write(tunnel, content)
             tunnel_written = True
+        tunnel_unit = UNIT_DIR / "jomaa-cloudflared.service"
+        if (tunnel_changed or saved[tunnel_unit] != tunnel_unit.read_bytes()
+                or saved[UNIT_DIR / "jomaa-cloudflared.service.d/deployment.conf"] is not None):
+            run("systemctl", "--user", "enable", "jomaa-cloudflared.service")
             run("systemctl", "--user", "restart", "jomaa-cloudflared.service")
         for name in removed:
             run("systemctl", "--user", "disable", "--now", name + ".service")
@@ -242,6 +251,8 @@ def activate(release: Path, deploy_dir: Path, source: Path) -> None:
             except Exception as error:
                 print(f"service restoration failed: {error}", file=sys.stderr)
 
+        if tunnel_written:
+            atomic_write(tunnel, original)
         if switched:
             for name in services:
                 path = UNIT_DIR / (name + ".service")
@@ -262,9 +273,6 @@ def activate(release: Path, deploy_dir: Path, source: Path) -> None:
                 if saved[UNIT_DIR / (name + ".service")] is not None:
                     restore_command("systemctl", "--user", "enable", name + ".service")
                     restore_command("systemctl", "--user", "restart", name + ".service")
-        if tunnel_written:
-            atomic_write(tunnel, original)
-            restore_command("systemctl", "--user", "restart", "jomaa-cloudflared.service")
         try:
             dns.restore()
         except Exception as error:
@@ -296,14 +304,13 @@ def prune_releases(deploy_dir: Path, keep: int = 3) -> None:
                 print(f"Could not remove release {old.name}: {error}", file=sys.stderr)
 
 
-def install(source: Path, deploy_dir: Path, repo: str) -> None:
-    for name in ("jomaa-setup", "jomaa-hub", "jomaa-cloudflared"):
-        if not (UNIT_DIR / (name + ".service")).is_file():
-            raise DeployError(f"missing {name}.service; run native tunnel setup first")
+def install(source: Path, deploy_dir: Path, repo: str, tunnel_name: str = "jomaa-home-hub") -> None:
     sha = run("git", "-C", str(source), "rev-parse", "HEAD", capture=True)
     if run("git", "-C", str(source), "status", "--porcelain", "--untracked-files=no", capture=True):
         raise DeployError("commit tracked changes before installing the deployment receiver")
     manifest.load(source)
+    native.init_config(source / "jomaa-home-hub")
+    native.provision(source, load_env(source / "jomaa-home-hub/.env"), tunnel_name)
     secret = deploy_dir / "webhook-secret"
     if not secret.exists():
         fd = os.open(secret, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -328,13 +335,6 @@ def install(source: Path, deploy_dir: Path, repo: str) -> None:
                 f"ExecStart={quote(sys.executable)} {quote(str(current / 'jomaa-deploy/deploy.py'))} serve\n"
                 "Restart=always\nRestartSec=2\n[Install]\nWantedBy=default.target\n")
     (UNIT_DIR / "jomaa-deploy.service").write_text(receiver)
-    for name, script, arg in (("jomaa-setup", "setup_native.py", "--boot"),
-                              ("jomaa-cloudflared", "boot_native.py", "tunnel")):
-        directory = UNIT_DIR / (name + ".service.d")
-        directory.mkdir(parents=True, exist_ok=True)
-        (directory / "deployment.conf").write_text(
-            f"[Service]\nExecStart=\nExecStart={quote(sys.executable)} "
-            f"{quote(str(current / 'jomaa-home-hub/scripts' / script))} {arg}\n")
     run("systemctl", "--user", "daemon-reload")
     run("systemctl", "--user", "enable", "jomaa-deploy.service")
     run("systemctl", "--user", "restart", "jomaa-deploy.service")
@@ -446,6 +446,7 @@ def serve(source: Path, deploy_dir: Path, repo: str) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("install", "serve", "plan"))
+    parser.add_argument("--tunnel-name", default="jomaa-home-hub", help="locally managed Cloudflare tunnel for installation")
     parser.add_argument("--repo", default=os.environ.get("JOMAA_DEPLOY_REPO", "jomaa-daniel/jomaa-everything"))
     args = parser.parse_args(argv)
     source = Path(os.environ.get("JOMAA_DEPLOY_SOURCE", str(SOURCE))).resolve()
@@ -462,7 +463,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "install":
             with (deploy_dir / "deploy.lock").open("w") as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                install(source, deploy_dir, args.repo)
+                install(source, deploy_dir, args.repo, args.tunnel_name)
         else:
             serve(source, deploy_dir, args.repo)
         return 0

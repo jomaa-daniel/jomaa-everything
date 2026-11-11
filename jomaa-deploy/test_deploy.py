@@ -26,9 +26,9 @@ class DeploymentTest(unittest.TestCase):
         self.repo.mkdir()
         self.source = self.repo / "jomaa-home-hub"
         (self.source / "scripts").mkdir(parents=True)
-        (self.source / "scripts/boot_native.py").write_text("# tracked bootstrap\n")
         deployment = self.repo / "jomaa-deploy"
         deployment.mkdir()
+        (deployment / "boot.py").write_text("# tracked bootstrap\n")
         (deployment / "deploy.py").write_text("# tracked deployment\n")
         (deployment / "deploy.json").write_text(json.dumps({
             "checks": [],
@@ -36,7 +36,7 @@ class DeploymentTest(unittest.TestCase):
             "webhook": "hub.example.org",
             "services": {
                 "hub": {"origin": "http://127.0.0.1:8080", "unit": "jomaa-hub", "directory": "jomaa-home-hub",
-                        "command": ["{python}", "{release}/jomaa-home-hub/scripts/boot_native.py", "hub"],
+                        "command": ["{python}", "{release}/jomaa-deploy/boot.py", "hub"],
                         "build": [["npm", "ci", "--no-audit", "--no-fund"], ["npm", "run", "build"]],
                         "health": {"url": "http://127.0.0.1:8080/healthz"}},
                 "static": {"origin": "http://127.0.0.1:8090", "unit": "jomaa-static-pages", "directory": "jomaa-static-pages",
@@ -57,7 +57,7 @@ class DeploymentTest(unittest.TestCase):
         self.git("add", ".")
         self.git("commit", "-qm", "initial")
         self.first = self.git("rev-parse", "HEAD")
-        (self.source / ".env").write_text("HUB_PASSWORD=secret\nCLOUDFLARE_HOSTNAME=hub.example.org\n")
+        (self.source / ".env").write_text("HUB_PASSWORD=test-password\nCLOUDFLARE_API_TOKEN=test-token\n")
         (self.source / "config.json").write_text('{"devices": []}\n')
         (self.source / "data/native").mkdir(parents=True)
         # The checkout's own build, which deployments must leave alone.
@@ -181,7 +181,7 @@ class DeploymentTest(unittest.TestCase):
         self.assertEqual((self.deploy_dir / "current").resolve(), new)
         self.assertEqual((new / "jomaa-home-hub/dist/main.js").read_text(), "new build")
         self.assertEqual((self.source / "dist/main.js").read_text(), "checkout build")
-        self.assertIn("HUB_PASSWORD=secret", (self.source / ".env").read_text())
+        self.assertIn("HUB_PASSWORD=test-password", (self.source / ".env").read_text())
 
     def test_verifies_main_push_and_successful_job(self):
         info = {"head_sha": self.first, "event": "push", "head_branch": "main", "run_attempt": 1,
@@ -267,8 +267,6 @@ class DeploymentTest(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in releases.iterdir()), ["r0", "r2", "r3", "r4"])
 
     def test_install_is_repeatable_and_uses_repository_release_paths(self):
-        for name in ("jomaa-setup", "jomaa-hub", "jomaa-cloudflared"):
-            (self.unit_dir / f"{name}.service").write_text("[Service]\nExecStart=/bin/true\n")
         original_run = deploy.run
 
         def run_or_mock(*args, **kwargs):
@@ -281,6 +279,7 @@ class DeploymentTest(unittest.TestCase):
             deploy.write_units(deploy.manifest.load(release), deploy_dir / "current")
 
         with mock.patch.object(deploy, "run", side_effect=run_or_mock), \
+                mock.patch.object(deploy.native, "provision"), \
                 mock.patch.object(deploy, "activate", side_effect=activate) as activated:
             deploy.install(self.repo, self.deploy_dir, "example/hub")
             secret = (self.deploy_dir / "webhook-secret").read_bytes()
@@ -292,7 +291,9 @@ class DeploymentTest(unittest.TestCase):
         self.assertIn("current/jomaa-deploy/deploy.py", receiver)
         self.assertIn(str(self.repo), receiver)
         hub = (self.unit_dir / "jomaa-hub.service").read_text()
-        self.assertIn("current/jomaa-home-hub/scripts/boot_native.py", hub)
+        self.assertIn("current/jomaa-deploy/boot.py", hub)
+        tunnel = (self.unit_dir / "jomaa-cloudflared.service").read_text()
+        self.assertIn('current/jomaa-deploy/boot.py" "tunnel"', tunnel)
 
     def test_failed_activation_restores_tunnel_units_and_dns(self):
         old = deploy.make_release(self.repo, self.first, self.repo, self.deploy_dir)
@@ -300,20 +301,44 @@ class DeploymentTest(unittest.TestCase):
         deploy.switch_link(self.deploy_dir / "current", old)
         deploy.write_units(deploy.manifest.load(old), self.deploy_dir / "current")
         previous_unit = (self.unit_dir / "jomaa-hub.service").read_bytes()
+        tunnel_unit = self.unit_dir / "jomaa-cloudflared.service"
+        previous_tunnel_unit = tunnel_unit.read_bytes()
+        override = self.unit_dir / "jomaa-cloudflared.service.d/deployment.conf"
+        override.parent.mkdir()
+        override.write_text("[Service]\nExecStart=/bin/true\n")
         tunnel = self.source / "data/native/tunnel.yml"
         tunnel.write_text("original tunnel")
+        failed = False
+
+        def restart(*args, **kwargs):
+            nonlocal failed
+            if args == ("systemctl", "--user", "restart", "jomaa-cloudflared.service"):
+                if not failed:
+                    self.assertEqual(tunnel.read_text(), "new tunnel")
+                    self.assertFalse(override.exists())
+                    failed = True
+                    raise subprocess.CalledProcessError(1, args)
+                self.assertEqual(tunnel.read_text(), "original tunnel")
+                self.assertEqual(tunnel_unit.read_bytes(), previous_tunnel_unit)
+                self.assertTrue(override.exists())
+            return ""
+
         with mock.patch.object(deploy, "build_release"), \
                 mock.patch.object(deploy.routing, "prepare", return_value="new tunnel"), \
                 mock.patch.object(deploy.routing, "tunnel_id", return_value="fixture"), \
                 mock.patch.object(deploy, "Cloudflare"), \
                 mock.patch.object(deploy.routing, "DNS") as dns, \
-                mock.patch.object(deploy, "wait_health", return_value=False), \
-                mock.patch.object(deploy, "run"):
-            with self.assertRaisesRegex(deploy.DeployError, "did not become healthy"):
+                mock.patch.object(deploy, "wait_health", return_value=True), \
+                mock.patch.object(deploy, "health", return_value=True), \
+                mock.patch.object(deploy, "run", side_effect=restart):
+            with self.assertRaises(subprocess.CalledProcessError):
                 deploy.activate(new, self.deploy_dir, self.repo)
         dns.return_value.restore.assert_called_once()
         self.assertEqual((self.deploy_dir / "current").resolve(), old)
+        self.assertTrue(failed)
         self.assertEqual(tunnel.read_text(), "original tunnel")
+        self.assertEqual(tunnel_unit.read_bytes(), previous_tunnel_unit)
+        self.assertTrue(override.exists())
         self.assertEqual((self.unit_dir / "jomaa-hub.service").read_bytes(), previous_unit)
 
 

@@ -270,20 +270,13 @@ def service_env() -> dict[str, str]:
     return env
 
 
-def restart_command(mode: str) -> list[str]:
-    if mode == "native":
-        return ["systemctl", "--user", "restart", "jomaa-hub.service"]
-    return ["docker", "compose", "up", "-d", "--no-deps", "--force-recreate", "hub"]
-
-
 def check_service(root: Path, mode: str) -> None:
     if mode == "none":
         return
-    cmd = (["systemctl", "--user", "is-active", "--quiet", "jomaa-hub.service"] if mode == "native"
-           else ["docker", "compose", "ps", "--status", "running", "-q", "hub"])
+    cmd = ["systemctl", "--user", "is-active", "--quiet", "jomaa-hub.service"]
     result = subprocess.run(cmd, cwd=root, env=service_env(), capture_output=True, text=True)
-    if result.returncode or (mode == "docker" and not result.stdout.strip()):
-        raise HubError(f"{mode} hub service is not running; start it or use --restart none")
+    if result.returncode:
+        raise HubError("hub service is not running; start it or use --restart none")
 
 
 def activate(root: Path, env: dict[str, str], mode: str, hub: Hub, device_id: str, room_id: str | None) -> None:
@@ -291,7 +284,8 @@ def activate(root: Path, env: dict[str, str], mode: str, hub: Hub, device_id: st
     if mode == "none":
         print("Restart the hub to activate this light.")
         return
-    result = subprocess.run(restart_command(mode), cwd=root, env={**service_env(), **env},
+    result = subprocess.run(["systemctl", "--user", "restart", "jomaa-hub.service"],
+                            cwd=root, env={**service_env(), **env},
                             capture_output=True, text=True)
     if result.returncode:
         raise HubError("config saved, but hub restart failed; inspect the hub service logs")
@@ -500,7 +494,7 @@ def build_parser() -> argparse.ArgumentParser:
         command.add_argument("--room", help="room ID to join")
         command.add_argument("--room-name", help="display name when creating a room")
         command.add_argument("--dry-run", action="store_true", help="preview without pairing, saving credentials, writing or restarting")
-        command.add_argument("--restart", choices=["native", "docker", "none"], default="native")
+        command.add_argument("--restart", choices=["native", "none"], default="native")
         if driver == "govee":
             command.add_argument("--device", help="device address; omit to choose a discovered light")
         else:

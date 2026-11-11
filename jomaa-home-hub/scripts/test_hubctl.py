@@ -122,7 +122,8 @@ class EndToEndTest(unittest.TestCase):
             "rooms": [{"id": "living-room", "name": "Living Room", "members": ["lamp-a", "lamp-b"]}],
         }
         (cls.tmp / "config.json").write_text(json.dumps(config))
-        cls.env = {"HUB_PASSWORD": "test-pw", "GOVEE_API_KEY": "fake-key", "HUB_URL": f"http://127.0.0.1:{port}"}
+        cls.env = {"HUB_PASSWORD": "test-pw", "GOVEE_API_KEY": "fake-key", "HUB_URL": f"http://127.0.0.1:{port}",
+                   "HEALTH_DB_PATH": str(cls.tmp / "health.sqlite")}
         cls.proc = subprocess.Popen(
             # Without Matter, so pairing reports that it's unavailable.
             ["node", str(hubctl.HUB_DIR / "dist/main.js"), "--config", str(cls.tmp / "config.json"), "--no-matter"],

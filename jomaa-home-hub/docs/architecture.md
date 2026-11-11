@@ -3,13 +3,13 @@
 The hub controls Matter devices and Govee lights through one HTTP API. It runs
 at home, because Matter only works on the local network.
 
-- **Languages.** The hub is TypeScript. Setup, deployment and control scripts
-  are Python.
+- **Languages.** The hub is TypeScript. Control scripts and repository deployment
+  tools in `jomaa-deploy/` are Python.
 - **Matter.** The hub runs the Open Home Foundation Matter controller
   (`@matter-server/ws-controller`) in its own process and calls it directly.
   The controller keeps a live copy of each node's attributes, so reading state
   costs nothing.
-- **Network.** The hub uses host networking and listens on localhost; only the
+- **Network.** The hub runs natively and listens on localhost; only the
   Cloudflare tunnel exposes it.
 - **Devices and rooms.** Every device implements one `Device` interface, and so
   do rooms. A room sends each command to all members at once; a failing bulb

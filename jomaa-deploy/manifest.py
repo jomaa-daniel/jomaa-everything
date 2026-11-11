@@ -106,7 +106,7 @@ def load(root: Path) -> dict:
             continue
         unit = service["unit"]
         if (not isinstance(unit, str) or not re.fullmatch(r"jomaa-[a-z0-9-]+", unit)
-                or unit in ("jomaa-deploy", "jomaa-cloudflared", "jomaa-setup") or unit in units):
+                or unit in ("jomaa-deploy", "jomaa-cloudflared") or unit in units):
             raise ValueError(f"invalid or duplicate unit: {unit}")
         units.add(unit)
         directory = relative_path(service.get("directory"))

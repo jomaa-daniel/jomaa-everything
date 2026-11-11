@@ -9,6 +9,8 @@ commands. Static sites are discovered from hostname directories under
 | --- | --- |
 | `deploy.json` | Service, route, state, and check declarations. |
 | `manifest.py` | Static site discovery, declaration validation, and ingress generation. |
+| `native.py` | Persistent state and local tunnel provisioning. |
+| `boot.py` | Native service launcher. |
 | `deploy.py` | Signed receiver, release construction, service activation, rollback, and pruning. |
 | `routing.py` | Native tunnel configuration and managed DNS reconciliation. |
 | `cloudflare_api.py` | Cloudflare API client. |
@@ -34,7 +36,7 @@ release are retained.
 Activation validates the full ingress with cloudflared, reconciles DNS,
 starts the services, checks their health and every static site, and replaces
 tunnel ingress. The deployment receiver's path is always first and unmatched
-requests reach a 404 rule. Tunnel restarts occur when ingress changes; they
+requests reach a 404 rule. Tunnel restarts occur when ingress or its service unit changes; they
 interrupt SSH sessions and in-flight HTTPS requests. The sender retries
 temporary connection failures and recognizes an already deployed revision.
 
@@ -45,16 +47,21 @@ is not rolled back.
 
 ## Install on jerry
 
-Requirements: Linux, Python 3.12+, Git, Node.js 22.13+, npm, native hub services,
-and a locally managed Cloudflare tunnel with its credentials on jerry.
-Native provisioning lives in `jomaa-home-hub/scripts/setup_native.py`.
+Requirements: Linux x86_64 or arm64, Python 3.12+, Git, Node.js 22.13+, npm,
+systemd, and an internet connection. The installer provisions persistent hub
+state, downloads a checksum-verified cloudflared binary, and creates a locally
+managed Cloudflare tunnel. It enables user lingering for services to start
+at boot without a login.
 Provision keys-only SSH with `python3 jomaa-ssh/setup_server.py` if using the
 manifest's external SSH origin.
 
-Set `CLOUDFLARE_API_TOKEN` in `jomaa-home-hub/.env`. For automatic DNS changes
+Copy `jomaa-home-hub/.env.example` to `jomaa-home-hub/.env` and set a
+`HUB_PASSWORD` of at least 12 characters and `CLOUDFLARE_API_TOKEN`. Set
+`GOVEE_API_KEY` when using Govee. For automatic DNS changes
 the token needs **Zone > Zone > Read** and **Zone > DNS > Edit** for every
 domain declared in the manifest. The API token stays on jerry. Tunnel
-credentials and the cloudflared binary stay in the hub's `data/native/`.
+credentials stay in `~/.cloudflared`; the cloudflared binary and tunnel
+configuration stay in the hub's `data/native/`.
 The manifest's `webhook` hostname must match the receiver URL used by Actions.
 
 From a clean checkout containing the committed deployment code:
@@ -64,6 +71,12 @@ export XDG_RUNTIME_DIR=/run/user/$(id -u)
 python3 jomaa-deploy/deploy.py install --repo jomaa-daniel/jomaa-everything
 gh secret set JOMAA_DEPLOY_SECRET --repo jomaa-daniel/jomaa-everything < ~/.local/share/jomaa-deploy/webhook-secret
 ```
+
+Tunnel provisioning prompts for Cloudflare browser authorization when
+`~/.cloudflared/cert.pem` is absent. `--tunnel-name NAME` selects or creates
+a locally managed tunnel; its credentials must be on jerry. An existing
+`data/native/tunnel.yml` keeps its tunnel identity, and activation renders all
+public ingress from the manifest. Back up `~/.cloudflared` and the hub data.
 
 The installer uses the checkout as the source of persistent state, activates
 its committed revision, and enables the receiver user service. Rerunning it
@@ -154,8 +167,9 @@ Add the service's verification commands to `checks`:
 
 Add persistent files or directories to `state` and create them in the local
 checkout before deployment. State paths cannot overlap or contain tracked
-files. Deployments manage the declared service unit files and their
-`deployment.conf` overrides.
+files. Deployments manage the declared service unit files and the tunnel unit
+directly. The hub and tunnel launch through `jomaa-deploy/boot.py` from the
+current release.
 
 ## Remove or change a route
 

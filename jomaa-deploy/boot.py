@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Start one of the native services; systemd supplies its environment."""
+"""Start a native service from the current repository release."""
 
 import os
 import sys
 from pathlib import Path
 
-from hubctl import load_env
+from deploy import load_env
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent / "jomaa-home-hub"
 DATA = ROOT / "data" / "native"
 
 
@@ -24,7 +24,7 @@ def main() -> None:
                    "tunnel", "--no-autoupdate", "run"],
     }
     if len(sys.argv) != 2 or sys.argv[1] not in commands:
-        raise SystemExit("Usage: boot_native.py {hub|tunnel}")
+        raise SystemExit("Usage: boot.py {hub|tunnel}")
     os.chdir(ROOT)
     command = commands[sys.argv[1]]
     os.execvpe(command[0], command, os.environ)

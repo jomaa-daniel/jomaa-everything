@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
-"""Start, stop and talk to the home hub.
+"""Check, develop and control the home hub.
 
-    hubctl.py check                 make sure config, secrets and Docker are ready
-    hubctl.py up                    start the hub in Docker, wait until it and Matter are ready, and
-                                    bring up the Cloudflare tunnel if CLOUDFLARE_HOSTNAME is set
-    hubctl.py dev                   build and run the hub from source, without Docker
-    hubctl.py down                  stop everything
+    hubctl.py check                 validate local config and secrets
+    hubctl.py dev                   build and run the hub from source
     hubctl.py status                show health, devices, rooms and Matter nodes
-    hubctl.py logs [service]        follow logs (hub or cloudflared)
     hubctl.py commission CODE       pair a Matter device (QR "MT:..." or manual code)
     hubctl.py wifi SSID             give the hub Wi-Fi credentials for pairing Matter devices
     hubctl.py thread DATASET        give the hub a Thread dataset for pairing Matter devices
-    hubctl.py on|off TARGET         quick test: switch a device or room
+    hubctl.py on|off TARGET         switch a device or room
 
-Standard library only, so it runs on a fresh Pi without pip.
+Standard library only, so it runs without pip.
 """
 
 from __future__ import annotations
@@ -25,15 +21,11 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-import cloudflare
-
 HUB_DIR = Path(__file__).resolve().parent.parent
-HUB_UID = 1000  # the hub container runs as this user and keeps Matter data in data/matter
 
 
 class HubError(Exception):
@@ -53,8 +45,7 @@ def load_env(path: Path) -> dict[str, str]:
                 continue
             key, _, value = line.partition("=")
             values[key.strip()] = value.strip().strip("'\"")
-    for key in ("HUB_PASSWORD", "GOVEE_API_KEY", "HUB_URL", "CLOUDFLARE_HOSTNAME", "CLOUDFLARE_API_TOKEN",
-                "CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_TUNNEL_NAME", "CLOUDFLARE_TUNNEL_SERVICE"):
+    for key in ("HUB_PASSWORD", "GOVEE_API_KEY", "HUB_URL"):
         if os.environ.get(key):
             values[key] = os.environ[key]
     return values
@@ -81,47 +72,7 @@ def check_setup(hub_dir: Path, env: dict[str, str]) -> list[str]:
     uses_govee = any(d.get("driver") == "govee" for d in config.get("devices", []))
     if uses_govee and not env.get("GOVEE_API_KEY"):
         problems.append("config.json has Govee devices but GOVEE_API_KEY is not set")
-    if tunnel_wanted(env) and len(password) < 16:
-        problems.append("the Cloudflare tunnel puts the hub on the internet: use a HUB_PASSWORD of 16+ characters")
     return problems
-
-
-def tunnel_wanted(env: dict[str, str]) -> bool:
-    """The tunnel comes up when CLOUDFLARE_HOSTNAME and CLOUDFLARE_API_TOKEN are both set."""
-    return bool(env.get("CLOUDFLARE_HOSTNAME")) and bool(env.get("CLOUDFLARE_API_TOKEN"))
-
-
-# --- Process helpers ----------------------------------------------------------
-
-
-def compose(*args: str, env: dict[str, str]) -> None:
-    if not shutil.which("docker"):
-        raise HubError("docker is not installed")
-    cmd = ["docker", "compose", *args]
-    env = {**env, "CLOUDFLARE_TUNNEL_TOKEN": env.get("CLOUDFLARE_TUNNEL_TOKEN", "")}
-    result = subprocess.run(cmd, cwd=HUB_DIR, env={**os.environ, **env})
-    if result.returncode != 0:
-        raise HubError(f"{' '.join(cmd)} failed with exit code {result.returncode}")
-
-
-def wait_for(what: str, ready, timeout: float, interval: float = 1.0) -> None:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if ready():
-            print(f"  {what}: ready")
-            return
-        time.sleep(interval)
-    raise HubError(f"{what} did not come up within {int(timeout)}s (try: hubctl.py logs)")
-
-
-def prepare_data_dir(hub_dir: Path) -> None:
-    data = hub_dir / "data" / "matter"
-    data.mkdir(parents=True, exist_ok=True)
-    if hasattr(os, "getuid") and data.stat().st_uid != HUB_UID:
-        print(
-            f"  note: the hub container runs as uid {HUB_UID}; if it can't write its Matter data, run\n"
-            f"        sudo chown -R {HUB_UID}:{HUB_UID} {data}"
-        )
 
 
 # --- Hub API -------------------------------------------------------------------
@@ -189,32 +140,9 @@ def hub_from_env(env: dict[str, str]) -> Hub:
 
 def cmd_check(env: dict[str, str], args) -> None:
     problems = check_setup(HUB_DIR, env)
-    if not shutil.which("docker"):
-        problems.append("docker is not installed")
     if problems:
         raise HubError("not ready:\n  - " + "\n  - ".join(problems))
     print("ready")
-
-
-def cmd_up(env: dict[str, str], args) -> None:
-    cmd_check(env, args)
-    prepare_data_dir(HUB_DIR)
-    print("starting...")
-    compose("up", "-d", "--build", env=env)
-    hub = hub_from_env(env)
-    wait_for("hub", hub.healthy, timeout=60)
-    wait_for("matter", hub.matter_ready, timeout=90)
-    if tunnel_wanted(env):
-        print("cloudflare tunnel...")
-        cf = cloudflare.Cloudflare(env["CLOUDFLARE_API_TOKEN"])
-        account = env.get("CLOUDFLARE_ACCOUNT_ID") or None
-        try:
-            settings = cloudflare.Settings.from_env(env)
-            cloudflare.deploy(cf, settings, account)
-            cloudflare.run(cf, settings, account)
-        except cloudflare.CloudflareError as e:
-            raise HubError(f"cloudflare: {e}") from e
-    cmd_status(env, args)
 
 
 def cmd_dev(env: dict[str, str], args) -> None:
@@ -233,14 +161,6 @@ def cmd_dev(env: dict[str, str], args) -> None:
                        cwd=HUB_DIR, env={**os.environ, **env})
     except KeyboardInterrupt:
         pass
-
-
-def cmd_down(env: dict[str, str], args) -> None:
-    compose("--profile", "tunnel", "down", env=env)
-
-
-def cmd_logs(env: dict[str, str], args) -> None:
-    compose("logs", "-f", "--tail", "100", *([args.service] if args.service else []), env=env)
 
 
 def cmd_status(env: dict[str, str], args) -> None:
@@ -286,16 +206,11 @@ def cmd_power(env: dict[str, str], args) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="hubctl.py", description="Start, stop and talk to the home hub.")
+    p = argparse.ArgumentParser(prog="hubctl.py", description="Check, develop and control the home hub.")
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("check").set_defaults(fn=cmd_check)
-    sub.add_parser("up").set_defaults(fn=cmd_up)
     sub.add_parser("dev").set_defaults(fn=cmd_dev)
-    sub.add_parser("down").set_defaults(fn=cmd_down)
     sub.add_parser("status").set_defaults(fn=cmd_status)
-    logs = sub.add_parser("logs")
-    logs.add_argument("service", nargs="?", choices=["hub", "cloudflared"])
-    logs.set_defaults(fn=cmd_logs)
     com = sub.add_parser("commission")
     com.add_argument("code")
     com.add_argument("--network-only", action="store_true", help="device is already on the network; skip Bluetooth")

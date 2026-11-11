@@ -21,96 +21,50 @@ controller call each other directly: commands go straight to the controller,
 and the controller's live copy of each device's attributes is what the hub
 reads for state. There is no separate Matter server or WebSocket.
 
-## Run it on Linux without Docker
+## Deployment
 
-The native setup installs the hub's dependencies at the versions
-`package-lock.json` pins, builds it, then creates user-level systemd services.
-It needs Linux x86-64 or arm64, Python 3.12+, Node.js 22.13+, npm, systemd and
-an internet connection. A Thread border router is also needed for Thread
-devices.
+[`../jomaa-deploy/`](../jomaa-deploy/README.md) installs and deploys the hub,
+static sites, Cloudflare tunnel, routes, and DNS. Its manifest declares the
+services and their verification checks. Verified pushes to `main` deploy an
+exact repository revision through the signed receiver on jerry.
 
-```bash
-python3 scripts/setup_native.py
-python3 scripts/hubctl.py status
-```
-
-The first run creates an empty `config.json` and a private `.env` with a
-generated `HUB_PASSWORD`. Register lights with `scripts/onboard_lights.py` and, if
-using Govee, set `GOVEE_API_KEY` in `.env`. Existing files and Matter pairing
-data are preserved. `config.example.json` shows the format; its Matter node is
-an example, not a paired device.
-
-The setup enables user lingering so services start at boot without a login.
-Systemd runs `scripts/setup_native.py --boot` to check the installation, then
-`scripts/boot_native.py` to launch each service. Boot never downloads software
-or creates Cloudflare resources. To inspect or restart the services:
-
-```bash
-systemctl --user status jomaa-hub jomaa-cloudflared
-systemctl --user restart jomaa-hub
-journalctl --user -u jomaa-hub -f
-```
-
-The tunnel service exists only if configured below. After changing `.env` or
-`config.json`, restart the hub. Restarting the hub restarts its Matter
-controller too; devices reconnect within seconds. Backup `data/native/matter-data` to preserve
-the Matter fabric; losing it means re-pairing devices. Bluetooth pairing uses
-adapter 0 over D-Bus; set `MATTER_BLUETOOTH_ADAPTER` in `.env` for another
-adapter. The Bluetooth service and adapter must be enabled on the host. Set
-`MATTER_LOG_LEVEL` (`debug`, `info`, `notice`, `warn`, `error`; default
-`notice`) for more or less Matter detail in the journal.
-
-## Run it with Docker
-
-Needs a machine on your home network that stays on (a Pi, NAS or mini PC) with
-Docker and Python 3. Thread devices also need a Thread border router on the
-network (an Apple TV, HomePod mini or Nest hub). One container runs the hub
-and its Matter controller; Matter data stays in `data/matter`.
-
-```bash
-cp config.example.json config.json   # list your devices and rooms
-cp .env.example .env                 # set HUB_PASSWORD and GOVEE_API_KEY
-python3 scripts/hubctl.py up         # starts the hub, waits until it and Matter are ready
-python3 scripts/hubctl.py status
-```
-
-`hubctl.py dev` builds and runs the hub from source without Docker, for
-working on the hub. It keeps Matter data in `data/matter`.
-
-## Reach it from anywhere with native services
-
-For a domain on Cloudflare, run:
-
-```bash
-python3 scripts/setup_native.py --tunnel hub.yourdomain.com
-```
-
-The setup downloads a verified `cloudflared` binary if necessary, prompts for
-Cloudflare browser authorization, creates a locally managed tunnel and DNS
-record, and enables a user service. Use `--tunnel-name NAME` to choose a name
-or reuse an existing locally managed tunnel whose credentials are on this
-machine. Existing `data/native/tunnel.yml` settings are not overwritten. Keep
-`~/.cloudflared` private and back it up with the Matter data.
-
-The tunnel serves the hub over HTTPS at the chosen hostname. Find the hub
-password in the private `.env` file. The hub remains on loopback. Cloudflare account API tokens are not required
-for this native tunnel. The Docker helper `cloudflare.py deploy`
-manages a remotely configured tunnel and must not be used to manage this one.
-
-## Deploy from GitHub
-
-[`../jomaa-deploy/`](../jomaa-deploy/README.md) owns repository deployment,
-service definitions, Cloudflare ingress, and DNS. Its manifest declares the
-hub, the apex home/light routes, and keys-only SSH. Static sites such as
-Sarah's portfolio are discovered from hostname directories. Verified
-pushes to `main` deploy an exact repository revision through a signed HTTPS
-receiver on jerry. The hub's `.env`, `config.json`, and `data/` stay in the local
-checkout and are linked into each release. Hub restart and Matter connection
-checks are part of activation.
+The hub's `.env`, `config.json`, and `data/` stay in the local checkout and
+are linked into each release. The installer creates a private `.env` with a
+generated password and an empty layout when these files are absent. Set
+`GOVEE_API_KEY` in `.env` when using Govee. The public hub requires a password
+of at least 12 characters. `config.example.json` shows the layout format.
 
 ```bash
 python3 ../jomaa-deploy/deploy.py plan
+python3 scripts/hubctl.py status
+systemctl --user status jomaa-hub jomaa-cloudflared
+journalctl --user -u jomaa-hub -f
 ```
+
+After changing `.env` or `config.json`, restart `jomaa-hub.service`.
+Its Matter controller restarts too; devices reconnect within seconds.
+Back up `data/native/matter-data` to preserve the Matter fabric and
+`~/.cloudflared` for tunnel credentials.
+
+Bluetooth pairing uses adapter 0 over D-Bus; set `MATTER_BLUETOOTH_ADAPTER`
+in `.env` for another adapter. Enable the Bluetooth service and adapter on
+the host. Thread devices also need a Thread border router on the network.
+Set `MATTER_LOG_LEVEL` (`debug`, `info`, `notice`, `warn`, `error`; default
+`notice`) for Matter detail in the journal.
+
+## Local development
+
+From `jomaa-home-hub/`, create the local config and secrets, then run:
+
+```bash
+cp config.example.json config.json
+cp .env.example .env
+python3 scripts/hubctl.py dev
+```
+
+Edit the layout and password before starting. `hubctl.py dev` installs pinned
+dependencies, builds the hub, and runs it until Ctrl-C. Development Matter
+state lives in `data/matter`.
 
 ## Home page
 
@@ -140,49 +94,16 @@ changing lights. With neither room selected, the controls are disabled. The
 top picker selects an individual device or another room.
 
 The panel source lives in `../jomaa-static-pages/device-panel/`. The hub build
-includes its HTML, JavaScript, and styles; native releases and Docker builds
+includes its HTML, JavaScript, and styles; releases
 package the panel from the same repository revision as the API.
 
 `../jomaa-deploy/deploy.json` declares the `jomaa.org` path route for the home
 page, light panel, sign-in, and target API. The deployment workflow validates
 this routing with cloudflared and applies it automatically.
 
-## Reach it from anywhere with Docker
-
-A Cloudflare Tunnel serves the hub at `https://hub.yourdomain.com` without
-opening ports on your router. `cloudflared` runs next to the hub and connects
-out to Cloudflare, and Cloudflare provides the HTTPS certificate. Only the hub
-is exposed.
-
-1. Your domain must be on Cloudflare.
-2. Create an API token with **Account > Cloudflare Tunnel > Edit**,
-   **Zone > DNS > Edit** and **Zone > Zone > Read**.
-3. On the hub machine, add these to `.env`, next to `GOVEE_API_KEY`, and use a
-   `HUB_PASSWORD` of at least 16 characters:
-
-```
-CLOUDFLARE_HOSTNAME=hub.yourdomain.com
-CLOUDFLARE_API_TOKEN=...
-```
-
-4. Run:
-
-```bash
-python3 scripts/hubctl.py up
-```
-
-That creates the tunnel, its route and the DNS record if they don't exist,
-starts `cloudflared`, and checks that the public URL answers. In the phone
-apps, sign in with `https://hub.yourdomain.com`; that address works at home
-and away.
-
-`scripts/cloudflare.py status` shows Docker tunnel health.
-`scripts/cloudflare.py destroy` removes that tunnel and its DNS record.
-These commands manage the Docker tunnel; jerry's locally configured tunnel
-and automated deployments are managed by `../jomaa-deploy/`.
-
-Sign-in is rate limited: 5 wrong passwords per address every 15 minutes, and
-50 across all addresses.
+The deployment tunnel serves the hub over HTTPS. Sign in with the password
+from the private `.env`. Sign-in is rate limited: 5 wrong passwords per address
+every 15 minutes, and 50 across all addresses.
 
 ## Register lights
 
@@ -302,11 +223,10 @@ Duplicate target IDs and duplicate physical lights are rejected.
 pairing, saving discovery metadata or credentials, writing files, or restarting.
 With `matter --pair`, the preview shows a
 placeholder node and endpoint; these are discovered during pairing.
-`--restart docker` recreates only the hub container so it mounts the updated
-config. `--restart none` saves the layout for a manual restart. `--hub-dir PATH`
+`--restart none` saves the layout for a manual restart. `--hub-dir PATH`
 selects another local installation, and `--url URL` selects its API; put these
 two options before the subcommand. The installation needs a built `dist/`
-directory and Node.js, including when managing a Docker hub.
+directory and Node.js.
 
 Config writes are atomic, keep deployment symlinks intact, and refuse concurrent
 onboarding or edits. Setup codes and credentials stay out of the layout and
@@ -326,8 +246,8 @@ python3 scripts/hubctl.py commission MT:Y.K9042C00KA0648G00
 `hubctl.py commission` pairs without registering a target and prints the node
 ID. Register it with `onboard_lights.py matter --node-id <id>`.
 
-Brand-new Wi-Fi and Thread devices pair over Bluetooth, which the native setup
-turns on; with Docker, turn it on in `docker-compose.yml`. Without Bluetooth,
+Brand-new Wi-Fi and Thread devices pair over Bluetooth. The deployed hub uses
+BlueZ over D-Bus. Without Bluetooth,
 use `--network-only` for devices already on your network, for example one
 shared from Apple Home or Google Home.
 

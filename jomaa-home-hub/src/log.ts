@@ -1,5 +1,5 @@
 // A small structured logger: one "level=INFO msg=... key=value" line per entry
-// on stderr, which systemd's journal and docker logs both keep.
+// on stderr, which systemd's journal keeps.
 
 export type Attrs = Record<string, unknown>;
 

@@ -42,6 +42,18 @@
         ".",
         "-q"
       ]
+    },
+    {
+      "directory": "pico-imaging-bench",
+      "command": [
+        "{python}",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-q"
+      ]
     }
   ],
   "state": [
@@ -57,7 +69,7 @@
       "directory": "jomaa-home-hub",
       "command": [
         "{python}",
-        "{release}/jomaa-home-hub/scripts/boot_native.py",
+        "{release}/jomaa-deploy/boot.py",
         "hub"
       ],
       "build": [

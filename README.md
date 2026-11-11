@@ -18,7 +18,7 @@ Repo rules for people and agents are in [`AGENTS.md`](AGENTS.md).
 Run `python3 jomaa-deploy/verify.py` before pushing. It validates the deployment
 manifest and runs its declared checks: hub dependencies, formatting, types,
 lint, Node tests, dependency audit, and Python tests for deployment, static
-sites, and SSH. CI runs the same script.
+sites, SSH, and the Pico imaging bench. CI runs the same script.
 
 ## Deployment
 

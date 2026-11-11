@@ -31,15 +31,8 @@ the node in the Matter fabric and lists it in the inventory with its connection
 status and device details. Create device credential opens the Pico enrollment form.
 The hub's root URL redirects to `/devices`, including on the Cloudflare hostname.
 
-For Docker, create the private bind-mount directory before starting the container:
-
-```sh
-mkdir -p data/health
-chmod 700 data/health
-```
-
-The directory must be writable by the container's `node` user (uid 1000). Compose stores the health database
-there via `/health/health.sqlite`, and the image includes the compiled UI assets.
+The native hub stores health history in `data/health.sqlite`, shared between
+releases through the deployment state directory.
 
 For a local development instance that cannot contact any lights, save this layout outside the live configuration:
 
