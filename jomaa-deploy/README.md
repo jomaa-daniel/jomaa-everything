@@ -89,6 +89,27 @@ systemctl --user status jomaa-deploy jomaa-hub jomaa-static-pages jomaa-cloudfla
 journalctl --user -u jomaa-deploy -f
 ```
 
+## Change the manifest format
+
+The running receiver validates a new release's `deploy.json` with its own
+code, and activation validates the current release's `deploy.json` with the
+new code. A change to the manifest's required keys therefore can't deploy
+through the receiver. On jerry, bring the current release's
+`jomaa-deploy/deploy.json` to the new format, check out the new revision in
+the state checkout (`JOMAA_DEPLOY_SOURCE` in the `jomaa-deploy` unit), and run
+the installer there as a detached user unit, so a tunnel restart can't end it:
+
+```bash
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+systemd-run --user --unit=jomaa-deploy-install --collect \
+  --setenv=JOMAA_DEPLOY_SOURCE="$SRC" -p WorkingDirectory="$SRC" \
+  /usr/bin/python3 jomaa-deploy/deploy.py install --repo jomaa-daniel/jomaa-everything
+journalctl --user -u jomaa-deploy-install -f
+```
+
+Then rerun the failed workflow's `deploy` job; the receiver reports the
+revision as already deployed.
+
 ## Add a static site or subdomain
 
 Create a directory named with the site's full hostname:
