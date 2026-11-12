@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { lstatSync, readdirSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { test } from "node:test";
 import manifest from "../../jomaa-deploy/deploy.json" with { type: "json" };
-import { runChecks, staticSites, type Probe } from "./checks.ts";
+import config from "../config.json" with { type: "json" };
+import { runChecks, type Probe } from "./checks.ts";
 import { renderPage } from "./page.ts";
 
 const password = "correct horse battery";
@@ -89,7 +90,7 @@ test("every manifest route and static site is checked", async () => {
   const report = await runChecks(probe);
   const hosts = new Set(report.results.map((r) => new URL(r.url).hostname));
   for (const route of manifest.routes) assert.ok(hosts.has(route.hostname), route.hostname);
-  for (const host of staticSites) assert.ok(hosts.has(host), host);
+  for (const host of config.staticSites) assert.ok(hosts.has(host), host);
   for (const route of manifest.routes) {
     if (!("probes" in route)) continue;
     for (const path of route.probes) assert.ok(calls.includes(`GET https://${route.hostname}${path}`), path);
@@ -105,7 +106,7 @@ test("static sites match the site directories", () => {
       return lstatSync(path).isDirectory() && statSync(new URL(`${name}/index.html`, root)).isFile();
     })
     .sort();
-  assert.deepEqual([...staticSites].sort(), sites);
+  assert.deepEqual([...config.staticSites].sort(), sites);
 });
 
 test("rooms are read once and devices outside rooms on their own", async () => {
@@ -134,9 +135,9 @@ test("a 401 that is not the hub's refusal fails", async () => {
 
 test("a disconnected Matter controller fails the hub health check", async () => {
   const { probe } = site({ "GET https://hub.jomaa.org/healthz": () => json(200, { ok: true, matterConnected: false }) });
-  const health = byName(await runChecks(probe), "Hub health");
+  const health = byName(await runChecks(probe), "hub health");
   assert.equal(health.status, "fail");
-  assert.match(health.detail, /Matter/);
+  assert.equal(health.detail, "matterConnected is false, expected true");
 });
 
 test("devices that stop answering degrade instead of failing", async () => {
@@ -217,4 +218,16 @@ test("the page escapes check output and shows the overall status", async () => {
   );
   assert.ok(!html.includes("<script>"));
   assert.match(html, /Part of jomaa.org is not working/);
+});
+
+test("config.md documents every setting in config.json and wrangler.jsonc", () => {
+  const doc = readFileSync(new URL("../config.md", import.meta.url), "utf8");
+  const keys = (value: unknown, prefix: string): string[] =>
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? Object.entries(value).flatMap(([key, field]) => [prefix + key, ...keys(field, `${prefix}${key}.`)])
+      : [];
+  const wrangler: unknown = JSON.parse(readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8"));
+  for (const key of [...keys(config, ""), ...keys(wrangler, "")]) {
+    assert.ok(doc.includes(`\`${key}\``), `config.md does not document ${key}`);
+  }
 });

@@ -1,4 +1,5 @@
 import manifest from "../../jomaa-deploy/deploy.json" with { type: "json" };
+import config from "../config.json" with { type: "json" };
 
 /** ok: working. warn: the server works but a device it manages is not answering. fail: broken. */
 export type Status = "ok" | "warn" | "fail";
@@ -27,11 +28,15 @@ export interface Probe {
   now: () => number;
 }
 
-/** Hostnames served by jomaa-static-pages. Tests keep this equal to the site directories. */
-export const staticSites = ["sarah.jomaa.org"];
+const requestTimeoutMs = config.requestTimeoutSeconds * 1000;
+const discoverTimeoutMs = config.discoveryTimeoutSeconds * 1000;
 
-const requestTimeoutMs = 10_000;
-const discoverTimeoutMs = 25_000;
+/** The hub's answer to an unauthenticated API request. */
+const signInRefusal = "sign in first";
+/** Where the hub's whole-host route redirects its root. */
+const inventoryPath = "/devices";
+/** The deployment receiver's path, WEBHOOK_PATH in jomaa-deploy/deploy.py. */
+const receiverPath = "/deploy";
 
 class CheckError extends Error {
   readonly status: Status;
@@ -113,12 +118,14 @@ async function hubRoute(probe: Probe, url: string, signal: AbortSignal): Promise
   }
   if (res.status === 401) {
     const body = await readJSON(res, "refusal");
-    if (body["error"] !== "sign in first") throw new CheckError(`HTTP 401 without the hub's sign-in refusal`);
+    if (body["error"] !== signInRefusal) throw new CheckError(`HTTP 401 without the hub's sign-in refusal`);
     return "reaches the hub API (sign-in required)";
   }
   await res.body?.cancel();
   throw new CheckError(`HTTP ${res.status}: not answered by the hub`);
 }
+
+const services = new Map(Object.entries(manifest.services));
 
 function hostChecks(probe: Probe): Check[] {
   const checks: Check[] = [];
@@ -130,28 +137,36 @@ function hostChecks(probe: Probe): Check[] {
       }
       continue;
     }
-    if (route.service === "hub") {
+    const service = services.get(route.service);
+    if (service !== undefined && "health" in service) {
+      const url = base + new URL(service.health.url).pathname;
       checks.push(
-        check(route.hostname, "Hub health", `${base}/healthz`, async (signal) => {
-          const res = await probe.fetch(`${base}/healthz`, { signal });
+        check(route.hostname, `${route.service} health`, url, async (signal) => {
+          const res = await probe.fetch(url, { signal });
           expectStatus(res, 200);
           const body = await readJSON(res, "health");
-          if (body["ok"] !== true) throw new CheckError("hub reports ok: false");
-          if (body["matterConnected"] !== true) throw new CheckError("hub is up but the Matter controller is not connected");
-          return "hub up, Matter controller connected";
+          const expected = Object.entries(service.health.json);
+          for (const [field, value] of expected) {
+            if (body[field] !== value) throw new CheckError(`${field} is ${JSON.stringify(body[field])}, expected ${JSON.stringify(value)}`);
+          }
+          return expected.map(([field, value]) => `${field}: ${JSON.stringify(value)}`).join(", ");
         }),
+      );
+    }
+    if (route.service === "hub") {
+      checks.push(
         check(route.hostname, "Device inventory page", `${base}/`, async (signal) => {
           const res = await probe.fetch(`${base}/`, { redirect: "manual", signal });
           expectStatus(res, 302);
           const location = new URL(res.headers.get("location") ?? "", base).pathname;
-          if (location !== "/devices") throw new CheckError(`redirects to ${location}, expected /devices`);
-          return "redirects to /devices";
+          if (location !== inventoryPath) throw new CheckError(`redirects to ${location}, expected ${inventoryPath}`);
+          return `redirects to ${inventoryPath}`;
         }),
       );
       if (manifest.webhook === route.hostname) {
         checks.push(
-          check(route.hostname, "Deployment receiver", `${base}/deploy`, async (signal) => {
-            const res = await probe.fetch(`${base}/deploy`, { method: "POST", signal });
+          check(route.hostname, "Deployment receiver", base + receiverPath, async (signal) => {
+            const res = await probe.fetch(base + receiverPath, { method: "POST", signal });
             expectStatus(res, 403);
             const body = await readJSON(res, "receiver");
             if (body["error"] !== "unauthorized") throw new CheckError("unexpected receiver answer");
@@ -171,7 +186,7 @@ function hostChecks(probe: Probe): Check[] {
       );
     }
   }
-  for (const site of staticSites) {
+  for (const site of config.staticSites) {
     const url = `https://${site}/`;
     checks.push(
       check(site, "Static site", url, async (signal) => {
@@ -188,11 +203,21 @@ function hostChecks(probe: Probe): Check[] {
   return checks;
 }
 
-/** Signs in through jomaa.org, reads every room, device inventory, and Matter, then signs out. */
+/**
+ * Signs in through the hub's path route, reads every room, device inventory, and Matter, then signs out.
+ * Matter nodes are read through the hub's whole-host route, which serves every API path.
+ */
 async function apiChecks(probe: Probe): Promise<Result[]> {
   const group = "Hub API";
-  const site = "https://jomaa.org";
-  const hub = "https://hub.jomaa.org";
+  const hubRoutes = manifest.routes.filter((route) => route.service === "hub");
+  const pathRoute = hubRoutes.find((route) => "path" in route);
+  const hostRoute = hubRoutes.find((route) => !("path" in route));
+  if (pathRoute === undefined || hostRoute === undefined) {
+    const missing = "deploy.json needs a hub path route and a hub whole-host route";
+    return [{ group, name: "Hub routes", url: "", status: "fail", detail: missing, ms: 0 }];
+  }
+  const site = `https://${pathRoute.hostname}`;
+  const hub = `https://${hostRoute.hostname}`;
   let token = "";
   const authed = (url: string, signal: AbortSignal, method = "GET") =>
     probe.fetch(url, { method, headers: { Authorization: `Bearer ${token}` }, signal });

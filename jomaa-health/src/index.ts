@@ -1,3 +1,4 @@
+import config from "../config.json" with { type: "json" };
 import { runChecks, type Report } from "./checks.ts";
 import { renderPage } from "./page.ts";
 
@@ -5,9 +6,8 @@ interface Env {
   HUB_PASSWORD: string | undefined;
 }
 
-/** Reports are reused for this long, so page loads cannot flood the hub or Govee's API quota. */
-const reportTtlSeconds = 60;
-const cacheKey = "https://health.jomaa.org/__report";
+/** Path on the Worker's own origin under which the latest report is cached. */
+const reportCachePath = "/__report";
 
 let latest: Report | null = null;
 
@@ -53,14 +53,16 @@ async function sshBanner(url: string, signal: AbortSignal): Promise<string> {
 
 async function freshReport(env: Env): Promise<Report> {
   return runChecks({
-    fetch: (url, init) => fetch(url, { ...init, headers: { "User-Agent": "jomaa-health", ...init.headers } }),
+    fetch: (url, init) => fetch(url, { ...init, headers: { "User-Agent": config.userAgent, ...init.headers } }),
     sshBanner,
     password: env.HUB_PASSWORD ?? "",
     now: () => Date.now(),
   });
 }
 
-async function report(env: Env, ctx: ExecutionContext): Promise<Report> {
+async function report(origin: string, env: Env, ctx: ExecutionContext): Promise<Report> {
+  const { reportTtlSeconds } = config;
+  const cacheKey = new URL(reportCachePath, origin).href;
   if (latest !== null && Date.now() - latest.checkedAt < reportTtlSeconds * 1000) return latest;
   const cache = caches.default;
   const cached = await cache.match(cacheKey);
@@ -91,12 +93,12 @@ const securityHeaders = {
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
-    const path = new URL(request.url).pathname;
+    const { origin, pathname: path } = new URL(request.url);
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response("method not allowed", { status: 405, headers: { Allow: "GET, HEAD" } });
     }
     if (path !== "/" && path !== "/checks.json") return new Response("not found", { status: 404 });
-    const result = await report(env, ctx);
+    const result = await report(origin, env, ctx);
     const status = result.status === "fail" ? 503 : 200;
     if (path === "/checks.json") {
       return new Response(JSON.stringify(result, null, 2), {
@@ -104,7 +106,7 @@ export default {
         headers: { ...securityHeaders, "Content-Type": "application/json" },
       });
     }
-    return new Response(renderPage(result, reportTtlSeconds), {
+    return new Response(renderPage(result, config.reportTtlSeconds), {
       status,
       headers: { ...securityHeaders, "Content-Type": "text/html; charset=utf-8" },
     });

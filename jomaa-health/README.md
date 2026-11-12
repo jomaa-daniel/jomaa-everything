@@ -18,18 +18,18 @@ phone app, Pico, or SSH client takes.
 | `hub.jomaa.org` | `/healthz` reports ok with the Matter controller connected; `/` redirects to `/devices`; `/deploy` rejects an unsigned deployment. |
 | `jomaa.org` | Every probe path of the route in [`../jomaa-deploy/deploy.json`](../jomaa-deploy/deploy.json) reaches the hub: pages answer 200, `/` redirects, API paths answer the hub's sign-in refusal. Anything else, such as the tunnel's 404, fails. |
 | `ssh.jomaa.org` | A WebSocket through the tunnel's SSH route receives jerry's `SSH-2.0-` greeting. |
-| Static sites | Each site in `staticSites` serves its HTML index. A test keeps the list equal to the hostname directories in `jomaa-static-pages/`. |
+| Static sites | Each site in `staticSites` in `config.json` serves its HTML index. A test keeps the list equal to the hostname directories in `jomaa-static-pages/`. |
 | Hub API | Signs in at `jomaa.org/api/login`, lists targets, reads the state of every room and of each device outside a room, reads device management, health reporters, Matter nodes, runs a Matter discovery scan, then signs out. |
 
 Each check is **working**, **degraded**, or **failing**. Degraded means the
 server works but a device it manages is not answering: some lights in a room,
 an offline health reporter, or an unavailable Matter node. A room where no
-device answers is failing. Requests time out after 10 seconds; the Matter scan
-after 25.
+device answers is failing. Requests and the Matter scan have their own
+deadlines.
 
 The page lists each check with its result and latency. `/checks.json` returns
 the same report as JSON. Both answer 503 when any check fails, for use by
-uptime monitors. Reports are reused for 60 seconds, because each room read
+uptime monitors. Reports are reused for `reportTtlSeconds`, because each room read
 asks Govee's cloud API for every light in it.
 
 The Worker signs in with the hub's administrator password, stored as the
@@ -49,9 +49,8 @@ cd ~/jomaa-everything/jomaa-health && npm ci && npx wrangler login --browser=fal
 ```
 
 A Cloudflare API token that can deploy Workers works instead: set
-`CLOUDFLARE_API_TOKEN`, or save it with mode 600 in
-`~/.config/jomaa-health/cloudflare-token`. Either takes precedence over the
-login.
+`CLOUDFLARE_API_TOKEN`, or save it with mode 600 in the file named by
+`deploy.tokenFile`. Either takes precedence over the login.
 
 Then, from this directory on jerry:
 
@@ -62,8 +61,13 @@ npm run deploy
 
 `scripts/deploy.mjs` runs `wrangler deploy`, which attaches the custom domain
 `health.jomaa.org` and creates its DNS record, then stores `HUB_PASSWORD` from
-`../jomaa-home-hub/.env` as the Worker secret. Redeploy after changing
+the file named by `deploy.hubEnvFile` as the Worker secret. Redeploy after changing
 routes, static sites, the hub password, or this folder.
+
+## Configuration
+
+[`config.md`](config.md) describes every setting in `config.json` and
+`wrangler.jsonc`, and the values read from `../jomaa-deploy/deploy.json`.
 
 ## Check locally
 

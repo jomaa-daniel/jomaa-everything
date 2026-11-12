@@ -1,0 +1,11 @@
+{
+  "staticSites": ["sarah.jomaa.org"],
+  "requestTimeoutSeconds": 10,
+  "discoveryTimeoutSeconds": 25,
+  "reportTtlSeconds": 60,
+  "userAgent": "jomaa-health",
+  "deploy": {
+    "tokenFile": "~/.config/jomaa-health/cloudflare-token",
+    "hubEnvFile": "../jomaa-home-hub/.env"
+  }
+}

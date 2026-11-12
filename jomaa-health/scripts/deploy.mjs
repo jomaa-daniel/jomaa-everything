@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 // Deploys the health Worker and stores the hub password as its HUB_PASSWORD secret.
-//   Cloudflare access: CLOUDFLARE_API_TOKEN, the token file ~/.config/jomaa-health/cloudflare-token
+//   Cloudflare access: CLOUDFLARE_API_TOKEN, the token file deploy.tokenFile in config.json
 //   (mode 600), or else wrangler's own login (npx wrangler login)
-//   HUB_PASSWORD from ../jomaa-home-hub/.env
+//   HUB_PASSWORD from the file deploy.hubEnvFile in config.json
 import { spawnSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const here = new URL("..", import.meta.url).pathname;
-const tokenFile = join(homedir(), ".config/jomaa-health/cloudflare-token");
-const envFile = new URL("../../jomaa-home-hub/.env", import.meta.url).pathname;
+const { deploy } = JSON.parse(readFileSync(join(here, "config.json"), "utf8"));
+const home = (path) => path.replace(/^~(?=\/)/, homedir());
+const tokenFile = resolve(here, home(deploy.tokenFile));
+const envFile = resolve(here, home(deploy.hubEnvFile));
 
 function fail(message) {
   console.error(`deploy: ${message}`);
@@ -54,4 +56,4 @@ const wrangler = (args, input) => {
 
 wrangler(["deploy"]);
 wrangler(["secret", "put", "HUB_PASSWORD"], password);
-console.log("Deployed https://health.jomaa.org");
+console.log("Deployed the health page and its HUB_PASSWORD secret");
