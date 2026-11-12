@@ -8,6 +8,7 @@ Home projects, kept in one repo.
 | `jomaa-home-hub/` | Matter controller hub. Runs on the home network and controls Matter and Govee devices through one interface. |
 | `jomaa-home-client/` | Phone apps for the hub: Android (`android/`) and iOS (`ios/`). |
 | `jomaa-static-pages/` | Static websites served through the hub's tunnel, such as Sarah's art portfolio at sarah.jomaa.org. |
+| `jomaa-health/` | Public health page at health.jomaa.org, a Cloudflare Worker that checks everything reachable through jomaa.org. |
 | `jomaa-ssh/` | SSH into jerry from anywhere through the hub's Cloudflare tunnel (`ssh jerry`), keys only. |
 | `pico-imaging-bench/` | Flash and verify the Pico health reporter over USB. |
 
@@ -17,8 +18,8 @@ Repo rules for people and agents are in [`AGENTS.md`](AGENTS.md).
 
 Run `python3 jomaa-deploy/verify.py` before pushing. It validates the deployment
 manifest and runs its declared checks: hub dependencies, formatting, types,
-lint, Node tests, dependency audit, and Python tests for deployment, static
-sites, SSH, and the Pico imaging bench. CI runs the same script.
+lint, Node tests, dependency audit, the health page's types and tests, and
+Python tests for deployment, static sites, SSH, and the Pico imaging bench. CI runs the same script.
 
 ## Deployment
 

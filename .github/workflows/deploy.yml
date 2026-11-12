@@ -23,7 +23,9 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: jomaa-home-hub/package-lock.json
+          cache-dependency-path: |
+            jomaa-home-hub/package-lock.json
+            jomaa-health/package-lock.json
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

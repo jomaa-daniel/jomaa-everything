@@ -1,0 +1,21 @@
+{
+  "name": "jomaa-health",
+  "private": true,
+  "description": "Public health page for jomaa.org, served by a Cloudflare Worker",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json && node --test \"src/**/*.test.ts\"",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "dev": "wrangler dev",
+    "deploy": "node scripts/deploy.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261110.1",
+    "@types/node": "^22.20.5",
+    "typescript": "~6.0.3",
+    "wrangler": "^4.160.1"
+  }
+}

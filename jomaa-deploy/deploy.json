@@ -8,6 +8,23 @@
       ]
     },
     {
+      "directory": "jomaa-health",
+      "command": [
+        "npm",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ]
+    },
+    {
+      "directory": "jomaa-health",
+      "command": [
+        "npm",
+        "run",
+        "check"
+      ]
+    },
+    {
       "directory": "jomaa-deploy",
       "command": [
         "{python}",

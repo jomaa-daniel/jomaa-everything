@@ -7,6 +7,12 @@ if git diff --cached --name-only | grep -q '^jomaa-home-hub/'; then
 		exit 1
 	}
 fi
+if git diff --cached --name-only | grep -qE '^jomaa-health/'; then
+	npm --prefix jomaa-health run --silent check >/dev/null || {
+		echo "pre-commit: health page checks failed (run npm run check in jomaa-health)" >&2
+		exit 1
+	}
+fi
 if git diff --cached --name-only | grep -qE '^(jomaa-deploy/|jomaa-static-pages/|jomaa-ssh/|\.github/workflows/deploy.yml)'; then
 	python3 jomaa-deploy/deploy.py plan >/dev/null || exit 1
 	python3 -m unittest discover -s jomaa-deploy -q || exit 1

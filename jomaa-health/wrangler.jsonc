@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "jomaa-health",
+  "main": "src/index.ts",
+  "account_id": "2d2dc0bdd4526fb806205b0c4a47be65",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "health.jomaa.org", "custom_domain": true }],
+  "observability": { "enabled": true }
+}
