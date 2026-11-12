@@ -33,6 +33,7 @@ class DeploymentTest(unittest.TestCase):
         (deployment / "deploy.py").write_text("# tracked deployment\n")
         (deployment / "deploy.json").write_text(json.dumps({
             "checks": [],
+            "provision": [],
             "state": ["jomaa-home-hub/.env", "jomaa-home-hub/config.json", "jomaa-home-hub/data"],
             "webhook": "hub.example.org",
             "services": {
@@ -199,6 +200,38 @@ class DeploymentTest(unittest.TestCase):
         self.assertEqual((new / "jomaa-home-hub/dist/main.js").read_text(), "new build")
         self.assertEqual((self.source / "dist/main.js").read_text(), "checkout build")
         self.assertIn("HUB_PASSWORD=test-password", (self.source / ".env").read_text())
+
+    def test_provision_runs_declared_commands_in_the_current_release(self):
+        current = self.deploy_dir / "current"
+        config = {"provision": [{"directory": "jomaa-tailscale",
+                                 "command": ["{python}", "{release}/jomaa-tailscale/tailnet.py", "deploy"]}]}
+        with mock.patch.object(deploy, "run") as run:
+            deploy.provision(config, current)
+        run.assert_called_once_with(deploy.sys.executable, f"{current}/jomaa-tailscale/tailnet.py", "deploy",
+                                    cwd=current / "jomaa-tailscale")
+
+    def test_failed_provision_restores_previous_release(self):
+        old = deploy.make_release(self.repo, self.first, self.repo, self.deploy_dir)
+        new = deploy.make_release(self.repo, self.second, self.repo, self.deploy_dir)
+        deploy.switch_link(self.deploy_dir / "current", old)
+        (self.source / "data/native/tunnel.yml").write_text("same tunnel")
+
+        def fake_run(*args, **kwargs):
+            self.fake_npm(args, kwargs)
+            return ""
+
+        with mock.patch.object(deploy, "run", side_effect=fake_run), \
+                mock.patch.object(deploy.routing, "prepare", return_value="same tunnel"), \
+                mock.patch.object(deploy.routing, "tunnel_id", return_value="fixture"), \
+                mock.patch.object(deploy, "Cloudflare"), \
+                mock.patch.object(deploy.routing, "DNS") as dns, \
+                mock.patch.object(deploy, "health", return_value=True), \
+                mock.patch.object(deploy, "wait_health", return_value=True), \
+                mock.patch.object(deploy, "provision", side_effect=subprocess.CalledProcessError(1, "tailnet")):
+            with self.assertRaises(subprocess.CalledProcessError):
+                deploy.activate(new, self.deploy_dir, self.repo)
+        self.assertEqual((self.deploy_dir / "current").resolve(), old)
+        dns.return_value.restore.assert_called_once()
 
     def test_verifies_main_push_and_successful_job(self):
         info = {"head_sha": self.first, "event": "push", "head_branch": "main", "run_attempt": 1,

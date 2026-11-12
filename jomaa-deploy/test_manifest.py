@@ -24,8 +24,8 @@ class ManifestTest(unittest.TestCase):
                     folder = root / service["directory"]
                     if folder.resolve().is_relative_to(root.resolve()):
                         folder.mkdir(exist_ok=True)
-            for check in config["checks"]:
-                (root / check["directory"]).mkdir(exist_ok=True)
+            for step in [*config["checks"], *config["provision"]]:
+                (root / step["directory"]).mkdir(exist_ok=True)
             for name in site_names:
                 path = root / "jomaa-static-pages" / name
                 path.mkdir(parents=True, exist_ok=True)

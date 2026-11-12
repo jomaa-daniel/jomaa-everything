@@ -6,6 +6,13 @@
   logs, "we decided", "previously", "upgrading from", or test diaries.
 - Remove work artifacts before committing: review outputs, reports, scratch
   notes, temporary scripts, backups.
+- Deploy by committing to `main` and pushing. GitHub Actions verifies the push
+  and jerry's receiver activates it: services, routes, DNS, and provision steps
+  such as the tailnet. Run `python3 jomaa-deploy/verify.py` first, then confirm
+  the workflow's `deploy` job succeeded. Don't copy files to jerry, edit
+  releases, or restart services by hand to ship a change. Only steps that need
+  root on jerry, such as `jomaa-tailscale/setup_server.py`, run by hand; the
+  user runs them because sudo asks for a password.
 - No hardcoded configuration. Hostnames, URLs, ports, account and zone IDs,
   file paths, timeouts, intervals, limits, retry counts, cache lifetimes, and
   lists of sites, devices or hosts go in the component's committed config file,

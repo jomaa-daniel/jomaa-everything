@@ -1,0 +1,24 @@
+{
+  "lan": "192.168.1.0/24",
+  "router": "192.168.1.1",
+  "tag": "tag:jerry",
+  "hostname": "jerry",
+  "api": "https://api.tailscale.com/api/v2/tailnet/-",
+  "apiTimeoutSeconds": 30,
+  "authKeyExpirySeconds": 3600,
+  "userAgent": "jomaa-tailscale",
+  "queryTimeoutSeconds": 30,
+  "commandTimeoutSeconds": 600,
+  "routeProbeAddress": "1.1.1.1",
+  "apt": {
+    "repository": "https://pkgs.tailscale.com/stable/ubuntu",
+    "keyring": "/usr/share/keyrings/tailscale-archive-keyring.gpg",
+    "sourceList": "/etc/apt/sources.list.d/tailscale.list"
+  },
+  "sysctlFile": "/etc/sysctl.d/99-jomaa-tailscale.conf",
+  "gro": {
+    "dispatcher": "/etc/NetworkManager/dispatcher.d/50-jomaa-tailscale-gro",
+    "ethtool": "/usr/sbin/ethtool",
+    "skipInterfaces": ["lo", "tailscale*", "docker*", "veth*", "br-*"]
+  }
+}

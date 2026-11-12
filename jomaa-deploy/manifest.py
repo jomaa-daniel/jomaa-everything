@@ -64,17 +64,18 @@ def discover_sites(root: Path) -> list[dict]:
 def load(root: Path) -> dict:
     path = root / "jomaa-deploy/deploy.json"
     config = json.loads(path.read_text())
-    if not isinstance(config, dict) or set(config) != {"checks", "state", "webhook", "services", "routes"}:
-        raise ValueError("deploy.json requires checks, state, webhook, services and routes")
-    if not isinstance(config["checks"], list):
-        raise ValueError("checks must be an array")
-    for check in config["checks"]:
-        if not isinstance(check, dict) or set(check) != {"directory", "command"}:
-            raise ValueError("checks require a directory and command")
-        directory = relative_path(check["directory"])
-        if not (root / directory).is_dir():
-            raise ValueError(f"missing check directory: {directory}")
-        commands(check["command"])
+    if not isinstance(config, dict) or set(config) != {"checks", "provision", "state", "webhook", "services", "routes"}:
+        raise ValueError("deploy.json requires checks, provision, state, webhook, services and routes")
+    for field in ("checks", "provision"):
+        if not isinstance(config[field], list):
+            raise ValueError(f"{field} must be an array")
+        for step in config[field]:
+            if not isinstance(step, dict) or set(step) != {"directory", "command"}:
+                raise ValueError(f"{field} entries require a directory and command")
+            directory = relative_path(step["directory"])
+            if not (root / directory).is_dir():
+                raise ValueError(f"missing {field} directory: {directory}")
+            commands(step["command"])
     hostname(config["webhook"])
     state = config["state"]
     if not isinstance(state, list) or any(not isinstance(x, str) for x in state) or len(set(state)) != len(state):

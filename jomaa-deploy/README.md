@@ -7,7 +7,7 @@ commands. Static sites are discovered from hostname directories under
 
 | File | Responsibility |
 | --- | --- |
-| `deploy.json` | Service, route, state, and check declarations. |
+| `deploy.json` | Service, route, state, provision, and check declarations. |
 | `manifest.py` | Static site discovery, declaration validation, and ingress generation. |
 | `native.py` | Persistent state and local tunnel provisioning. |
 | `boot.py` | Native service launcher. |
@@ -34,8 +34,8 @@ restarted during deployment. The three newest releases and the current
 release are retained.
 
 Activation validates the full ingress with cloudflared, reconciles DNS,
-starts the services, checks their health and every static site, and replaces
-tunnel ingress. The deployment receiver's path is always first and unmatched
+starts the services, checks their health and every static site, replaces
+tunnel ingress, and runs the declared provision commands. The deployment receiver's path is always first and unmatched
 requests reach a 404 rule. Tunnel restarts occur when ingress or its service unit changes; they
 interrupt SSH sessions and in-flight HTTPS requests. The sender retries
 temporary connection failures and recognizes an already deployed revision.
@@ -170,6 +170,25 @@ checkout before deployment. State paths cannot overlap or contain tracked
 files. Deployments manage the declared service unit files and the tunnel unit
 directly. The hub and tunnel launch through `jomaa-deploy/boot.py` from the
 current release.
+
+## Add a provision step
+
+Provision commands configure things outside the release, such as the tailnet,
+on every activation. They run in declaration order from the activated release,
+as the deployment user, after services are healthy and ingress is in place:
+
+```json
+"provision": [
+  {"directory": "jomaa-tailscale", "command": ["{python}", "{release}/jomaa-tailscale/tailnet.py", "deploy"]}
+]
+```
+
+`{release}` expands to the `current` pointer. A failing command rolls the
+release, units, tunnel, and DNS back; changes the command already made outside
+the release are not rolled back, so commands compare desired and actual state
+and change only what differs. They cannot use sudo. Root-owned setup stays in
+a project's own setup script, and its provision command fails when that setup
+is missing or outdated.
 
 ## Remove or change a route
 

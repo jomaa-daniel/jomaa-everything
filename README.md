@@ -10,7 +10,7 @@ Home projects, kept in one repo.
 | `jomaa-static-pages/` | Static websites served through the hub's tunnel, such as Sarah's art portfolio at sarah.jomaa.org. |
 | `jomaa-health/` | Public health page at health.jomaa.org, a Cloudflare Worker that checks everything reachable through jomaa.org. |
 | `jomaa-ssh/` | SSH into jerry from anywhere through the hub's Cloudflare tunnel (`ssh jerry`), keys only. |
-| `jomaa-tailscale/` | jerry on Tailscale: home LAN subnet router and exit node, with the tailnet policy in Terraform. |
+| `jomaa-tailscale/` | jerry on Tailscale: home LAN subnet router and exit node. Deployments apply the tailnet policy and node settings. |
 | `pico-imaging-bench/` | Flash and verify the Pico health reporter over USB. |
 
 Repo rules for people and agents are in [`AGENTS.md`](AGENTS.md).
@@ -27,7 +27,7 @@ Python tests for deployment, static sites, SSH, Tailscale, and the Pico imaging 
 [`jomaa-deploy/deploy.json`](jomaa-deploy/deploy.json) declares services,
 service hostnames, path routes, persistent state, and verification commands.
 Static sites are discovered from `jomaa-static-pages/<hostname>/` directories. Verified pushes to `main` deploy through the signed HTTPS receiver
-on jerry. See [`jomaa-deploy/README.md`](jomaa-deploy/README.md) for installation,
+on jerry, including the provision steps such as the tailnet policy. See [`jomaa-deploy/README.md`](jomaa-deploy/README.md) for installation,
 adding a site, and adding a service.
 
 Turn on the pre-commit hook once per clone, so commits that break the hub's

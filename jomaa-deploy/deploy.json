@@ -93,10 +93,21 @@
       ]
     }
   ],
+  "provision": [
+    {
+      "directory": "jomaa-tailscale",
+      "command": [
+        "{python}",
+        "{release}/jomaa-tailscale/tailnet.py",
+        "deploy"
+      ]
+    }
+  ],
   "state": [
     "jomaa-home-hub/.env",
     "jomaa-home-hub/config.json",
-    "jomaa-home-hub/data"
+    "jomaa-home-hub/data",
+    "jomaa-tailscale/.env"
   ],
   "webhook": "hub.jomaa.org",
   "services": {

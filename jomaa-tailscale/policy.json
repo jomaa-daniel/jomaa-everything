@@ -3,13 +3,13 @@
     "group:family": []
   },
   "tagOwners": {
-    "tag:jerry": ["autogroup:admin"]
+    "{tag}": ["autogroup:admin"]
   },
   "autoApprovers": {
     "routes": {
-      "192.168.1.0/24": ["tag:jerry"]
+      "{lan}": ["{tag}"]
     },
-    "exitNode": ["tag:jerry"]
+    "exitNode": ["{tag}"]
   },
   "grants": [
     {
@@ -26,7 +26,7 @@
   "tests": [
     {
       "src": "group:family",
-      "deny": ["192.168.1.1:80", "192.168.1.239:22", "tag:jerry:22"]
+      "deny": ["{router}:80", "{tag}:22"]
     }
   ]
 }

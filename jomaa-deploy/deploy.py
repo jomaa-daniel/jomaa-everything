@@ -180,6 +180,11 @@ def write_units(config: dict, current: Path) -> None:
     (UNIT_DIR / "jomaa-cloudflared.service.d/deployment.conf").unlink(missing_ok=True)
 
 
+def provision(config: dict, current: Path) -> None:
+    for step in config["provision"]:
+        run(*manifest.expand(step["command"], current), cwd=current / step["directory"])
+
+
 def atomic_write(path: Path, content: str) -> None:
     with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, prefix=".deploy-", delete=False) as file:
         temp = Path(file.name)
@@ -245,6 +250,7 @@ def activate(release: Path, deploy_dir: Path, source: Path) -> None:
             (UNIT_DIR / (name + ".service.d/deployment.conf")).unlink(missing_ok=True)
         if removed:
             run("systemctl", "--user", "daemon-reload")
+        provision(config, current)
     except Exception:
         def restore_command(*command: str) -> None:
             try:
@@ -458,7 +464,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "plan":
             config = manifest.load(source)
             print(json.dumps({"services": config["services"], "ingress": manifest.ingress(config),
-                              "state": config["state"]}, indent=2))
+                              "provision": config["provision"], "state": config["state"]}, indent=2))
             return 0
         deploy_dir.mkdir(parents=True, exist_ok=True)
         if args.command == "install":
