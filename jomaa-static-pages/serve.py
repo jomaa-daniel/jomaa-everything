@@ -1,24 +1,27 @@
 #!/usr/bin/env python3
-"""Serve each static site in this folder at its own hostname, on loopback only.
+"""Serve each deployed static site at its own hostname, on loopback only.
 
-Directories named with their full hostname are discovered automatically.
-The Cloudflare tunnel keeps the original Host header, so one server answers
-for every site. Site requests for other hosts and hidden files get 404.
+The deployment writes a site map from hostname to directory and this server
+re-reads it when it changes. The Cloudflare tunnel keeps the original Host
+header, so one server answers for every site. Site requests for other hosts
+and hidden files get 404.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "jomaa-deploy"))
-import manifest
+import settings
 
 ROOT = Path(__file__).resolve().parent
-PORT = 8090
+PORT = urlsplit(json.loads((ROOT / "deploy.json").read_text())["origin"]).port
 HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "strict-origin-when-cross-origin",
@@ -28,16 +31,34 @@ HEADERS = {
 }
 
 
-def load_sites(root: Path) -> dict[str, Path]:
-    return {route["hostname"]: root.parent / route["site"]
-            for route in manifest.discover_sites(root.parent)}
+class Sites:
+    """The site map file, read again whenever it is replaced or modified."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.lock = threading.Lock()
+        self.stamp: tuple[int, int, int] | None = None
+        self.sites: dict[str, Path] = {}
+
+    def get(self, host: str) -> Path | None:
+        with self.lock:
+            try:
+                info = self.path.stat()
+                stamp = (info.st_ino, info.st_mtime_ns, info.st_size)
+            except FileNotFoundError:
+                stamp = None
+            if stamp != self.stamp:
+                self.sites = ({h: Path(d) for h, d in json.loads(self.path.read_text()).items()}
+                              if stamp is not None else {})
+                self.stamp = stamp
+            return self.sites.get(host)
 
 
 class Handler(SimpleHTTPRequestHandler):
     server_version = "jomaa-static"
     sys_version = ""
 
-    def __init__(self, *args: object, sites: dict[str, Path], **kwargs: object) -> None:
+    def __init__(self, *args: object, sites: Sites, **kwargs: object) -> None:
         self.sites = sites
         super().__init__(*args, **kwargs)  # type: ignore[arg-type]
 
@@ -73,16 +94,18 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
 
-def make_server(root: Path, port: int) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer(("127.0.0.1", port), partial(Handler, sites=load_sites(root)))
+def make_server(site_map: Path, port: int) -> ThreadingHTTPServer:
+    return ThreadingHTTPServer(("127.0.0.1", port), partial(Handler, sites=Sites(site_map)))
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=PORT)
+    parser.add_argument("--sites", type=Path, default=settings.site_map(settings.deploy_dir()),
+                        help="site map written by the deployment")
     args = parser.parse_args()
-    server = make_server(ROOT, args.port)
-    print(f"serving {', '.join(load_sites(ROOT))} on 127.0.0.1:{args.port}", flush=True)
+    server = make_server(args.sites, args.port)
+    print(f"serving the sites in {args.sites} on 127.0.0.1:{args.port}", flush=True)
     server.serve_forever()
     return 0
 

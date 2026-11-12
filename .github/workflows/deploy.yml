@@ -1,6 +1,7 @@
 name: Deploy Jomaa services and routes
 
-# A signed HTTPS request triggers the local deployment only after verification.
+# A signed HTTPS request triggers the local deployment after the deployment
+# code is verified. Each module deploys only when its own check job succeeded.
 on:
   push:
     branches: [main]
@@ -15,7 +16,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  modules:
+    runs-on: ubuntu-latest
+    outputs:
+      modules: ${{ steps.list.outputs.modules }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - id: list
+        run: echo "modules=$(python3 jomaa-deploy/deploy.py modules --json)" >> "$GITHUB_OUTPUT"
+
   verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python3 jomaa-deploy/verify.py --job verify
+
+  check:
+    needs: modules
+    if: needs.modules.outputs.modules != '[]'
+    name: check (${{ matrix.module }})
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ${{ fromJSON(needs.modules.outputs.modules) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,17 +58,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python3 jomaa-deploy/verify.py
+      - run: python3 jomaa-deploy/verify.py "${{ matrix.module }}"
 
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: verify
+    needs: [verify, check]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verify.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Trigger signed deployment
         env:
           JOMAA_DEPLOY_SECRET: ${{ secrets.JOMAA_DEPLOY_SECRET }}
-          JOMAA_DEPLOY_URL: ${{ vars.JOMAA_DEPLOY_URL || 'https://hub.jomaa.org/deploy' }}
+          JOMAA_DEPLOY_URL: ${{ vars.JOMAA_DEPLOY_URL }}
         run: python3 jomaa-deploy/notify.py

@@ -1,0 +1,12 @@
+{
+  "name": "health",
+  "inputs": [],
+  "checks": [
+    ["npm", "ci", "--no-audit", "--no-fund"],
+    ["npm", "run", "check"]
+  ],
+  "state": [],
+  "build": [["npm", "ci", "--no-audit", "--no-fund"]],
+  "command": ["node", "{release}/jomaa-health/scripts/deploy.mjs"],
+  "inventory": "inventory.json"
+}

@@ -5,6 +5,7 @@
     "module": "preserve",
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
+    "allowArbitraryExtensions": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "strict": true,

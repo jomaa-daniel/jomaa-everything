@@ -1,0 +1,8 @@
+{
+  "name": "ssh",
+  "inputs": [],
+  "checks": [["{python}", "-m", "unittest", "discover", "-s", ".", "-q"]],
+  "state": [],
+  "origin": "ssh://127.0.0.1:2222",
+  "routes": [{"hostname": "ssh.jomaa.org"}]
+}

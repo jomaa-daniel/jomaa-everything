@@ -1,6 +1,10 @@
 import config from "../config.json" with { type: "json" };
-import { runChecks, type Report } from "./checks.ts";
+import written from "../inventory.json" with { type: "json" };
+import { parseInventory, runChecks, type Report } from "./checks.ts";
 import { renderPage } from "./page.ts";
+
+/** Routes and services written by jomaa-deploy before it deploys the Worker. */
+const inventory = parseInventory(written);
 
 interface Env {
   HUB_PASSWORD: string | undefined;
@@ -57,7 +61,7 @@ async function freshReport(env: Env): Promise<Report> {
     sshBanner,
     password: env.HUB_PASSWORD ?? "",
     now: () => Date.now(),
-  });
+  }, inventory);
 }
 
 async function report(origin: string, env: Env, ctx: ExecutionContext): Promise<Report> {

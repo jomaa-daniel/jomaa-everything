@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deploy verified repository releases, services, routes and DNS on the home server."""
+"""Deploy verified repository releases on the home server: signed receiver, releases and module activation."""
 from __future__ import annotations
 
 import argparse
@@ -22,58 +22,72 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-import manifest
+import engine
 import native
-import routing
-from cloudflare_api import Cloudflare, CloudflareError
+import settings
+from cloudflare_api import CloudflareError
+from modules import VERIFY_JOB, Context, DeployError
+from modules import ingress
+from modules.base import quote
+from settings import load_env
 
+CONFIG = settings.CONFIG
 SOURCE = Path(__file__).resolve().parent.parent
-DEPLOY_DIR = Path.home() / ".local/share/jomaa-deploy"
-UNIT_DIR = Path.home() / ".config/systemd/user"
-WEBHOOK_PATH = manifest.WEBHOOK_PATH
-WEBHOOK_PORT = manifest.WEBHOOK_PORT
+UNIT_DIR = settings.path(CONFIG["unitDirectory"])
+WEBHOOK_PATH = settings.WEBHOOK_PATH
+ERRORS = (DeployError, CloudflareError, OSError, ValueError, subprocess.SubprocessError, urllib.error.URLError)
 
 
-class DeployError(Exception):
-    pass
-
-
-def run(*args: str, cwd: Path | None = None, capture: bool = False, env: dict | None = None) -> str:
+def run(*args: str, cwd: Path | None = None, capture: bool = False) -> str:
     r = subprocess.run(args, cwd=cwd, check=True, text=True, stdout=subprocess.PIPE if capture else None,
-                       env=env, timeout=300)
+                       timeout=CONFIG["commandTimeoutSeconds"])
     return r.stdout.strip() if capture else ""
-
-
-def quote(value: str) -> str:
-    return json.dumps(value.replace("%", "%%"))
 
 
 def github_json(url: str) -> dict:
     request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json",
-                                                  "User-Agent": "jomaa-deploy/1.0"})
-    with urllib.request.urlopen(request, timeout=20) as response:
+                                                  "User-Agent": CONFIG["userAgent"]})
+    with urllib.request.urlopen(request, timeout=CONFIG["github"]["timeoutSeconds"]) as response:
         return json.load(response)
+
+
+def run_api(repo: str, run_id: int) -> str:
+    owner, name = repo.split("/", 1)
+    return (f"{CONFIG['github']['api']}/repos/{urllib.parse.quote(owner)}/{urllib.parse.quote(name)}"
+            f"/actions/runs/{run_id}")
+
+
+def github_jobs(repo: str, run_id: int, attempt: int) -> dict[str, str | None]:
+    """The conclusion of every job of one run attempt, by job name."""
+    jobs: dict[str, str | None] = {}
+    per_page = CONFIG["github"]["jobsPerPage"]
+    page = 1
+    while True:
+        batch = github_json(f"{run_api(repo, run_id)}/attempts/{attempt}/jobs?per_page={per_page}&page={page}"
+                            ).get("jobs", [])
+        for job in batch:
+            jobs[job.get("name")] = job.get("conclusion")
+        if len(batch) < per_page:
+            return jobs
+        page += 1
 
 
 def verify_run(repo: str, sha: str, run_id: int, attempt: int) -> None:
     """Check the requested push and the completed verify job on GitHub."""
-    owner, name = repo.split("/", 1)
-    base = f"https://api.github.com/repos/{urllib.parse.quote(owner)}/{urllib.parse.quote(name)}"
-    info = github_json(f"{base}/actions/runs/{run_id}")
+    info = github_json(run_api(repo, run_id))
     if (info.get("event") != "push" or info.get("head_branch") != "main" or info.get("head_sha") != sha
             or info.get("path") != ".github/workflows/deploy.yml"
             or info.get("run_attempt") != attempt or info.get("repository", {}).get("full_name") != repo
             or info.get("status") not in ("in_progress", "completed")
             or info.get("conclusion") not in (None, "success")):
         raise DeployError("request does not match a main-branch deployment workflow run")
-    jobs = github_json(f"{base}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100").get("jobs", [])
-    if not any(job.get("name") == "verify" and job.get("conclusion") == "success" for job in jobs):
+    if github_jobs(repo, run_id, attempt).get(VERIFY_JOB) != "success":
         raise DeployError("GitHub has not reported a successful verification job")
 
 
 def is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
     result = subprocess.run(["git", "-C", str(repo), "merge-base", "--is-ancestor", ancestor, descendant],
-                            timeout=20)
+                            timeout=CONFIG["gitTimeoutSeconds"])
     if result.returncode not in (0, 1):
         raise DeployError("could not compare deployment revisions")
     return result.returncode == 0
@@ -93,7 +107,7 @@ def extract_release(repo: Path, sha: str, deploy_dir: Path) -> Path:
         archive = folder / "source.tar"
         with archive.open("wb") as out:
             subprocess.run(["git", "-C", str(repo), "archive", "--format=tar", sha],
-                           stdout=out, check=True, timeout=60)
+                           stdout=out, check=True, timeout=CONFIG["gitTimeoutSeconds"])
         content = folder / "release"
         with tarfile.open(archive, "r:") as tar:
             tar.extractall(content, filter="data")
@@ -104,231 +118,55 @@ def extract_release(repo: Path, sha: str, deploy_dir: Path) -> Path:
     return target
 
 
-def link_state(release: Path, source: Path) -> None:
-    """Link the release's declared runtime state to the local checkout."""
-    for name in manifest.load(release)["state"]:
-        original = source / name
-        if not original.exists():
-            raise DeployError(f"missing local runtime state: {original}")
-        destination = release / name
-        if destination.is_symlink() and destination.resolve() == original.resolve():
-            continue
-        if destination.exists() or destination.is_symlink():
-            raise DeployError(f"runtime state must not be tracked: {name}")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.symlink_to(original.resolve(), target_is_directory=original.is_dir())
-
-
-def make_release(repo: Path, sha: str, source: Path, deploy_dir: Path) -> Path:
-    """Extract the repository revision and link declared runtime state into it."""
-    release = extract_release(repo, sha, deploy_dir)
-    link_state(release, source)
-    return release
-
-
-def switch_link(link: Path, destination: Path) -> None:
-    tmp = link.with_name(link.name + ".new")
-    tmp.unlink(missing_ok=True)
-    tmp.symlink_to(destination, target_is_directory=True)
-    os.replace(tmp, link)
-
-
-def health(check: dict) -> bool:
-    try:
-        headers = {"User-Agent": "jomaa-deploy/1.0"}
-        if "host" in check:
-            headers["Host"] = check["host"]
-        req = urllib.request.Request(check["url"], headers=headers)
-        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=2) as response:
-            if response.status != 200:
-                return False
-            if "json" in check:
-                result = json.load(response)
-                return isinstance(result, dict) and all(result.get(k) == v for k, v in check["json"].items())
-            return True
-    except (OSError, ValueError):
-        return False
-
-
-def wait_health(check: dict, timeout: float = 90) -> bool:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if health(check):
-            return True
-        time.sleep(1)
-    return False
-
-
-def build_release(release: Path, config: dict) -> None:
-    for service in config["services"].values():
-        if "unit" not in service:
-            continue
-        directory = release / service["directory"]
-        for command in service.get("build", []):
-            run(*manifest.expand(command, release), cwd=directory)
-
-
-def unit(service: dict, current: Path) -> str:
-    command = " ".join(quote(arg) for arg in manifest.expand(service["command"], current))
-    working_directory = str(current / service["directory"]).replace("%", "%%")
-    return ("[Unit]\nDescription=Jomaa deployed service\nAfter=network-online.target\n"
-            "[Service]\nType=simple\n"
-            f"WorkingDirectory={working_directory}\n"
-            f"ExecStart={command}\nRestart=always\nRestartSec=2\n"
-            "[Install]\nWantedBy=default.target\n")
-
-
-def write_units(config: dict, current: Path) -> None:
-    UNIT_DIR.mkdir(parents=True, exist_ok=True)
-    for service in config["services"].values():
-        if "unit" in service:
-            name = service["unit"]
-            (UNIT_DIR / (name + ".service")).write_text(unit(service, current))
-            (UNIT_DIR / (name + ".service.d/deployment.conf")).unlink(missing_ok=True)
-
-    tunnel = {"directory": "jomaa-deploy", "command": ["{python}", "{release}/jomaa-deploy/boot.py", "tunnel"]}
-    (UNIT_DIR / "jomaa-cloudflared.service").write_text(unit(tunnel, current))
-    (UNIT_DIR / "jomaa-cloudflared.service.d/deployment.conf").unlink(missing_ok=True)
-
-
-def provision(config: dict, current: Path) -> None:
-    for step in config["provision"]:
-        run(*manifest.expand(step["command"], current), cwd=current / step["directory"])
-
-
-def atomic_write(path: Path, content: str) -> None:
-    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, prefix=".deploy-", delete=False) as file:
-        temp = Path(file.name)
-        file.write(content)
-    try:
-        os.replace(temp, path)
-    finally:
-        temp.unlink(missing_ok=True)
-
-
-def activate(release: Path, deploy_dir: Path, source: Path) -> None:
-    """Build the release, activate its services and routes, and restore failures."""
-    current = deploy_dir / "current"
-    previous = current.resolve(strict=True) if current.exists() else None
-    config = manifest.load(release)
-    old = manifest.load(previous) if previous else {"services": {}, "routes": [], "webhook": config["webhook"]}
-    changed = [name for name, service in config["services"].items() if "unit" in service]
-    build_release(release, config)
-    native = source / "jomaa-home-hub/data/native"
-    tunnel = native / "tunnel.yml"
-    content = routing.prepare(native / "cloudflared", tunnel, config)
-    original = tunnel.read_text()
-    dns = routing.DNS(Cloudflare(load_env(source / "jomaa-home-hub/.env").get("CLOUDFLARE_API_TOKEN", "")),
-                      routing.tunnel_id(tunnel))
-    services = {"jomaa-cloudflared", *(s["unit"] for c in (config, old) for s in c["services"].values() if "unit" in s)}
-    saved = {}
-    for name in services:
-        for suffix in (".service", ".service.d/deployment.conf"):
-            path = UNIT_DIR / (name + suffix)
-            saved[path] = path.read_bytes() if path.exists() else None
-    removed = {s["unit"] for s in old["services"].values() if "unit" in s} - {
-        s["unit"] for s in config["services"].values() if "unit" in s}
-    tunnel_changed = content != original
-    switched = False
-    tunnel_written = False
-    try:
-        dns.apply(routing.hosts(config), routing.hosts(old))
-        switch_link(current, release)
-        switched = True
-        write_units(config, current)
-        run("systemctl", "--user", "daemon-reload")
-        for name in changed:
-            service = config["services"][name]
-            run("systemctl", "--user", "enable", service["unit"] + ".service")
-            run("systemctl", "--user", "restart", service["unit"] + ".service")
-        for service in config["services"].values():
-            if "unit" in service and not wait_health(service["health"]):
-                raise DeployError(f"{service['unit']} did not become healthy")
-        for route in config["routes"]:
-            if "site" in route and not health({"url": manifest.STATIC_ORIGIN + "/", "host": route["hostname"]}):
-                raise DeployError(f"static site {route['hostname']} did not become healthy")
-        if tunnel_changed:
-            atomic_write(tunnel, content)
-            tunnel_written = True
-        tunnel_unit = UNIT_DIR / "jomaa-cloudflared.service"
-        if (tunnel_changed or saved[tunnel_unit] != tunnel_unit.read_bytes()
-                or saved[UNIT_DIR / "jomaa-cloudflared.service.d/deployment.conf"] is not None):
-            run("systemctl", "--user", "enable", "jomaa-cloudflared.service")
-            run("systemctl", "--user", "restart", "jomaa-cloudflared.service")
-        for name in removed:
-            run("systemctl", "--user", "disable", "--now", name + ".service")
-            (UNIT_DIR / (name + ".service")).unlink(missing_ok=True)
-            (UNIT_DIR / (name + ".service.d/deployment.conf")).unlink(missing_ok=True)
-        if removed:
-            run("systemctl", "--user", "daemon-reload")
-        provision(config, current)
-    except Exception:
-        def restore_command(*command: str) -> None:
-            try:
-                run(*command)
-            except Exception as error:
-                print(f"service restoration failed: {error}", file=sys.stderr)
-
-        if tunnel_written:
-            atomic_write(tunnel, original)
-        if switched:
-            for name in services:
-                path = UNIT_DIR / (name + ".service")
-                if saved[path] is None and path.exists():
-                    restore_command("systemctl", "--user", "disable", "--now", name + ".service")
-            if previous:
-                switch_link(current, previous)
-            else:
-                current.unlink(missing_ok=True)
-            for path, data in saved.items():
-                if data is None:
-                    path.unlink(missing_ok=True)
-                else:
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_bytes(data)
-            restore_command("systemctl", "--user", "daemon-reload")
-            for name in services:
-                if saved[UNIT_DIR / (name + ".service")] is not None:
-                    restore_command("systemctl", "--user", "enable", name + ".service")
-                    restore_command("systemctl", "--user", "restart", name + ".service")
-        try:
-            dns.restore()
-        except Exception as error:
-            print(str(error), file=sys.stderr)
-        raise
-
-
-def load_env(path: Path) -> dict[str, str]:
-    values = {}
-    if path.exists():
-        for raw in path.read_text().splitlines():
-            line = raw.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, _, value = line.partition("=")
-                values[key.strip()] = value.strip().strip("'\"")
-    return {**values, **os.environ}
-
-
-def prune_releases(deploy_dir: Path, keep: int = 3) -> None:
+def prune_releases(deploy_dir: Path, keep: int) -> None:
+    """Delete old releases, keeping the newest, the current one and every module's current and previous one."""
     releases = deploy_dir / "releases"
-    current = (deploy_dir / "current").resolve()
+    pointers = [deploy_dir / "current", *deploy_dir.glob("modules/*/current"), *deploy_dir.glob("modules/*/previous")]
+    used = {pointer.resolve() for pointer in pointers if pointer.exists()}
     built = sorted((r for r in releases.iterdir() if (r / ".revision").is_file()),
                    key=lambda r: r.stat().st_mtime, reverse=True)
     for old in built[keep:]:
-        if old.resolve() != current:
+        if old.resolve() not in used:
             try:
                 shutil.rmtree(old)
             except OSError as error:
                 print(f"Could not remove release {old.name}: {error}", file=sys.stderr)
 
 
-def install(source: Path, deploy_dir: Path, repo: str, tunnel_name: str = "jomaa-home-hub") -> None:
+def context(source: Path, deploy_dir: Path, release: Path, sha: str) -> Context:
+    """The activation context; fingerprints read the receiver's git cache when it has the revision."""
+    cache = deploy_dir / "git-cache"
+    cached = cache.exists() and subprocess.run(
+        ["git", "-C", str(cache), "cat-file", "-e", f"{sha}^{{commit}}"], capture_output=True,
+        timeout=CONFIG["gitTimeoutSeconds"]).returncode == 0
+    return Context(source, deploy_dir, release, sha, cache if cached else source, unit_dir=UNIT_DIR)
+
+
+def activate_revision(source: Path, deploy_dir: Path, repo_name: str, sha: str, run_id: int, attempt: int) -> dict:
+    """Deploy the modules of an extracted release whose checks succeeded in the given run attempt."""
+    release = deploy_dir / "releases" / sha
+    if (release / ".revision").read_text().strip() != sha:
+        raise DeployError(f"release {release} has the wrong revision")
+    try:
+        jobs = github_jobs(repo_name, run_id, attempt)
+    except (OSError, ValueError, urllib.error.URLError) as error:
+        print(f"could not read the workflow's jobs; modules with checks are ineligible: {error}",
+              file=sys.stderr, flush=True)
+        jobs = {}
+    result = engine.activate(context(source, deploy_dir, release, sha), jobs)
+    prune_releases(deploy_dir, CONFIG["releasesKept"])
+    return result
+
+
+def install(source: Path, deploy_dir: Path, repo: str, tunnel_name: str) -> None:
     sha = run("git", "-C", str(source), "rev-parse", "HEAD", capture=True)
     if run("git", "-C", str(source), "status", "--porcelain", "--untracked-files=no", capture=True):
         raise DeployError("commit tracked changes before installing the deployment receiver")
-    manifest.load(source)
+    modules, failures = engine.discover(source)
+    if failures:
+        raise DeployError("modules failed to load: " + "; ".join(f"{d}: {e}" for d, e in failures.items()))
     native.init_config(source / "jomaa-home-hub")
-    native.provision(source, load_env(source / "jomaa-home-hub/.env"), tunnel_name)
+    native.provision(source, load_env(source / CONFIG["cloudflare"]["env"]), tunnel_name)
     secret = deploy_dir / "webhook-secret"
     if not secret.exists():
         fd = os.open(secret, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -339,12 +177,14 @@ def install(source: Path, deploy_dir: Path, repo: str, tunnel_name: str = "jomaa
         deployed = (current / ".revision").read_text().strip()
         if not is_ancestor(source, deployed, sha):
             raise DeployError("checkout does not descend from the deployed revision")
-        for name in manifest.load(current.resolve())["state"]:
-            if (current / name).resolve() != (source / name).resolve():
+        for name in (path for module in modules for path in module.state):
+            link = current / name
+            if (link.exists() or link.is_symlink()) and link.resolve() != (source / name).resolve():
                 raise DeployError("existing deployment points to another server's runtime state")
-    release = make_release(source, sha, source, deploy_dir)
+    release = extract_release(source, sha, deploy_dir)
     if not current.exists() or (current / ".revision").read_text().strip() != sha:
-        activate(release, deploy_dir, source)
+        print(json.dumps(engine.activate(context(source, deploy_dir, release, sha), None), indent=2))
+    unit = CONFIG["receiverUnit"] + ".service"
     receiver = ("[Unit]\nDescription=Jomaa signed deployment receiver\nAfter=network-online.target\n"
                 "[Service]\nType=simple\n"
                 f"Environment={quote('JOMAA_DEPLOY_SOURCE=' + str(source))}\n"
@@ -352,26 +192,13 @@ def install(source: Path, deploy_dir: Path, repo: str, tunnel_name: str = "jomaa
                 f"Environment={quote('JOMAA_DEPLOY_HOME=' + str(deploy_dir))}\n"
                 f"ExecStart={quote(sys.executable)} {quote(str(current / 'jomaa-deploy/deploy.py'))} serve\n"
                 "Restart=always\nRestartSec=2\n[Install]\nWantedBy=default.target\n")
-    (UNIT_DIR / "jomaa-deploy.service").write_text(receiver)
+    UNIT_DIR.mkdir(parents=True, exist_ok=True)
+    (UNIT_DIR / unit).write_text(receiver)
     run("systemctl", "--user", "daemon-reload")
-    run("systemctl", "--user", "enable", "jomaa-deploy.service")
-    run("systemctl", "--user", "restart", "jomaa-deploy.service")
-    prune_releases(deploy_dir)
+    run("systemctl", "--user", "enable", unit)
+    run("systemctl", "--user", "restart", unit)
+    prune_releases(deploy_dir, CONFIG["releasesKept"])
     print(f"Deployment receiver installed for {repo} main; secret file: {secret}")
-
-
-def activate_revision(source: Path, deploy_dir: Path, sha: str) -> str:
-    """Activate the extracted release of a revision unless it is already current."""
-    current = deploy_dir / "current"
-    if current.exists() and (current / ".revision").read_text().strip() == sha:
-        return "already-deployed"
-    release = deploy_dir / "releases" / sha
-    if (release / ".revision").read_text().strip() != sha:
-        raise DeployError(f"release {release} has the wrong revision")
-    link_state(release, source)
-    activate(release, deploy_dir, source)
-    prune_releases(deploy_dir)
-    return "deployed"
 
 
 def run_engine(release: Path, source: Path, deploy_dir: Path, repo_name: str, sha: str,
@@ -397,7 +224,7 @@ def deploy_revision(source: Path, deploy_dir: Path, repo_name: str, candidate: s
     cache = deploy_dir / "git-cache"
     if not cache.exists():
         run("git", "init", "--bare", str(cache))
-    run("git", "-C", str(cache), "fetch", "--no-tags", f"https://github.com/{repo_name}.git", "main")
+    run("git", "-C", str(cache), "fetch", "--no-tags", f"{CONFIG['github']['remote']}/{repo_name}.git", "main")
     if not is_ancestor(cache, candidate, "FETCH_HEAD"):
         raise DeployError("successful workflow commit is not on the current main branch")
     if candidate != deployed and is_ancestor(cache, candidate, deployed):
@@ -470,7 +297,7 @@ def serve(source: Path, deploy_dir: Path, repo: str) -> None:
                     result = deploy_revision(source, deploy_dir, repo, payload["sha"],
                                              payload["run_id"], payload["attempt"])
                 self.respond(200, {**result, "sha": payload["sha"]})
-            except (DeployError, CloudflareError, OSError, ValueError, subprocess.SubprocessError, urllib.error.URLError) as e:
+            except ERRORS as e:
                 print(f"deployment failed: {e}", file=sys.stderr, flush=True)
                 self.respond(500, {"error": "deployment failed; see server logs"})
             if current.resolve() != before:
@@ -480,9 +307,10 @@ def serve(source: Path, deploy_dir: Path, repo: str) -> None:
             # Do not log signatures, request bodies, or credentials.
             print("deployment request handled", flush=True)
 
-    server = HTTPServer(("127.0.0.1", WEBHOOK_PORT), Handler)
+    port = CONFIG["webhook"]["port"]
+    server = HTTPServer(("127.0.0.1", port), Handler)
     server.reload_after_response = False
-    print(f"Deployment receiver listening on 127.0.0.1:{WEBHOOK_PORT}", flush=True)
+    print(f"Deployment receiver listening on 127.0.0.1:{port}", flush=True)
     try:
         while not server.reload_after_response:
             server.handle_request()
@@ -491,11 +319,18 @@ def serve(source: Path, deploy_dir: Path, repo: str) -> None:
     # The systemd service uses Restart=always, loading the new release on exit.
 
 
+def matrix(modules: list) -> list[str]:
+    """Modules whose checks run in their own check (<name>) job."""
+    return sorted(m.name for m in modules if m.check_job() == f"check ({m.name})")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("install", "serve", "plan", "activate"))
-    parser.add_argument("--tunnel-name", default="jomaa-home-hub", help="locally managed Cloudflare tunnel for installation")
-    parser.add_argument("--repo", default=os.environ.get("JOMAA_DEPLOY_REPO", "jomaa-daniel/jomaa-everything"))
+    parser.add_argument("command", choices=("install", "serve", "plan", "modules", "activate"))
+    parser.add_argument("--tunnel-name", default=CONFIG["tunnel"]["name"],
+                        help="locally managed Cloudflare tunnel for installation")
+    parser.add_argument("--repo", default=os.environ.get("JOMAA_DEPLOY_REPO", CONFIG["repo"]))
+    parser.add_argument("--json", action="store_true", help="modules: print the check matrix as JSON")
     parser.add_argument("--sha", help="revision to activate")
     parser.add_argument("--run-id", type=int, help="GitHub Actions run that verified the revision")
     parser.add_argument("--attempt", type=int, help="attempt of the GitHub Actions run")
@@ -504,20 +339,33 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "activate" and None in (args.sha, args.run_id, args.attempt, args.result):
         parser.error("activate requires --sha, --run-id, --attempt and --result")
     source = Path(os.environ.get("JOMAA_DEPLOY_SOURCE", str(SOURCE))).resolve()
-    deploy_dir = Path(os.environ.get("JOMAA_DEPLOY_HOME", str(DEPLOY_DIR))).resolve()
+    deploy_dir = settings.deploy_dir()
     try:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repo):
             raise DeployError("repo must be OWNER/REPOSITORY")
-        if args.command == "plan":
-            config = manifest.load(source)
-            print(json.dumps({"services": config["services"], "ingress": manifest.ingress(config),
-                              "provision": config["provision"], "state": config["state"]}, indent=2))
-            return 0
+        if args.command in ("plan", "modules"):
+            modules, failures = engine.discover(source)
+            for directory, error in failures.items():
+                print(f"{directory} failed to load: {error}", file=sys.stderr)
+            if args.command == "modules":
+                if args.json:
+                    print(json.dumps(matrix(modules)))
+                else:
+                    for module in sorted(modules, key=lambda m: (m.phase, m.name)):
+                        print(f"{module.name}\t{module.kind}\t{module.directory}\t{module.check_job() or '-'}")
+                return 0
+            routes, conflicts = ingress.ordered_routes(modules, CONFIG)
+            print(json.dumps({
+                "modules": {m.name: {"kind": m.kind, "directory": m.directory, "job": m.check_job()}
+                            for m in sorted(modules, key=lambda m: (m.phase, m.name))},
+                "ingress": ingress.rules(routes, CONFIG)[0], "conflicts": conflicts,
+                "state": sorted(p for m in modules for p in m.state)}, indent=2))
+            return 1 if failures or conflicts else 0
         deploy_dir.mkdir(parents=True, exist_ok=True)
         if args.command == "activate":
             # The receiver holds deploy.lock while this runs.
-            status = activate_revision(source, deploy_dir, args.sha)
-            args.result.write_text(json.dumps({"status": status}))
+            result = activate_revision(source, deploy_dir, args.repo, args.sha, args.run_id, args.attempt)
+            args.result.write_text(json.dumps(result))
         elif args.command == "install":
             with (deploy_dir / "deploy.lock").open("w") as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -525,7 +373,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             serve(source, deploy_dir, args.repo)
         return 0
-    except (DeployError, CloudflareError, OSError, ValueError, subprocess.SubprocessError, urllib.error.URLError) as e:
+    except ERRORS as e:
         print(f"deployment failed: {e}", file=sys.stderr)
         return 1
 

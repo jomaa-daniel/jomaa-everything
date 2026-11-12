@@ -1,0 +1,62 @@
+{
+  "name": "hub",
+  "inputs": ["jomaa-deploy/boot.py", "jomaa-static-pages/device-panel"],
+  "checks": [
+    ["{python}", "scripts/verify.py"],
+    ["npm", "run", "test:browser"]
+  ],
+  "state": ["jomaa-home-hub/.env", "jomaa-home-hub/config.json", "jomaa-home-hub/data"],
+  "unit": "jomaa-hub",
+  "origin": "http://127.0.0.1:8080",
+  "command": ["{python}", "{release}/jomaa-deploy/boot.py", "hub"],
+  "build": [
+    ["npm", "ci", "--no-audit", "--no-fund"],
+    ["npm", "run", "build"]
+  ],
+  "health": {
+    "path": "/healthz",
+    "json": { "ok": true, "matterConnected": true }
+  },
+  "routes": [
+    { "hostname": "hub.jomaa.org" },
+    {
+      "hostname": "jomaa.org",
+      "path": "^/(home(/.*)?|devices(/.*)?|manage(/.*)?|lights(/.*)?|invite(/.*)?|join(/.*)?|permissions(/.*)?|api/(login|logout|session|join|invites(/.*)?|accounts(/.*)?|manage|targets(/.*)?|devices(/.*)?|matter/(discover|register|nodes/[1-9][0-9]*/(name|group))))?$",
+      "probes": [
+        "/",
+        "/home",
+        "/home/style.css",
+        "/manage",
+        "/manage/app.js",
+        "/manage/style.css",
+        "/api/manage",
+        "/devices",
+        "/devices/app.js",
+        "/devices/style.css",
+        "/api/devices",
+        "/api/matter/discover",
+        "/api/matter/register",
+        "/api/matter/nodes/1/name",
+        "/api/matter/nodes/1/group",
+        "/lights",
+        "/lights/app.js",
+        "/api/login",
+        "/api/logout",
+        "/api/targets/living-room/state",
+        "/home/accounts.js",
+        "/invite",
+        "/invite/app.js",
+        "/join",
+        "/join/app.js",
+        "/permissions",
+        "/permissions/app.js",
+        "/api/session",
+        "/api/join",
+        "/api/invites",
+        "/api/invites/check",
+        "/api/accounts",
+        "/api/accounts/someone/scopes"
+      ]
+    }
+  ]
+}

@@ -25,8 +25,8 @@ laptop/phone ── tailnet ──▶ jerry (tag) ──▶ home LAN (lan)   adm
 ## Deployment
 
 Push to `main`. Each activation runs `tailnet.py deploy` from the new release
-(declared under `provision` in `jomaa-deploy/deploy.json`) as the deployment
-user, after the services are healthy:
+(the `tailnet` command module declared in [`deploy.json`](deploy.json)) as the
+deployment user, after the services are healthy:
 
 1. It fails when the root setup is missing or outdated: the `sysctlFile`, the
    `gro.dispatcher` script, the login with `tag`, the deployment user as
@@ -87,8 +87,7 @@ tailscale ping jerry        # from a device on the tailnet, away from home
 
 ## Remove it
 
-Remove the `provision` entry and the `.env` state path from
-`jomaa-deploy/deploy.json`. On jerry: `sudo tailscale logout`,
+Delete `deploy_module.py` and `deploy.json` from this folder. On jerry: `sudo tailscale logout`,
 `sudo apt-get remove tailscale`, and delete the `sysctlFile` and
 `gro.dispatcher` files.
 

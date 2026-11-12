@@ -3,10 +3,11 @@
 The health page reads its settings from two committed files. A test fails when
 a setting in either file is missing from this document.
 
-Values that `../jomaa-deploy/deploy.json` already declares are read from there
-and are not repeated here:
+Values that the deployment modules already declare reach the Worker through
+`inventory.json`, which jomaa-deploy writes from the live module declarations
+before it deploys the Worker. They are not repeated here:
 
-| From `deploy.json` | Used for |
+| From `inventory.json` | Used for |
 | --- | --- |
 | `routes[].hostname`, `routes[].service` | Every public hostname checked, and its kind of check. |
 | `routes[].probes` | Paths requested through a path route; each must reach the hub. |

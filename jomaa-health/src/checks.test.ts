@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { test } from "node:test";
-import manifest from "../../jomaa-deploy/deploy.json" with { type: "json" };
 import config from "../config.json" with { type: "json" };
-import { runChecks, type Probe } from "./checks.ts";
+import { parseInventory, runChecks, type Probe } from "./checks.ts";
+import fixture from "./inventory.fixture.json" with { type: "json" };
 import { renderPage } from "./page.ts";
+
+const inventory = parseInventory(fixture);
+const checkAll = (probe: Probe) => runChecks(probe, inventory);
 
 const password = "correct horse battery";
 const token = "session-token";
@@ -77,7 +80,7 @@ const byName = (report: Awaited<ReturnType<typeof runChecks>>, name: string) => 
 
 test("a healthy site passes every check", async () => {
   const { probe } = site();
-  const report = await runChecks(probe);
+  const report = await checkAll(probe);
   assert.deepEqual(
     report.results.filter((r) => r.status !== "ok"),
     [],
@@ -85,16 +88,20 @@ test("a healthy site passes every check", async () => {
   assert.equal(report.status, "ok");
 });
 
-test("every manifest route and static site is checked", async () => {
+test("every inventory route and static site is checked", async () => {
   const { probe, calls } = site();
-  const report = await runChecks(probe);
+  const report = await checkAll(probe);
   const hosts = new Set(report.results.map((r) => new URL(r.url).hostname));
-  for (const route of manifest.routes) assert.ok(hosts.has(route.hostname), route.hostname);
+  for (const route of inventory.routes) assert.ok(hosts.has(route.hostname), route.hostname);
   for (const host of config.staticSites) assert.ok(hosts.has(host), host);
-  for (const route of manifest.routes) {
-    if (!("probes" in route)) continue;
-    for (const path of route.probes) assert.ok(calls.includes(`GET https://${route.hostname}${path}`), path);
+  for (const route of inventory.routes) {
+    for (const path of route.probes ?? []) assert.ok(calls.includes(`GET https://${route.hostname}${path}`), path);
   }
+});
+
+test("an inventory with a wrong field type is rejected", () => {
+  assert.throws(() => parseInventory({ ...fixture, routes: [{ hostname: "jomaa.org", service: 1, path: null, probes: null }] }));
+  assert.throws(() => parseInventory({ ...fixture, webhook: null }));
 });
 
 test("static sites match the site directories", () => {
@@ -111,7 +118,7 @@ test("static sites match the site directories", () => {
 
 test("rooms are read once and devices outside rooms on their own", async () => {
   const { probe, calls } = site();
-  await runChecks(probe);
+  await checkAll(probe);
   const states = new Set(calls.filter((c) => /^GET https:\/\/jomaa\.org\/api\/targets\/[^/]+\/state$/.test(c)));
   assert.ok(calls.includes("GET https://jomaa.org/api/targets/living-room/state"));
   assert.ok(calls.includes("GET https://jomaa.org/api/targets/loose/state"));
@@ -121,7 +128,7 @@ test("rooms are read once and devices outside rooms on their own", async () => {
 
 test("a route answered by the tunnel instead of the hub fails", async () => {
   const { probe } = site({ "GET https://jomaa.org/lights": () => new Response(null, { status: 404 }) });
-  const report = await runChecks(probe);
+  const report = await checkAll(probe);
   const lights = byName(report, "/lights");
   assert.equal(lights.status, "fail");
   assert.match(lights.detail, /HTTP 404/);
@@ -130,12 +137,12 @@ test("a route answered by the tunnel instead of the hub fails", async () => {
 
 test("a 401 that is not the hub's refusal fails", async () => {
   const { probe } = site({ "GET https://jomaa.org/api/manage": () => new Response("denied", { status: 401 }) });
-  assert.equal(byName(await runChecks(probe), "/api/manage").status, "fail");
+  assert.equal(byName(await checkAll(probe), "/api/manage").status, "fail");
 });
 
 test("a disconnected Matter controller fails the hub health check", async () => {
   const { probe } = site({ "GET https://hub.jomaa.org/healthz": () => json(200, { ok: true, matterConnected: false }) });
-  const health = byName(await runChecks(probe), "hub health");
+  const health = byName(await checkAll(probe), "hub health");
   assert.equal(health.status, "fail");
   assert.equal(health.detail, "matterConnected is false, expected true");
 });
@@ -146,7 +153,7 @@ test("devices that stop answering degrade instead of failing", async () => {
       json(200, { state: {}, devices: { lamp: {} }, failed: { orb: "timeout" } }),
     "GET https://jomaa.org/api/devices": () => json(200, { devices: [{ status: "offline" }], matterNodes: [] }),
   });
-  const report = await runChecks(probe);
+  const report = await checkAll(probe);
   assert.equal(byName(report, "State: Living room").status, "warn");
   assert.equal(byName(report, "State: Living room").detail, "1 of 2 devices answering");
   assert.equal(byName(report, "Health reporters").status, "warn");
@@ -158,12 +165,12 @@ test("a room with no answering device fails", async () => {
     "GET https://jomaa.org/api/targets/living-room/state": () =>
       json(200, { state: null, devices: {}, failed: { lamp: "x", orb: "y" } }),
   });
-  assert.equal(byName(await runChecks(probe), "State: Living room").status, "fail");
+  assert.equal(byName(await checkAll(probe), "State: Living room").status, "fail");
 });
 
 test("a wrong password stops the API checks after sign-in", async () => {
   const { probe, calls } = site();
-  const report = await runChecks({ ...probe, password: "wrong" });
+  const report = await checkAll({ ...probe, password: "wrong" });
   assert.equal(byName(report, "Sign in").status, "fail");
   assert.ok(!report.results.some((r) => r.name === "Targets"));
   assert.ok(!calls.includes("GET https://jomaa.org/api/targets"));
@@ -171,14 +178,14 @@ test("a wrong password stops the API checks after sign-in", async () => {
 
 test("a missing password is reported without contacting the hub", async () => {
   const { probe, calls } = site();
-  const report = await runChecks({ ...probe, password: "" });
+  const report = await checkAll({ ...probe, password: "" });
   assert.match(byName(report, "Sign in").detail, /HUB_PASSWORD/);
   assert.ok(!calls.includes("POST https://jomaa.org/api/login"));
 });
 
 test("malformed API answers fail their check", async () => {
   const { probe } = site({ "GET https://jomaa.org/api/targets": () => json(200, { targets: [{ id: 1 }] }) });
-  const report = await runChecks(probe);
+  const report = await checkAll(probe);
   assert.equal(byName(report, "Targets").status, "fail");
   assert.equal(byName(report, "Sign out").status, "ok");
 });
@@ -189,7 +196,7 @@ test("an unexpected SSH greeting and a network error fail", async () => {
       throw new TypeError("network connection lost");
     },
   });
-  const report = await runChecks({ ...probe, sshBanner: async () => "HTTP/1.1 400 Bad Request" });
+  const report = await checkAll({ ...probe, sshBanner: async () => "HTTP/1.1 400 Bad Request" });
   assert.equal(byName(report, "SSH through the tunnel").status, "fail");
   const sarah = byName(report, "Static site");
   assert.equal(sarah.status, "fail");
@@ -198,7 +205,7 @@ test("an unexpected SSH greeting and a network error fail", async () => {
 
 test("a check that times out names its deadline", async () => {
   const { probe } = site();
-  const report = await runChecks({
+  const report = await checkAll({
     ...probe,
     sshBanner: async () => {
       throw new DOMException("timed out", "TimeoutError");
@@ -211,7 +218,7 @@ test("a check that times out names its deadline", async () => {
 
 test("the page escapes check output and shows the overall status", async () => {
   const { probe } = site({ "GET https://hub.jomaa.org/healthz": () => json(500, { error: "<script>" }) });
-  const report = await runChecks(probe);
+  const report = await checkAll(probe);
   const html = renderPage(
     { ...report, results: [...report.results, { ...report.results[0]!, detail: "<script>alert(1)</script>" }] },
     60,

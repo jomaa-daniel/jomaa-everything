@@ -1,0 +1,6 @@
+{
+  "name": "pico-imaging-bench",
+  "inputs": [],
+  "checks": [["{python}", "-m", "unittest", "discover", "-s", "tests", "-q"]],
+  "state": []
+}

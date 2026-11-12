@@ -1,0 +1,45 @@
+{
+  "repo": "jomaa-daniel/jomaa-everything",
+  "userAgent": "jomaa-deploy/1.0",
+  "webhook": {
+    "hostname": "hub.jomaa.org",
+    "port": 8091
+  },
+  "receiverUnit": "jomaa-deploy",
+  "deployDirectory": "~/.local/share/jomaa-deploy",
+  "unitDirectory": "~/.config/systemd/user",
+  "siteMap": "sites.json",
+  "releasesKept": 3,
+  "commandTimeoutSeconds": 300,
+  "gitTimeoutSeconds": 60,
+  "moduleTimeoutSeconds": 600,
+  "healthWaitSeconds": 90,
+  "healthRequestTimeoutSeconds": 2,
+  "hubPasswordMinLength": 12,
+  "tunnel": {
+    "name": "jomaa-home-hub",
+    "unit": "jomaa-cloudflared",
+    "directory": "jomaa-home-hub/data/native",
+    "cloudflaredVersion": "2026.10.7",
+    "cloudflaredRepository": "cloudflare/cloudflared",
+    "downloadTimeoutSeconds": 120,
+    "validateTimeoutSeconds": 30
+  },
+  "cloudflare": {
+    "api": "https://api.cloudflare.com/client/v4",
+    "env": "jomaa-home-hub/.env",
+    "timeoutSeconds": 30
+  },
+  "github": {
+    "api": "https://api.github.com",
+    "remote": "https://github.com",
+    "timeoutSeconds": 20,
+    "jobsPerPage": 100
+  },
+  "notify": {
+    "deadlineSeconds": 540,
+    "requestTimeoutSeconds": 60,
+    "retryDelaySeconds": 5,
+    "retryStatuses": [409, 502, 503, 504, 520, 521, 522, 523, 524]
+  }
+}

@@ -60,8 +60,13 @@ browser ── https ──▶ Cloudflare ── tunnel ──▶ jerry: serve.p
                                                picks the hostname directory by Host
 ```
 
-`serve.py` serves files only (no directory listings, no hidden files) to
-hostnames discovered from its directory names, and answers 404 for anything else.
+`serve.py` serves files only (no directory listings, no hidden files) to the
+hostnames in the deployment's site map, and answers 404 for anything else. The
+map names the release folder of each site; `serve.py` reads it again whenever
+the deployment replaces it, without a restart. It listens on the port of the
+`origin` in [`deploy.json`](deploy.json) and finds the map through
+`siteMap` in `../jomaa-deploy/config.json` (see
+[`../jomaa-deploy/config.md`](../jomaa-deploy/config.md)).
 `/healthz` returns the server's health independently of the site hostname.
 
 ## Edit the portfolio
@@ -96,9 +101,9 @@ site's files define its URL paths. The example also publishes
 `https://new.jomaa.org/gallery/`. Removing a hostname directory removes its
 public route and managed DNS record at the next deployment.
 
-The static server and deployer use the same directory discovery. Hostname
-directories require an `index.html`. Support folders such as `device-panel/`
-are excluded. See [`../jomaa-deploy/README.md`](../jomaa-deploy/README.md) for
+Each hostname directory is its own deployment module; a site that fails its
+check after deployment keeps serving its previous files. Hostname directories
+require an `index.html`. Support folders such as `device-panel/` are excluded. See [`../jomaa-deploy/README.md`](../jomaa-deploy/README.md) for
 receiver installation and infrastructure configuration.
 
 ```bash

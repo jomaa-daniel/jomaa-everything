@@ -32,8 +32,8 @@ This writes the sshd config and a host key to `~/.local/share/jomaa-ssh`
 and starts the `jomaa-ssh` user service on loopback port 2222. It prints the
 host key; `known_hosts` here must match it.
 
-[`../jomaa-deploy/deploy.json`](../jomaa-deploy/deploy.json) declares the public
-`ssh.jomaa.org` route. Repository deployment supplies its tunnel ingress and
+[`deploy.json`](deploy.json) declares this folder's external deployment module
+with the public `ssh.jomaa.org` route. Repository deployment supplies its tunnel ingress and
 DNS record. SSH provisioning manages the local sshd; it does not edit the
 tunnel. See [`../jomaa-deploy/README.md`](../jomaa-deploy/README.md) for deployment
 installation.
@@ -75,8 +75,8 @@ ssh -o ProxyCommand="cloudflared access ssh --hostname %h" jerry@ssh.jomaa.org
 
 On jerry: `systemctl --user disable --now jomaa-ssh`, delete
 `~/.config/systemd/user/jomaa-ssh.service` and `~/.local/share/jomaa-ssh`,
-remove the SSH route and external service from `jomaa-deploy/deploy.json`,
-and push to `main` to remove the public ingress and managed DNS record. On a
+delete `deploy_module.py` and `deploy.json` from this folder, and push to
+`main` to remove the public ingress and managed DNS record. On a
 laptop, delete the `jomaa-ssh` block from `~/.ssh/config`.
 
 ## Test

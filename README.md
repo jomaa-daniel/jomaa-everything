@@ -17,18 +17,21 @@ Repo rules for people and agents are in [`AGENTS.md`](AGENTS.md).
 
 ## Checks
 
-Run `python3 jomaa-deploy/verify.py` before pushing. It validates the deployment
-manifest and runs its declared checks: hub dependencies, formatting, types,
-lint, Node tests, dependency audit, the health page's types and tests, and
-Python tests for deployment, static sites, SSH, Tailscale, and the Pico imaging bench. CI runs the same script.
+Run `python3 jomaa-deploy/verify.py` before pushing. It loads every deployment
+module and runs its checks: hub dependencies, formatting, types, lint, Node
+tests, dependency audit, the health page's types and tests, and Python tests
+for deployment, static sites, SSH, Tailscale, and the Pico imaging bench. CI
+runs each module's checks in its own job.
 
 ## Deployment
 
-[`jomaa-deploy/deploy.json`](jomaa-deploy/deploy.json) declares services,
-service hostnames, path routes, persistent state, and verification commands.
-Static sites are discovered from `jomaa-static-pages/<hostname>/` directories. Verified pushes to `main` deploy through the signed HTTPS receiver
-on jerry, including the provision steps such as the tailnet policy. See [`jomaa-deploy/README.md`](jomaa-deploy/README.md) for installation,
-adding a site, and adding a service.
+Each top-level folder with a `deploy_module.py` is a deployment module, and its
+`deploy.json` declares its service, hostnames, path routes, persistent state,
+and checks. Static sites are discovered from `jomaa-static-pages/<hostname>/`
+directories. Verified pushes to `main` deploy through the signed HTTPS
+receiver on jerry, module by module, including commands such as the tailnet
+policy. See [`jomaa-deploy/README.md`](jomaa-deploy/README.md) for
+installation, adding a site, and adding a module.
 
 Turn on the pre-commit hook once per clone, so commits that break the hub's
 format, types or lint are refused:

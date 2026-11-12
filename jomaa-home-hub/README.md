@@ -24,9 +24,9 @@ reads for state. There is no separate Matter server or WebSocket.
 ## Deployment
 
 [`../jomaa-deploy/`](../jomaa-deploy/README.md) installs and deploys the hub,
-static sites, Cloudflare tunnel, routes, and DNS. Its manifest declares the
-services and their verification checks. Verified pushes to `main` deploy an
-exact repository revision through the signed receiver on jerry.
+static sites, Cloudflare tunnel, routes, and DNS. The hub's own `deploy.json`
+declares its service and verification checks. Verified pushes to `main` deploy
+an exact repository revision through the signed receiver on jerry.
 
 The hub's `.env`, `config.json`, and `data/` stay in the local checkout and
 are linked into each release. The installer creates a private `.env` with a
@@ -113,7 +113,8 @@ The panel source lives in `../jomaa-static-pages/device-panel/`. The hub build
 includes its HTML, JavaScript, and styles; releases
 package the panel from the same repository revision as the API.
 
-`../jomaa-deploy/deploy.json` declares the `jomaa.org` path route for the home
+[`deploy.json`](deploy.json) declares the hub's deployment module, including
+the `jomaa.org` path route for the home
 page, light panel, account pages, sign-in, and target API. The deployment workflow validates
 this routing with cloudflared and applies it automatically.
 

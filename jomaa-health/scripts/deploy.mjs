@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Deploys the health Worker in one version with the hub password as its HUB_PASSWORD secret.
-// jomaa-deploy runs it as a provision step on every activation of a release on jerry.
+// jomaa-deploy runs it as the health module's command on every activation on jerry.
 //   Cloudflare access: CLOUDFLARE_API_TOKEN, the token file deploy.tokenFile in config.json
 //   (mode 600), or else wrangler's own login (npx wrangler login)
 //   HUB_PASSWORD from the file deploy.hubEnvFile in config.json

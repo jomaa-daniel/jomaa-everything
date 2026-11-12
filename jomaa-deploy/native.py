@@ -12,12 +12,13 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
-CLOUDFLARED_VERSION = "2026.10.7"
-MIN_PUBLIC_PASSWORD_LENGTH = 12
+import settings
+
+CONFIG = settings.CONFIG
 
 
 def run(*args: str, capture: bool = False) -> str:
-    result = subprocess.run(args, text=True, check=True, timeout=300,
+    result = subprocess.run(args, text=True, check=True, timeout=CONFIG["commandTimeoutSeconds"],
                             stdout=subprocess.PIPE if capture else None)
     return result.stdout if capture else ""
 
@@ -33,17 +34,19 @@ def get_cloudflared(data: Path) -> Path:
     binary = data / "cloudflared"
     if binary.is_file():
         return binary
+    tunnel = CONFIG["tunnel"]
     request = urllib.request.Request(
-        "https://api.github.com/repos/cloudflare/cloudflared/releases/tags/" + CLOUDFLARED_VERSION,
-        headers={"User-Agent": "jomaa-deploy"})
-    with urllib.request.urlopen(request, timeout=60) as response:
+        f"{CONFIG['github']['api']}/repos/{tunnel['cloudflaredRepository']}/releases/tags/"
+        + tunnel["cloudflaredVersion"], headers={"User-Agent": CONFIG["userAgent"]})
+    with urllib.request.urlopen(request, timeout=CONFIG["github"]["timeoutSeconds"]) as response:
         release = json.load(response)
     asset = next((x for x in release["assets"] if x["name"] == "cloudflared-linux-" + arch()), None)
     if asset is None or not asset.get("digest", "").startswith("sha256:"):
         raise ValueError("Cloudflare release does not provide a binary with a SHA-256 digest")
     temp = binary.with_name(binary.name + ".download")
     try:
-        with urllib.request.urlopen(asset["browser_download_url"], timeout=120) as source, temp.open("wb") as out:
+        with urllib.request.urlopen(asset["browser_download_url"], timeout=tunnel["downloadTimeoutSeconds"]) as source, \
+                temp.open("wb") as out:
             shutil.copyfileobj(source, out)
         with temp.open("rb") as file:
             digest = hashlib.file_digest(file, "sha256").hexdigest()
@@ -108,12 +111,13 @@ def provision(source: Path, env: dict[str, str], name: str) -> None:
     version = run("node", "--version", capture=True).strip().lstrip("v")
     if tuple(int(n) for n in version.split(".")[:2]) < (22, 13):
         raise ValueError("Node.js 22.13 or newer is required")
-    if len(env.get("HUB_PASSWORD", "")) < MIN_PUBLIC_PASSWORD_LENGTH:
-        raise ValueError(f"the public hub requires a HUB_PASSWORD of at least {MIN_PUBLIC_PASSWORD_LENGTH} characters")
+    minimum = CONFIG["hubPasswordMinLength"]
+    if len(env.get("HUB_PASSWORD", "")) < minimum:
+        raise ValueError(f"the public hub requires a HUB_PASSWORD of at least {minimum} characters")
     if not env.get("CLOUDFLARE_API_TOKEN"):
         raise ValueError("CLOUDFLARE_API_TOKEN is required for managed DNS")
     config = json.loads((source / "jomaa-home-hub/config.json").read_text())
     if any(d.get("driver") == "govee" for d in config.get("devices", [])) and not env.get("GOVEE_API_KEY"):
         raise ValueError("config.json has Govee devices but GOVEE_API_KEY is not set")
-    setup_tunnel(source / "jomaa-home-hub/data/native", name)
+    setup_tunnel(source / CONFIG["tunnel"]["directory"], name)
     run("loginctl", "enable-linger", os.environ.get("USER") or str(os.getuid()))

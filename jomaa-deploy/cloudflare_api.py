@@ -2,12 +2,9 @@
 from __future__ import annotations
 
 import json
-import os
 import urllib.error
 import urllib.parse
 import urllib.request
-
-API = os.environ.get("CLOUDFLARE_API_BASE", "https://api.cloudflare.com/client/v4")
 
 
 class CloudflareError(Exception):
@@ -17,11 +14,12 @@ class CloudflareError(Exception):
 class Cloudflare:
     """Minimal Cloudflare v4 API client: just the calls this script needs."""
 
-    def __init__(self, token: str, base: str | None = None):
+    def __init__(self, token: str, base: str, timeout: float):
         if not token:
             raise CloudflareError("CLOUDFLARE_API_TOKEN is not set")
         self.token = token
-        self.base = (base or API).rstrip("/")
+        self.base = base.rstrip("/")
+        self.timeout = timeout
 
     def call(self, method: str, path: str, body: dict | None = None, query: dict | None = None):
         url = self.base + path + ("?" + urllib.parse.urlencode(query) if query else "")
@@ -29,7 +27,7 @@ class Cloudflare:
         req.add_header("Authorization", f"Bearer {self.token}")
         req.add_header("Content-Type", "application/json")
         try:
-            with urllib.request.urlopen(req, timeout=30) as res:
+            with urllib.request.urlopen(req, timeout=self.timeout) as res:
                 payload = json.loads(res.read() or b"{}")
         except urllib.error.HTTPError as e:
             try:

@@ -1,4 +1,3 @@
-import manifest from "../../jomaa-deploy/deploy.json" with { type: "json" };
 import config from "../config.json" with { type: "json" };
 
 /** ok: working. warn: the server works but a device it manages is not answering. fail: broken. */
@@ -19,6 +18,27 @@ export interface Report {
   results: Result[];
 }
 
+/** A public route of a deployed service. */
+export interface Route {
+  hostname: string;
+  service: string;
+  path: string | null;
+  probes: string[] | null;
+}
+
+/** A service's health check: its URL and the JSON fields its answer must contain. */
+export interface Health {
+  url: string;
+  json: Record<string, unknown>;
+}
+
+/** The live services and routes that jomaa-deploy writes to inventory.json before deploying the Worker. */
+export interface Inventory {
+  webhook: string;
+  services: Map<string, Health | null>;
+  routes: Route[];
+}
+
 /** Network access used by the checks. */
 export interface Probe {
   fetch: (url: string, init: RequestInit) => Promise<Response>;
@@ -35,7 +55,7 @@ const discoverTimeoutMs = config.discoveryTimeoutSeconds * 1000;
 const signInRefusal = "sign in first";
 /** Where the hub's whole-host route redirects its root. */
 const inventoryPath = "/devices";
-/** The deployment receiver's path, WEBHOOK_PATH in jomaa-deploy/deploy.py. */
+/** The deployment receiver's path, WEBHOOK_PATH in jomaa-deploy/settings.py. */
 const receiverPath = "/deploy";
 
 class CheckError extends Error {
@@ -97,6 +117,33 @@ function text(value: unknown, what: string): string {
   return value;
 }
 
+/** Validates the inventory written by jomaa-deploy. */
+export function parseInventory(value: unknown): Inventory {
+  const fields = object(value, "inventory");
+  const services = new Map<string, Health | null>();
+  for (const [name, entry] of Object.entries(object(fields["services"], "services"))) {
+    const health = object(entry, `service ${name}`)["health"];
+    if (health === null) {
+      services.set(name, null);
+      continue;
+    }
+    const check = object(health, `${name} health`);
+    services.set(name, { url: text(check["url"], `${name} health url`), json: object(check["json"], `${name} health json`) });
+  }
+  const routes = list(fields["routes"], "routes").map((entry): Route => {
+    const route = object(entry, "route");
+    const hostname = text(route["hostname"], "route hostname");
+    const probes = route["probes"] === null ? null : list(route["probes"], `${hostname} probes`).map((p) => text(p, "probe"));
+    return {
+      hostname,
+      service: text(route["service"], `${hostname} service`),
+      path: route["path"] === null ? null : text(route["path"], `${hostname} path`),
+      probes,
+    };
+  });
+  return { webhook: text(fields["webhook"], "webhook"), services, routes };
+}
+
 async function readJSON(res: Response, what: string): Promise<Record<string, unknown>> {
   if (!(res.headers.get("content-type") ?? "").startsWith("application/json")) {
     throw new CheckError(`${what}: expected JSON, got HTTP ${res.status} ${res.headers.get("content-type") ?? "without a type"}`);
@@ -125,27 +172,25 @@ async function hubRoute(probe: Probe, url: string, signal: AbortSignal): Promise
   throw new CheckError(`HTTP ${res.status}: not answered by the hub`);
 }
 
-const services = new Map(Object.entries(manifest.services));
-
-function hostChecks(probe: Probe): Check[] {
+function hostChecks(probe: Probe, inventory: Inventory): Check[] {
   const checks: Check[] = [];
-  for (const route of manifest.routes) {
+  for (const route of inventory.routes) {
     const base = `https://${route.hostname}`;
-    if ("probes" in route) {
+    if (route.probes !== null) {
       for (const path of route.probes) {
         checks.push(check(route.hostname, path, base + path, (signal) => hubRoute(probe, base + path, signal)));
       }
       continue;
     }
-    const service = services.get(route.service);
-    if (service !== undefined && "health" in service) {
-      const url = base + new URL(service.health.url).pathname;
+    const health = inventory.services.get(route.service);
+    if (health !== undefined && health !== null) {
+      const url = base + new URL(health.url).pathname;
       checks.push(
         check(route.hostname, `${route.service} health`, url, async (signal) => {
           const res = await probe.fetch(url, { signal });
           expectStatus(res, 200);
           const body = await readJSON(res, "health");
-          const expected = Object.entries(service.health.json);
+          const expected = Object.entries(health.json);
           for (const [field, value] of expected) {
             if (body[field] !== value) throw new CheckError(`${field} is ${JSON.stringify(body[field])}, expected ${JSON.stringify(value)}`);
           }
@@ -163,7 +208,7 @@ function hostChecks(probe: Probe): Check[] {
           return `redirects to ${inventoryPath}`;
         }),
       );
-      if (manifest.webhook === route.hostname) {
+      if (inventory.webhook === route.hostname) {
         checks.push(
           check(route.hostname, "Deployment receiver", base + receiverPath, async (signal) => {
             const res = await probe.fetch(base + receiverPath, { method: "POST", signal });
@@ -207,13 +252,13 @@ function hostChecks(probe: Probe): Check[] {
  * Signs in through the hub's path route, reads every room, device inventory, and Matter, then signs out.
  * Matter nodes are read through the hub's whole-host route, which serves every API path.
  */
-async function apiChecks(probe: Probe): Promise<Result[]> {
+async function apiChecks(probe: Probe, inventory: Inventory): Promise<Result[]> {
   const group = "Hub API";
-  const hubRoutes = manifest.routes.filter((route) => route.service === "hub");
-  const pathRoute = hubRoutes.find((route) => "path" in route);
-  const hostRoute = hubRoutes.find((route) => !("path" in route));
+  const hubRoutes = inventory.routes.filter((route) => route.service === "hub");
+  const pathRoute = hubRoutes.find((route) => route.path !== null);
+  const hostRoute = hubRoutes.find((route) => route.path === null);
   if (pathRoute === undefined || hostRoute === undefined) {
-    const missing = "deploy.json needs a hub path route and a hub whole-host route";
+    const missing = "the inventory needs a hub path route and a hub whole-host route";
     return [{ group, name: "Hub routes", url: "", status: "fail", detail: missing, ms: 0 }];
   }
   const site = `https://${pathRoute.hostname}`;
@@ -336,11 +381,11 @@ function worst(results: Result[]): Status {
 }
 
 /** Runs every check concurrently. */
-export async function runChecks(probe: Probe): Promise<Report> {
+export async function runChecks(probe: Probe, inventory: Inventory): Promise<Report> {
   const checkedAt = probe.now();
   const [hosts, api] = await Promise.all([
-    Promise.all(hostChecks(probe).map((c) => execute(c, probe.now))),
-    apiChecks(probe),
+    Promise.all(hostChecks(probe, inventory).map((c) => execute(c, probe.now))),
+    apiChecks(probe, inventory),
   ]);
   const results = [...hosts, ...api];
   return { checkedAt, status: worst(results), results };

@@ -1,3 +1,5 @@
+import json
+import os
 import tempfile
 import threading
 import unittest
@@ -7,10 +9,18 @@ from pathlib import Path
 
 import serve
 
+# The hostname directories of this folder, as the deployment maps them.
+SITES = {p.name: p for p in sorted(serve.ROOT.iterdir())
+         if p.is_dir() and "." in p.name and not p.name.startswith(".")}
+
 
 class ServeTest(unittest.TestCase):
     def setUp(self):
-        self.server = serve.make_server(serve.ROOT, 0)
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.site_map = Path(self.temp.name) / "sites.json"
+        self.site_map.write_text(json.dumps({host: str(folder) for host, folder in SITES.items()}))
+        self.server = serve.make_server(self.site_map, 0)
         self.port = self.server.server_address[1]
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
@@ -28,7 +38,7 @@ class ServeTest(unittest.TestCase):
                 return e.code, b"", dict(e.headers)
 
     def test_every_site_serves_its_index_with_security_headers(self):
-        for host, folder in serve.load_sites(serve.ROOT).items():
+        for host, folder in SITES.items():
             status, body, headers = self.get(host, "/")
             self.assertEqual(status, 200, host)
             self.assertEqual(body, (folder / "index.html").read_bytes())
@@ -41,31 +51,27 @@ class ServeTest(unittest.TestCase):
         self.assertEqual(body, b'{"ok":true}')
         self.assertEqual(headers["Content-Type"], "application/json")
 
-    def test_new_hostname_folder_and_nested_page_are_served_automatically(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory) / "jomaa-static-pages"
-            site = root / "new.example.org"
-            page = site / "gallery"
-            page.mkdir(parents=True)
-            (site / "index.html").write_text("new site")
-            (page / "index.html").write_text("new gallery")
-            server = serve.make_server(root, 0)
-            thread = threading.Thread(target=server.serve_forever, daemon=True)
-            thread.start()
-            try:
-                port = server.server_address[1]
-                for path, expected in (("/", b"new site"), ("/gallery/", b"new gallery")):
-                    request = urllib.request.Request(f"http://127.0.0.1:{port}{path}",
-                                                     headers={"Host": "new.example.org"})
-                    with urllib.request.urlopen(request, timeout=5) as response:
-                        self.assertEqual(response.read(), expected)
-            finally:
-                server.shutdown()
-                server.server_close()
-                thread.join(timeout=5)
+    def test_a_rewritten_site_map_is_served_without_a_restart(self):
+        site = Path(self.temp.name) / "new.example.org"
+        page = site / "gallery"
+        page.mkdir(parents=True)
+        (site / "index.html").write_text("new site")
+        (page / "index.html").write_text("new gallery")
+        self.assertEqual(self.get("new.example.org", "/")[0], 404)
+        replacement = self.site_map.with_name("sites.new")
+        replacement.write_text(json.dumps({"new.example.org": str(site)}))
+        os.replace(replacement, self.site_map)
+        for path, expected in (("/", b"new site"), ("/gallery/", b"new gallery")):
+            self.assertEqual(self.get("new.example.org", path)[:2], (200, expected))
+        self.assertEqual(self.get(next(iter(SITES)), "/")[0], 404)
+
+    def test_a_missing_site_map_serves_no_sites(self):
+        self.site_map.unlink()
+        self.assertEqual(self.get(next(iter(SITES)), "/")[0], 404)
+        self.assertEqual(self.get("127.0.0.1", "/healthz")[0], 200)
 
     def test_unknown_host_hidden_files_listings_and_escapes_are_404(self):
-        host = next(iter(serve.load_sites(serve.ROOT)))
+        host = next(iter(SITES))
         for h, path in [("evil.example", "/"), (host, "/.git/config"), (host, "/images/"),
                         (host, "/../serve.py"), (host, "/%2e%2e/serve.py"), (host, "/missing.png")]:
             self.assertEqual(self.get(h, path)[0], 404, (h, path))

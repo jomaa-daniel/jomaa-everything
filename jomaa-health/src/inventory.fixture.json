@@ -1,0 +1,24 @@
+{
+  "webhook": "hub.jomaa.org",
+  "services": {
+    "hub": {
+      "origin": "http://127.0.0.1:8080",
+      "health": { "url": "http://127.0.0.1:8080/healthz", "json": { "ok": true, "matterConnected": true } }
+    },
+    "ssh": { "origin": "ssh://127.0.0.1:2222", "health": null },
+    "static": {
+      "origin": "http://127.0.0.1:8090",
+      "health": { "url": "http://127.0.0.1:8090/healthz", "json": { "ok": true } }
+    }
+  },
+  "routes": [
+    { "hostname": "hub.jomaa.org", "service": "hub", "path": null, "probes": null },
+    {
+      "hostname": "jomaa.org",
+      "service": "hub",
+      "path": "^/(home(/.*)?|lights(/.*)?|api/(login|logout|manage|devices|targets(/.*)?|matter/discover))?$",
+      "probes": ["/", "/home", "/home/style.css", "/lights", "/lights/app.js", "/api/manage", "/api/devices"]
+    },
+    { "hostname": "ssh.jomaa.org", "service": "ssh", "path": null, "probes": null }
+  ]
+}

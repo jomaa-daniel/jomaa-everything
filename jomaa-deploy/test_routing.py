@@ -1,93 +1,83 @@
-"""Exercise DNS reconciliation and cloudflared validation without live changes."""
-import copy
+"""DNS reconciliation and cloudflared validation, without live changes."""
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-import manifest
 import routing
-
-
-class Cloudflare:
-    def __init__(self, records=()):
-        self.records = {str(i): {"id": str(i), **r} for i, r in enumerate(records, start=1)}
-        self.next_id = len(self.records) + 1
-        self.mutations = []
-
-    def find_zone(self, host):
-        return {"id": "zone"}
-
-    def call(self, method, path, body=None, query=None):
-        if method == "GET":
-            return [copy.deepcopy(r) for r in self.records.values() if r["name"] == query["name"]]
-        self.mutations.append((method, path, body))
-        if method == "POST":
-            id = str(self.next_id)
-            self.next_id += 1
-            self.records[id] = {"id": id, **body}
-            return self.records[id]
-        id = path.rsplit("/", 1)[1]
-        if method == "DELETE":
-            del self.records[id]
-        else:
-            self.records[id] = {"id": id, **body}
-            return self.records[id]
+from fixtures import FakeCloudflare, TARGET, TUNNEL_ID, cname
 
 
 class DNSTest(unittest.TestCase):
-    def record(self, name, **values):
-        return {"type": "CNAME", "name": name, "content": "tunnel.cfargotunnel.com", "proxied": True,
-                "ttl": 1, "comment": routing.DNS_COMMENT, **values}
-
     def test_creates_adopts_removes_and_is_idempotent(self):
-        cf = Cloudflare([self.record("keep.jomaa.org", comment="other"), self.record("remove.jomaa.org")])
-        dns = routing.DNS(cf, "tunnel")
-        dns.apply({"keep.jomaa.org", "new.jomaa.org"}, {"keep.jomaa.org", "remove.jomaa.org"})
-        self.assertEqual({r["name"] for r in cf.records.values()}, {"keep.jomaa.org", "new.jomaa.org"})
+        cf = FakeCloudflare([cname("keep.jomaa.org", comment="other"), cname("remove.jomaa.org")])
+        dns = routing.DNS(cf, TUNNEL_ID)
+        statuses = dns.reconcile({"keep.jomaa.org", "new.jomaa.org"}, {"keep.jomaa.org", "remove.jomaa.org"})
+        self.assertEqual(statuses, {"keep.jomaa.org": "updated", "new.jomaa.org": "created",
+                                    "remove.jomaa.org": "deleted"})
+        self.assertEqual(cf.hosts(), {"keep.jomaa.org", "new.jomaa.org"})
         self.assertTrue(all(r["comment"] == routing.DNS_COMMENT for r in cf.records.values()))
         cf.mutations.clear()
-        dns.apply({"keep.jomaa.org", "new.jomaa.org"}, {"keep.jomaa.org", "new.jomaa.org"})
+        statuses = dns.reconcile({"keep.jomaa.org", "new.jomaa.org"}, {"keep.jomaa.org", "new.jomaa.org"})
+        self.assertEqual(set(statuses.values()), {"unchanged"})
         self.assertEqual(cf.mutations, [])
 
-    def test_conflicts_fail_before_any_mutation(self):
-        for record in (self.record("conflict.jomaa.org", type="A", content="192.0.2.1"),
-                       self.record("conflict.jomaa.org", content="another.cfargotunnel.com")):
-            cf = Cloudflare([record])
-            with self.assertRaisesRegex(ValueError, "conflicts"):
-                routing.DNS(cf, "tunnel").apply({"new.jomaa.org", "conflict.jomaa.org"}, set())
-            self.assertEqual(cf.mutations, [])
+    def test_a_conflict_is_reported_for_its_host_only(self):
+        for record in ({"type": "A", "name": "conflict.jomaa.org", "content": "192.0.2.1"},
+                       cname("conflict.jomaa.org", content="another.cfargotunnel.com")):
+            cf = FakeCloudflare([record])
+            statuses = routing.DNS(cf, TUNNEL_ID).reconcile({"new.jomaa.org", "conflict.jomaa.org"}, set())
+            self.assertEqual(statuses, {"conflict.jomaa.org": "conflict", "new.jomaa.org": "created"})
+            self.assertEqual([m[0] for m in cf.mutations], ["POST"])
+            self.assertEqual(cf.records["1"]["content"], record["content"])
 
     def test_does_not_remove_unmanaged_records(self):
-        cf = Cloudflare([self.record("removed.jomaa.org", comment="another owner")])
-        dns = routing.DNS(cf, "tunnel")
-        dns.apply(set(), {"removed.jomaa.org"})
-        self.assertEqual(len(cf.records), 1)
+        cf = FakeCloudflare([cname("removed.jomaa.org", comment="another owner")])
+        statuses = routing.DNS(cf, TUNNEL_ID).reconcile(set(), {"removed.jomaa.org"})
+        self.assertEqual(statuses, {"removed.jomaa.org": "unmanaged"})
         self.assertEqual(cf.mutations, [])
 
-    def test_restores_created_updated_and_deleted_records(self):
-        cf = Cloudflare([self.record("keep.jomaa.org", comment="original", proxied=False),
-                         self.record("remove.jomaa.org")])
-        original = [routing.DNS.record_body(r) for r in cf.records.values()]
-        dns = routing.DNS(cf, "tunnel")
-        dns.apply({"keep.jomaa.org", "new.jomaa.org"}, {"keep.jomaa.org", "remove.jomaa.org"})
-        dns.restore()
-        actual = [routing.DNS.record_body(r) for r in cf.records.values()]
-        self.assertCountEqual(actual, original)
+    def test_an_error_on_one_host_leaves_the_others(self):
+        cf = FakeCloudflare()
+        cf.broken = {"broken.jomaa.org"}
+        with mock.patch("sys.stderr"):
+            statuses = routing.DNS(cf, TUNNEL_ID).reconcile({"broken.jomaa.org", "fine.jomaa.org"}, set())
+        self.assertEqual(statuses, {"broken.jomaa.org": "failed", "fine.jomaa.org": "created"})
+        self.assertEqual(cf.records["1"]["content"], TARGET)
 
 
 class IngressTest(unittest.TestCase):
+    RULES = [{"hostname": "hub.jomaa.org", "path": "^/deploy$", "service": "http://127.0.0.1:8091"},
+             {"hostname": "hub.jomaa.org", "service": "http://127.0.0.1:8080"},
+             {"service": "http_status:404"}]
+
+    def test_regeneration_preserves_tunnel_options_and_removes_old_routes(self):
+        original = (f'tunnel: "{TUNNEL_ID}"\ncredentials-file: "/home/jerry/.cloudflared/private.json"\n'
+                    'metrics: 127.0.0.1:9090\ningress:\n'
+                    '  - hostname: "removed.jomaa.org"\n    service: http://127.0.0.1:9999\n'
+                    '  - service: http_status:404\n')
+        updated = routing.render(original, self.RULES)
+        self.assertNotIn("removed.jomaa.org", updated)
+        self.assertIn('credentials-file: "/home/jerry/.cloudflared/private.json"', updated)
+        self.assertIn("metrics: 127.0.0.1:9090", updated)
+        self.assertLess(updated.index("^/deploy$"), updated.index("http://127.0.0.1:8080"))
+        self.assertEqual(routing.render(updated, self.RULES), updated)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "tunnel.yml"
+            path.write_text(updated)
+            self.assertEqual(routing.tunnel_id(path), TUNNEL_ID)
+
     def test_shadowed_route_fails_validation_without_replacing_config(self):
-        config = manifest.load(Path(__file__).resolve().parent.parent)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "tunnel.yml"
             original = 'tunnel: fixture\ningress:\n  - service: http_status:404\n'
             path.write_text(original)
+            probes = [("hub.jomaa.org", "/deploy", "http://127.0.0.1:8091")]
             with mock.patch.object(routing.subprocess, "run", side_effect=[
                     SimpleNamespace(stdout=""), SimpleNamespace(stdout="service: http://127.0.0.1:8080")]):
                 with self.assertRaisesRegex(ValueError, "does not reach"):
-                    routing.prepare(Path("cloudflared"), path, config)
+                    routing.prepare(Path("cloudflared"), path, self.RULES, probes, 30)
             self.assertEqual(path.read_text(), original)
             self.assertEqual(list(path.parent.iterdir()), [path])
 
