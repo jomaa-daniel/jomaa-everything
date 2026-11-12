@@ -1,11 +1,12 @@
 #!/usr/bin/env node
-// Deploys the health Worker and stores the hub password as its HUB_PASSWORD secret.
+// Deploys the health Worker in one version with the hub password as its HUB_PASSWORD secret.
+// jomaa-deploy runs it as a provision step on every activation of a release on jerry.
 //   Cloudflare access: CLOUDFLARE_API_TOKEN, the token file deploy.tokenFile in config.json
 //   (mode 600), or else wrangler's own login (npx wrangler login)
 //   HUB_PASSWORD from the file deploy.hubEnvFile in config.json
 import { spawnSync } from "node:child_process";
-import { readFileSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const here = new URL("..", import.meta.url).pathname;
@@ -44,16 +45,14 @@ function hubPassword() {
 
 const password = hubPassword();
 const env = { ...process.env, ...token(), WRANGLER_SEND_METRICS: "false" };
-const wrangler = (args, input) => {
-  const run = spawnSync("npx", ["wrangler", ...args], {
-    cwd: here,
-    env,
-    input,
-    stdio: [input === undefined ? "inherit" : "pipe", "inherit", "inherit"],
-  });
-  if (run.status !== 0) fail(`wrangler ${args.join(" ")} failed`);
-};
-
-wrangler(["deploy"]);
-wrangler(["secret", "put", "HUB_PASSWORD"], password);
-console.log("Deployed the health page and its HUB_PASSWORD secret");
+const secrets = mkdtempSync(join(tmpdir(), "jomaa-health-"));
+let status;
+try {
+  const file = join(secrets, "secrets.json");
+  writeFileSync(file, JSON.stringify({ HUB_PASSWORD: password }), { mode: 0o600 });
+  status = spawnSync("npx", ["wrangler", "deploy", "--secrets-file", file], { cwd: here, env, stdio: "inherit" }).status;
+} finally {
+  rmSync(secrets, { recursive: true, force: true });
+}
+if (status !== 0) fail("wrangler deploy failed");
+console.log("Deployed the health page with its HUB_PASSWORD secret");

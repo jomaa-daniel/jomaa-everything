@@ -15,7 +15,7 @@ and are not repeated here:
 | Hub path route and hub whole-host route | Sign-in and API reads go through the path route; Matter nodes through the whole-host route. |
 
 Secrets are not configuration. The hub password is the Worker secret
-`HUB_PASSWORD`, uploaded by `npm run deploy` from the file named by
+`HUB_PASSWORD`, uploaded by `scripts/deploy.mjs` from the file named by
 `deploy.hubEnvFile`.
 
 ## config.json

@@ -39,9 +39,22 @@ commands and changes no settings.
 
 ## Deploy
 
-Deployment runs on jerry with wrangler's Cloudflare login, stored in
-`~/.config/.wrangler`. Jerry has no browser, so forward wrangler's OAuth
-callback port from a laptop and open the printed URL there:
+Every deployment of the repository deploys the Worker. Pushing to `main`
+activates a release on jerry, and jomaa-deploy's provision steps in
+[`../jomaa-deploy/deploy.json`](../jomaa-deploy/deploy.json) run `npm ci` and
+`scripts/deploy.mjs` in it, after the services are healthy and the tunnel
+serves the release. The Worker checks the release that deployed it. A failed
+Worker deployment fails the activation and rolls jerry back to the previous
+release.
+
+`scripts/deploy.mjs` runs `wrangler deploy` with `HUB_PASSWORD` from the file
+named by `deploy.hubEnvFile` as a secrets file, so the code and the secret go
+out as one Worker version. Deployment attaches the custom domain
+`health.jomaa.org` and creates its DNS record.
+
+Wrangler on jerry uses the Cloudflare login stored in `~/.config/.wrangler`,
+once per machine. Jerry has no browser, so forward wrangler's OAuth callback
+port from a laptop and open the printed URL there:
 
 ```bash
 ssh -L 8976:localhost:8976 jerry
@@ -52,17 +65,8 @@ A Cloudflare API token that can deploy Workers works instead: set
 `CLOUDFLARE_API_TOKEN`, or save it with mode 600 in the file named by
 `deploy.tokenFile`. Either takes precedence over the login.
 
-Then, from this directory on jerry:
-
-```bash
-npm ci
-npm run deploy
-```
-
-`scripts/deploy.mjs` runs `wrangler deploy`, which attaches the custom domain
-`health.jomaa.org` and creates its DNS record, then stores `HUB_PASSWORD` from
-the file named by `deploy.hubEnvFile` as the Worker secret. Redeploy after changing
-routes, static sites, the hub password, or this folder.
+`npm run deploy` in this directory deploys the Worker by hand, for example
+after changing the hub password without a new release.
 
 ## Configuration
 

@@ -101,6 +101,22 @@
         "{release}/jomaa-tailscale/tailnet.py",
         "deploy"
       ]
+    },
+    {
+      "directory": "jomaa-health",
+      "command": [
+        "npm",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ]
+    },
+    {
+      "directory": "jomaa-health",
+      "command": [
+        "node",
+        "{release}/jomaa-health/scripts/deploy.mjs"
+      ]
     }
   ],
   "state": [
