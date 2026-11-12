@@ -23,7 +23,10 @@ const token = inviteToken();
 async function start() {
   if (!token) return invalid();
   try {
-    await api("/api/invites/check", "POST", { token });
+    const { passwordLength } = await api("/api/invites/check", "POST", { token });
+    $("password-min").textContent = passwordLength.min;
+    $("password").minLength = passwordLength.min;
+    $("password").maxLength = passwordLength.max;
     $("join-form").hidden = false;
     $("username").focus();
   } catch (reason) {

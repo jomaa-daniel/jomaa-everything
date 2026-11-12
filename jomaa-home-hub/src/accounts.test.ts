@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { AccountError, Accounts, inviteLifetimeMs, sessionLifetimeMs } from "./accounts.js";
+import { settings } from "./settings.js";
 
 test("invites and sessions expire", async () => {
   const accounts = new Accounts(":memory:");
@@ -30,10 +31,12 @@ test("passwords are verified without storing them", async () => {
   assert.equal(await accounts.verify("nobody", "a long enough password"), null);
 });
 
-test("an account keeps its 20 newest sessions", async () => {
+test("an account keeps its newest sessions up to the configured count", async () => {
   const accounts = new Accounts(":memory:");
   await accounts.join(accounts.createInvite().token, "sam", "a long enough password");
-  const sessions = Array.from({ length: 21 }, () => accounts.createSession("sam"));
+  const sessions = Array.from({ length: settings.accounts.sessionsPerAccount + 1 }, () =>
+    accounts.createSession("sam"),
+  );
   assert.equal(accounts.session(sessions[0] ?? ""), null, "the oldest session ended");
   assert.ok(sessions.slice(1).every((token) => accounts.session(token)?.username === "sam"));
 });

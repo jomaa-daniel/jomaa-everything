@@ -29,11 +29,11 @@ async function load() {
 $("create").addEventListener("click", async () => {
   $("create").disabled = true;
   try {
-    const { token } = await api("/api/invites", "POST", {});
+    const { invite, token } = await api("/api/invites", "POST", {});
     $("link").value = `${location.origin}/join#${token}`;
     $("copy").disabled = false;
     $("link").select();
-    notify("Link created. It is shown only once.", true);
+    notify(`Link created; it expires ${when(invite.expiresAt)} and is shown only once.`, true);
     await load();
   } catch (reason) {
     notify(reason.message);

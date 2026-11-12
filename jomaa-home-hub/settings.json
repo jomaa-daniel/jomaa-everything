@@ -1,0 +1,12 @@
+{
+  "accounts": {
+    "databaseFile": "accounts.sqlite",
+    "sessionLifetimeDays": 30,
+    "sessionsPerAccount": 20,
+    "inviteLifetimeDays": 7,
+    "passwordLength": {
+      "min": 12,
+      "max": 256
+    }
+  }
+}

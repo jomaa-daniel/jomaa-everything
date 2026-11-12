@@ -128,13 +128,14 @@ invite people and change permissions. The phone apps and scripts sign in as the
 owner.
 
 `https://jomaa.org/invite` creates share links of the form
-`https://jomaa.org/join#<token>`. Each link works once and expires after 7
-days; the page shows a link only when it is created and lists unused invites
-for revoking. The token stays in the URL fragment, so it never reaches the
+`https://jomaa.org/join#<token>`. Each link works once and expires after
+`accounts.inviteLifetimeDays`; the page shows a link only when it is created
+and lists unused invites for revoking. The token stays in the URL fragment, so it never reaches the
 tunnel or the hub's logs.
 
 Opening a link shows a form for a username (3 to 32 lowercase letters, digits,
-dots, dashes, or underscores) and a password (at least 12 characters). Creating
+dots, dashes, or underscores) and a password within
+`accounts.passwordLength`. Creating
 the account leaves the browser's current session unchanged. A new account can't
 open any page.
 
@@ -152,8 +153,11 @@ signs it out everywhere. Accounts sign in on `/lights`, `/devices`, and
 `/manage` with their username and password; a page they lack the scope for
 says so and offers sign-in again. Signing in ends the session it replaces.
 Accounts, password hashes (scrypt), scopes, unused invites, and sessions persist
-in `data/accounts.sqlite`. Sessions last 30 days, each account keeps its 20
-newest, and only token hashes are stored. Owner and account sign-in failures
+in `accounts.databaseFile` beside the health database. Sessions last
+`accounts.sessionLifetimeDays`, each account keeps its newest
+`accounts.sessionsPerAccount`, and only token hashes are stored. These
+settings are in [`settings.json`](settings.json), described in
+[`settings.md`](settings.md). Owner and account sign-in failures
 are rate limited separately; sign-in and sign-out refuse cross-site requests.
 
 ## Browser check
