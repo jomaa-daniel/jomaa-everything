@@ -118,7 +118,7 @@ async function run(log: Log): Promise<void> {
       try {
         people.prune();
       } catch (err) {
-        log.error("expired session cleanup failed", { err });
+        log.error("expired session and invite cleanup failed", { err });
       }
     }, 60 * 60_000);
     cleanup.unref();

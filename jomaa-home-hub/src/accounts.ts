@@ -20,6 +20,12 @@ export function isScope(value: unknown): value is Scope {
   return scopes.some((scope) => scope.id === value);
 }
 
+/** The 403 message for an account without a scope. */
+export function refusal(scope: Scope): string {
+  const name = scopes.find((candidate) => candidate.id === scope)?.name ?? scope;
+  return `Your account does not have access to ${name}. Ask the hub owner to grant it.`;
+}
+
 /** Whether a request may use a scope: signed out (401), signed in without the scope (403), or allowed. */
 export type Access = "signed-out" | "forbidden" | "allowed";
 
@@ -49,6 +55,7 @@ export const inviteLifetimeMs = 7 * 24 * 60 * 60_000;
 export const minPasswordLength = 12;
 const maxPasswordLength = 256;
 const keyLength = 64;
+const maxSessionsPerAccount = 20;
 const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
 
 function hashScrypt(password: string, salt: Buffer): Promise<Buffer> {
@@ -186,6 +193,7 @@ export class Accounts {
   }
 
   setScopes(username: string, granted: Scope[]): Account {
+    username = username.trim().toLowerCase();
     const account = this.account(username);
     if (!account) throw new AccountError(404, "Account not found");
     this.#db.exec("BEGIN");
@@ -203,16 +211,25 @@ export class Accounts {
 
   /** Deletes the account, its scopes, and its sessions. */
   deleteAccount(username: string): void {
-    if (this.#db.prepare("DELETE FROM accounts WHERE username=?").run(username).changes === 0)
+    if (this.#db.prepare("DELETE FROM accounts WHERE username=?").run(username.trim().toLowerCase()).changes === 0)
       throw new AccountError(404, "Account not found");
   }
 
-  /** Starts a session and returns its token; only the token's hash is stored. */
+  /**
+   * Starts a session and returns its token; only the token's hash is stored.
+   * An account keeps its 20 newest sessions.
+   */
   createSession(username: string): string {
     const token = newToken();
     this.#db
       .prepare("INSERT INTO sessions VALUES (?, ?, ?)")
       .run(digest(token), username, this.now() + sessionLifetimeMs);
+    this.#db
+      .prepare(
+        `DELETE FROM sessions WHERE username=? AND token_hash NOT IN
+          (SELECT token_hash FROM sessions WHERE username=? ORDER BY expires_at DESC, rowid DESC LIMIT ?)`,
+      )
+      .run(username, username, maxSessionsPerAccount);
     return token;
   }
 

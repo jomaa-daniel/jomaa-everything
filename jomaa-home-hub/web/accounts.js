@@ -8,6 +8,9 @@ export class ApiError extends Error {
   }
 }
 
+let signedOut = () => {};
+
+/** Sends a JSON request; a 401 outside sign-in shows the page's signed-out state. */
 export async function api(path, method = "GET", data) {
   const response = await fetch(path, {
     method,
@@ -17,6 +20,7 @@ export async function api(path, method = "GET", data) {
     body: data === undefined ? undefined : JSON.stringify(data),
   });
   const body = await response.json().catch(() => ({}));
+  if (response.status === 401 && path !== "/api/login") signedOut();
   if (!response.ok) throw new ApiError(response.status, body.error || `Request failed (HTTP ${response.status})`);
   return body;
 }
@@ -38,8 +42,8 @@ export function when(timestamp) {
 }
 
 /**
- * Runs an owner-only page: shows the sign-in form when signed out, an
- * explanation for accounts that are not the owner, and calls load for the owner.
+ * Runs an owner-only page: the hub password sign-in when signed out, a notice
+ * for accounts, and load for the owner. Returns the function that starts it.
  */
 export function ownerPage(load) {
   const show = (state) => {
@@ -48,19 +52,18 @@ export function ownerPage(load) {
     $("content").hidden = state !== "owner";
     $("logout").hidden = state === "signed-out";
   };
+  signedOut = () => show("signed-out");
   const start = async () => {
     try {
       const session = await api("/api/session");
       if (!session.owner) {
-        $("not-owner-name").textContent = session.username;
         show("not-owner");
         return;
       }
       show("owner");
       await load();
     } catch (reason) {
-      if (reason instanceof ApiError && reason.status === 401) show("signed-out");
-      else notify(reason.message);
+      if (!(reason instanceof ApiError && reason.status === 401)) notify(reason.message);
     }
   };
   $("login-form").addEventListener("submit", async (event) => {
@@ -68,8 +71,7 @@ export function ownerPage(load) {
     const button = event.submitter;
     button.disabled = true;
     try {
-      const username = $("username").value.trim();
-      await api("/api/login", "POST", { password: $("password").value, ...(username ? { username } : {}) });
+      await api("/api/login", "POST", { password: $("password").value });
       notify("");
       await start();
     } catch (reason) {

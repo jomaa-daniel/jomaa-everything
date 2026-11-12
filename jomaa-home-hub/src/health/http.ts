@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Access } from "../accounts.js";
+import { refusal, type Access } from "../accounts.js";
 import { isHTTPS, LoginLimiter, clientIP } from "../limiter.js";
 import type { Log } from "../log.js";
 import type { MatterAdmin } from "../matter/nodes.js";
@@ -44,8 +44,7 @@ export class HealthHttp {
       return true;
     }
     if (access === "signed-out") throw new HealthError(401, "sign in first");
-    if (access === "forbidden")
-      throw new HealthError(403, "Your account does not have access to Device health. Ask the hub owner to grant it.");
+    if (access === "forbidden") throw new HealthError(403, refusal("devices"));
     // Browser mutations must be same-origin; scripts use the Authorization header.
     if (!["GET", "HEAD"].includes(req.method ?? "")) {
       if (req.headers["sec-fetch-site"] === "cross-site") throw new HealthError(403, "cross-site request refused");

@@ -133,11 +133,13 @@ days; the page shows a link only when it is created and lists unused invites
 for revoking. The token stays in the URL fragment, so it never reaches the
 tunnel or the hub's logs.
 
-Opening a link walks through choosing a username (3 to 32 lowercase letters,
-digits, dots, dashes, or underscores) and a password (at least 12 characters),
-then signs the new account in. A new account can't open any page.
+Opening a link shows a form for a username (3 to 32 lowercase letters, digits,
+dots, dashes, or underscores) and a password (at least 12 characters). Creating
+the account leaves the browser's current session unchanged. A new account can't
+open any page.
 
-`https://jomaa.org/permissions` lists accounts with a checkbox per scope:
+`https://jomaa.org/permissions` lists accounts with a checkbox per scope; each
+change saves immediately:
 
 | Scope     | Grants                                                             |
 | --------- | ------------------------------------------------------------------ |
@@ -146,10 +148,19 @@ then signs the new account in. A new account can't open any page.
 | `manage`  | `/manage`: types, groups, and assignments                          |
 
 Changes apply to signed-in accounts on their next request. Deleting an account
-signs it out everywhere. Accounts sign in on any page with their username and
-password; a page they lack the scope for says so. Accounts, password hashes
-(scrypt), scopes, unused invites, and sessions persist in
-`data/accounts.sqlite`. Sessions last 30 days; only token hashes are stored.
+signs it out everywhere. Accounts sign in on `/lights`, `/devices`, and
+`/manage` with their username and password; a page they lack the scope for
+says so and offers sign-in again. Signing in ends the session it replaces.
+Accounts, password hashes (scrypt), scopes, unused invites, and sessions persist
+in `data/accounts.sqlite`. Sessions last 30 days, each account keeps its 20
+newest, and only token hashes are stored. Owner and account sign-in failures
+are rate limited separately; sign-in and sign-out refuse cross-site requests.
+
+## Browser check
+
+`npm run test:browser` drives the invite, join, and permission pages in Chrome
+against the real API and built pages, with a fake light. It uses the installed
+Google Chrome (`channel: "chrome"`); CI runs it as a declared check.
 
 ## Register lights
 
@@ -312,7 +323,7 @@ owner-only.
 | POST   | `/api/logout`                 |                                                                           | clears the cookie and ends an account session                         |
 | GET    | `/api/session`                |                                                                           | `{"owner","username","scopes"}` for the caller                        |
 | POST   | `/api/invites/check`          | `{"token"}`                                                               | the invite's `expiresAt`, 404 when invalid, used, or expired          |
-| POST   | `/api/join`                   | `{"token","username","password"}`                                         | creates an account with no scopes and signs it in                     |
+| POST   | `/api/join`                   | `{"token","username","password"}`                                         | creates an account with no scopes                                     |
 | GET    | `/api/invites`                |                                                                           | unused invites                                                        |
 | POST   | `/api/invites`                | `{}`                                                                      | creates an invite; returns `{"invite","token"}`                       |
 | DELETE | `/api/invites/{id}`           |                                                                           | revokes an invite                                                     |
