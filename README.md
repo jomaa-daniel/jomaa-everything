@@ -10,6 +10,7 @@ Home projects, kept in one repo.
 | `jomaa-static-pages/` | Static websites served through the hub's tunnel, such as Sarah's art portfolio at sarah.jomaa.org. |
 | `jomaa-health/` | Public health page at health.jomaa.org, a Cloudflare Worker that checks everything reachable through jomaa.org. |
 | `jomaa-ssh/` | SSH into jerry from anywhere through the hub's Cloudflare tunnel (`ssh jerry`), keys only. |
+| `jomaa-tailscale/` | jerry on Tailscale: home LAN subnet router and exit node, with the tailnet policy in Terraform. |
 | `pico-imaging-bench/` | Flash and verify the Pico health reporter over USB. |
 
 Repo rules for people and agents are in [`AGENTS.md`](AGENTS.md).
@@ -19,7 +20,7 @@ Repo rules for people and agents are in [`AGENTS.md`](AGENTS.md).
 Run `python3 jomaa-deploy/verify.py` before pushing. It validates the deployment
 manifest and runs its declared checks: hub dependencies, formatting, types,
 lint, Node tests, dependency audit, the health page's types and tests, and
-Python tests for deployment, static sites, SSH, and the Pico imaging bench. CI runs the same script.
+Python tests for deployment, static sites, SSH, Tailscale, and the Pico imaging bench. CI runs the same script.
 
 ## Deployment
 

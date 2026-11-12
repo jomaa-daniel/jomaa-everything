@@ -1,0 +1,32 @@
+{
+  "groups": {
+    "group:family": []
+  },
+  "tagOwners": {
+    "tag:jerry": ["autogroup:admin"]
+  },
+  "autoApprovers": {
+    "routes": {
+      "192.168.1.0/24": ["tag:jerry"]
+    },
+    "exitNode": ["tag:jerry"]
+  },
+  "grants": [
+    {
+      "src": ["autogroup:admin"],
+      "dst": ["*"],
+      "ip": ["*"]
+    },
+    {
+      "src": ["group:family"],
+      "dst": ["autogroup:internet"],
+      "ip": ["*"]
+    }
+  ],
+  "tests": [
+    {
+      "src": "group:family",
+      "deny": ["192.168.1.1:80", "192.168.1.239:22", "tag:jerry:22"]
+    }
+  ]
+}

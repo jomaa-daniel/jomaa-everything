@@ -61,6 +61,18 @@
       ]
     },
     {
+      "directory": "jomaa-tailscale",
+      "command": [
+        "{python}",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        ".",
+        "-q"
+      ]
+    },
+    {
       "directory": "pico-imaging-bench",
       "command": [
         "{python}",
