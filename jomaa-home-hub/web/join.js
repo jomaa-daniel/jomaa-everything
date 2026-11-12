@@ -32,6 +32,8 @@ async function start() {
   }
 }
 
+window.addEventListener("hashchange", () => location.reload());
+
 $("username").addEventListener("input", () => {
   $("username").value = $("username").value.toLowerCase();
 });
