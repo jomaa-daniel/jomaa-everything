@@ -22,6 +22,8 @@ const CUSTOM_COLORS_KEY = "device-panel.custom-colors";
 const DEFAULT_CUSTOM_COLORS = { "custom-1": "#007aff", "custom-2": "#af52de" };
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const REFRESH_INTERVAL_MS = 60_000;
+/** Length of the vibration a button press gives where vibration is supported. */
+const HAPTIC_MS = 10;
 
 /** Colors offered for the custom swatches: vivid hues, then softer tints. */
 const PALETTE = [
@@ -1045,6 +1047,33 @@ $("tab-list").addEventListener("click", (event) => {
   const button = event.target.closest("[data-tab]");
   const tab = app.tabs.find((item) => item.key === button?.dataset.tab);
   if (tab && !sameIds(tab.ids, app.selected)) selectTargets(tab.ids);
+});
+
+/**
+ * A light tap of haptic feedback. Browsers with the Vibration API vibrate
+ * briefly; Safari on iOS has no such API but ticks when a switch control
+ * toggles, so a hidden switch is toggled instead.
+ */
+const haptic = (() => {
+  const label = document.createElement("label");
+  label.hidden = true;
+  label.setAttribute("aria-hidden", "true");
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.setAttribute("switch", "");
+  input.tabIndex = -1;
+  label.append(input);
+  document.body.append(label);
+  return () => {
+    if (typeof navigator.vibrate === "function") navigator.vibrate(HAPTIC_MS);
+    else label.click();
+  };
+})();
+
+document.addEventListener("click", (event) => {
+  const button =
+    event.target instanceof Element ? event.target.closest("button") : null;
+  if (button && !button.disabled) haptic();
 });
 
 $("power-toggle").addEventListener("click", () =>

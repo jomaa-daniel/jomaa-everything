@@ -33,6 +33,9 @@ The screen fills the viewport from top to bottom:
 - The bottom edge selects one room at a time, wrapping long names. Without
   rooms, it lists devices.
 
+Every button press gives a light haptic tap: a short vibration where the
+browser supports it, and the switch tick on iPhone Safari.
+
 Sizes are in `rem`, and the root font size grows with the screen's shorter
 side, so the panel scales from phones to wall tablets.
 

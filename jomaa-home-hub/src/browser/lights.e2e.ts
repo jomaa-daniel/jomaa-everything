@@ -79,6 +79,9 @@ async function openPanel(): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 375, height: 740 } });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript({
+    content: "window.vibrations = []; navigator.vibrate = (ms) => (window.vibrations.push(ms), true);",
+  });
   await page.goto(origin + "/lights");
   await page.locator("#password").fill(password);
   await page.locator("#login-form button.primary").click();
@@ -142,5 +145,14 @@ test("when the hub can't be reached, the room's lights turn red and the status r
   await page.locator("#status-toggle").click();
   assert.deepEqual(await page.locator("#device-problems .problem-name").allTextContents(), ["Desk"]);
   assert.deepEqual(await page.locator("#device-problems .problem-reason").allTextContents(), ["can't reach the hub"]);
+  await page.close();
+});
+
+test("pressing a button gives a haptic tap", async () => {
+  const page = await openPanel();
+  const before = Number(await page.evaluate("window.vibrations.length"));
+  await page.locator("#status-toggle").click();
+  await page.locator("#power-toggle").click();
+  assert.equal(Number(await page.evaluate("window.vibrations.length")), before + 2);
   await page.close();
 });
