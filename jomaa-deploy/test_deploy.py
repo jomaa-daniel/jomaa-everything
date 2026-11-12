@@ -267,9 +267,17 @@ class DeploymentTest(unittest.TestCase):
             ready.set()
             return server
 
+        old = deploy.make_release(self.repo, self.first, self.repo, self.deploy_dir)
+        new = deploy.make_release(self.repo, self.second, self.repo, self.deploy_dir)
+        deploy.switch_link(self.deploy_dir / "current", old)
+
+        def deployed(*args):
+            deploy.switch_link(self.deploy_dir / "current", new)
+            return {"status": "deployed", "modules": {"hub": "deployed"}}
+
         with mock.patch.object(deploy, "HTTPServer", side_effect=create_server), \
                 mock.patch.object(deploy, "verify_run") as verified, \
-                mock.patch.object(deploy, "deploy_revision", return_value="deployed") as applied:
+                mock.patch.object(deploy, "deploy_revision", side_effect=deployed) as applied:
             thread = threading.Thread(target=deploy.serve, args=(self.source, self.deploy_dir, "example/hub"), daemon=True)
             thread.start()
             self.assertTrue(ready.wait(3))
@@ -285,11 +293,12 @@ class DeploymentTest(unittest.TestCase):
             signature = "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest()
             good = urllib.request.Request(url, data=body, headers={"X-Jomaa-Signature": signature})
             with urllib.request.urlopen(good, timeout=5) as response:
-                self.assertEqual(json.load(response)["status"], "deployed")
+                self.assertEqual(json.load(response), {"status": "deployed", "modules": {"hub": "deployed"},
+                                                       "sha": self.second})
             thread.join(timeout=5)
             self.assertFalse(thread.is_alive())
         verified.assert_called_once_with("example/hub", self.second, 12, 1)
-        applied.assert_called_once_with(self.source, self.deploy_dir, "example/hub", self.second)
+        applied.assert_called_once_with(self.source, self.deploy_dir, "example/hub", self.second, 12, 1)
 
     def test_old_verified_run_cannot_roll_back_newer_deployment(self):
         deploy.make_release(self.repo, self.first, self.repo, self.deploy_dir)
@@ -297,11 +306,51 @@ class DeploymentTest(unittest.TestCase):
         deploy.switch_link(self.deploy_dir / "current", new)
         with mock.patch.object(deploy, "run"), \
                 mock.patch.object(deploy, "is_ancestor", side_effect=[True, True]), \
-                mock.patch.object(deploy, "activate") as activate:
-            result = deploy.deploy_revision(self.repo, self.deploy_dir, "example/hub", self.first)
-        self.assertEqual(result, "older-revision-ignored")
-        activate.assert_not_called()
+                mock.patch.object(deploy, "run_engine") as engine:
+            result = deploy.deploy_revision(self.repo, self.deploy_dir, "example/hub", self.first, 12, 1)
+        self.assertEqual(result, {"status": "older-revision-ignored"})
+        engine.assert_not_called()
         self.assertEqual((self.deploy_dir / "current").resolve(), new)
+
+    def test_candidate_release_runs_its_own_activation(self):
+        current = deploy.make_release(self.repo, self.second, self.repo, self.deploy_dir)
+        deploy.switch_link(self.deploy_dir / "current", current)
+        (self.repo / "jomaa-deploy/deploy.json").write_text("not a manifest this receiver can read")
+        (self.repo / "jomaa-deploy/deploy.py").write_text(
+            "import json, os, sys\n"
+            "args = sys.argv[1:]\n"
+            "names = ('JOMAA_DEPLOY_SOURCE', 'JOMAA_DEPLOY_HOME', 'JOMAA_DEPLOY_REPO')\n"
+            "result = {'status': 'fake', 'args': args, 'cwd': os.getcwd(),\n"
+            "          'env': {name: os.environ[name] for name in names}}\n"
+            "open(args[args.index('--result') + 1], 'w').write(json.dumps(result))\n")
+        self.git("add", "jomaa-deploy")
+        self.git("commit", "-qm", "new manifest format")
+        candidate = self.git("rev-parse", "HEAD")
+        original_run = deploy.run
+
+        def fetch_locally(*args, **kwargs):
+            if "fetch" in args:
+                args = (*args[:-2], str(self.repo), "HEAD")
+            return original_run(*args, **kwargs)
+
+        with mock.patch.object(deploy, "run", side_effect=fetch_locally):
+            result = deploy.deploy_revision(self.repo, self.deploy_dir, "example/hub", candidate, 12, 3)
+        release = self.deploy_dir / "releases" / candidate
+        self.assertEqual(result, {
+            "status": "fake",
+            "args": ["activate", "--sha", candidate, "--run-id", "12", "--attempt", "3",
+                     "--result", str(self.deploy_dir / "result.json")],
+            "cwd": str(release / "jomaa-deploy"),
+            "env": {"JOMAA_DEPLOY_SOURCE": str(self.repo), "JOMAA_DEPLOY_HOME": str(self.deploy_dir),
+                    "JOMAA_DEPLOY_REPO": "example/hub"}})
+        self.assertEqual((self.deploy_dir / "current").resolve(), current)
+
+    def test_activation_of_the_current_revision_reports_already_deployed(self):
+        current = deploy.make_release(self.repo, self.second, self.repo, self.deploy_dir)
+        deploy.switch_link(self.deploy_dir / "current", current)
+        with mock.patch.object(deploy, "activate") as activate:
+            self.assertEqual(deploy.activate_revision(self.repo, self.deploy_dir, self.second), "already-deployed")
+        activate.assert_not_called()
 
     def test_prune_keeps_newest_releases_and_current(self):
         releases = self.deploy_dir / "releases"

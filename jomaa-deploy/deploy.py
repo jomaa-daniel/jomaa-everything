@@ -79,15 +79,14 @@ def is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
     return result.returncode == 0
 
 
-def make_release(repo: Path, sha: str, source: Path, deploy_dir: Path) -> Path:
-    """Extract the repository revision and link declared runtime state into it."""
+def extract_release(repo: Path, sha: str, deploy_dir: Path) -> Path:
+    """Extract the repository revision into its release directory."""
     releases = deploy_dir / "releases"
     releases.mkdir(parents=True, exist_ok=True)
     target = releases / sha
     if target.exists():
         if (target / ".revision").read_text().strip() != sha:
             raise DeployError(f"existing release {target} has the wrong revision")
-        manifest.load(target)
         return target
     with tempfile.TemporaryDirectory(prefix="release-", dir=releases) as tmp:
         folder = Path(tmp)
@@ -98,21 +97,33 @@ def make_release(repo: Path, sha: str, source: Path, deploy_dir: Path) -> Path:
         content = folder / "release"
         with tarfile.open(archive, "r:") as tar:
             tar.extractall(content, filter="data")
-        config = manifest.load(content)
         if not (content / "jomaa-deploy/deploy.py").is_file():
             raise DeployError("release does not contain the deployment receiver")
-        for name in config["state"]:
-            original = source / name
-            if not original.exists():
-                raise DeployError(f"missing local runtime state: {original}")
-            destination = content / name
-            if destination.exists() or destination.is_symlink():
-                raise DeployError(f"runtime state must not be tracked: {name}")
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.symlink_to(original.resolve(), target_is_directory=original.is_dir())
         (content / ".revision").write_text(sha + "\n")
         content.rename(target)
     return target
+
+
+def link_state(release: Path, source: Path) -> None:
+    """Link the release's declared runtime state to the local checkout."""
+    for name in manifest.load(release)["state"]:
+        original = source / name
+        if not original.exists():
+            raise DeployError(f"missing local runtime state: {original}")
+        destination = release / name
+        if destination.is_symlink() and destination.resolve() == original.resolve():
+            continue
+        if destination.exists() or destination.is_symlink():
+            raise DeployError(f"runtime state must not be tracked: {name}")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.symlink_to(original.resolve(), target_is_directory=original.is_dir())
+
+
+def make_release(repo: Path, sha: str, source: Path, deploy_dir: Path) -> Path:
+    """Extract the repository revision and link declared runtime state into it."""
+    release = extract_release(repo, sha, deploy_dir)
+    link_state(release, source)
+    return release
 
 
 def switch_link(link: Path, destination: Path) -> None:
@@ -349,25 +360,52 @@ def install(source: Path, deploy_dir: Path, repo: str, tunnel_name: str = "jomaa
     print(f"Deployment receiver installed for {repo} main; secret file: {secret}")
 
 
-def deploy_revision(source: Path, deploy_dir: Path, repo_name: str, candidate: str) -> str:
+def activate_revision(source: Path, deploy_dir: Path, sha: str) -> str:
+    """Activate the extracted release of a revision unless it is already current."""
+    current = deploy_dir / "current"
+    if current.exists() and (current / ".revision").read_text().strip() == sha:
+        return "already-deployed"
+    release = deploy_dir / "releases" / sha
+    if (release / ".revision").read_text().strip() != sha:
+        raise DeployError(f"release {release} has the wrong revision")
+    link_state(release, source)
+    activate(release, deploy_dir, source)
+    prune_releases(deploy_dir)
+    return "deployed"
+
+
+def run_engine(release: Path, source: Path, deploy_dir: Path, repo_name: str, sha: str,
+               run_id: int, attempt: int) -> dict:
+    """Run the release's own activation and return the result it reports."""
+    result = deploy_dir / "result.json"
+    result.unlink(missing_ok=True)
+    env = {**os.environ, "JOMAA_DEPLOY_SOURCE": str(source), "JOMAA_DEPLOY_HOME": str(deploy_dir),
+           "JOMAA_DEPLOY_REPO": repo_name}
+    subprocess.run([sys.executable, str(release / "jomaa-deploy/deploy.py"), "activate", "--sha", sha,
+                    "--run-id", str(run_id), "--attempt", str(attempt), "--result", str(result)],
+                   cwd=release / "jomaa-deploy", env=env, check=True)
+    value = json.loads(result.read_text())
+    if not isinstance(value, dict) or not isinstance(value.get("status"), str):
+        raise DeployError("activation reported no status")
+    return value
+
+
+def deploy_revision(source: Path, deploy_dir: Path, repo_name: str, candidate: str,
+                    run_id: int, attempt: int) -> dict:
     current = (deploy_dir / "current").resolve(strict=True)
     deployed = (current / ".revision").read_text().strip()
-    if candidate == deployed:
-        return "already-deployed"
     cache = deploy_dir / "git-cache"
     if not cache.exists():
         run("git", "init", "--bare", str(cache))
     run("git", "-C", str(cache), "fetch", "--no-tags", f"https://github.com/{repo_name}.git", "main")
     if not is_ancestor(cache, candidate, "FETCH_HEAD"):
         raise DeployError("successful workflow commit is not on the current main branch")
-    if is_ancestor(cache, candidate, deployed):
-        return "older-revision-ignored"
+    if candidate != deployed and is_ancestor(cache, candidate, deployed):
+        return {"status": "older-revision-ignored"}
     if not is_ancestor(cache, deployed, candidate):
         raise DeployError("main does not descend from the deployed revision; manual intervention required")
-    release = make_release(cache, candidate, source, deploy_dir)
-    activate(release, deploy_dir, source)
-    prune_releases(deploy_dir)
-    return "deployed"
+    release = extract_release(cache, candidate, deploy_dir)
+    return run_engine(release, source, deploy_dir, repo_name, candidate, run_id, attempt)
 
 
 def authenticate(body: bytes, signature: str, key: bytes, repo: str, now: float) -> dict:
@@ -419,6 +457,8 @@ def serve(source: Path, deploy_dir: Path, repo: str) -> None:
             except (DeployError, ValueError, OSError):
                 self.respond(403, {"error": "unauthorized"})
                 return
+            current = deploy_dir / "current"
+            before = current.resolve()
             try:
                 with (deploy_dir / "deploy.lock").open("w") as lock:
                     try:
@@ -427,13 +467,14 @@ def serve(source: Path, deploy_dir: Path, repo: str) -> None:
                         self.respond(409, {"error": "deployment already running"})
                         return
                     verify_run(repo, payload["sha"], payload["run_id"], payload["attempt"])
-                    result = deploy_revision(source, deploy_dir, repo, payload["sha"])
-                if result == "deployed":
-                    self.server.reload_after_response = True
-                self.respond(200, {"status": result, "sha": payload["sha"]})
+                    result = deploy_revision(source, deploy_dir, repo, payload["sha"],
+                                             payload["run_id"], payload["attempt"])
+                self.respond(200, {**result, "sha": payload["sha"]})
             except (DeployError, CloudflareError, OSError, ValueError, subprocess.SubprocessError, urllib.error.URLError) as e:
                 print(f"deployment failed: {e}", file=sys.stderr, flush=True)
                 self.respond(500, {"error": "deployment failed; see server logs"})
+            if current.resolve() != before:
+                self.server.reload_after_response = True
 
         def log_message(self, fmt, *args) -> None:
             # Do not log signatures, request bodies, or credentials.
@@ -452,10 +493,16 @@ def serve(source: Path, deploy_dir: Path, repo: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("install", "serve", "plan"))
+    parser.add_argument("command", choices=("install", "serve", "plan", "activate"))
     parser.add_argument("--tunnel-name", default="jomaa-home-hub", help="locally managed Cloudflare tunnel for installation")
     parser.add_argument("--repo", default=os.environ.get("JOMAA_DEPLOY_REPO", "jomaa-daniel/jomaa-everything"))
+    parser.add_argument("--sha", help="revision to activate")
+    parser.add_argument("--run-id", type=int, help="GitHub Actions run that verified the revision")
+    parser.add_argument("--attempt", type=int, help="attempt of the GitHub Actions run")
+    parser.add_argument("--result", type=Path, help="file that receives the activation result as JSON")
     args = parser.parse_args(argv)
+    if args.command == "activate" and None in (args.sha, args.run_id, args.attempt, args.result):
+        parser.error("activate requires --sha, --run-id, --attempt and --result")
     source = Path(os.environ.get("JOMAA_DEPLOY_SOURCE", str(SOURCE))).resolve()
     deploy_dir = Path(os.environ.get("JOMAA_DEPLOY_HOME", str(DEPLOY_DIR))).resolve()
     try:
@@ -467,7 +514,11 @@ def main(argv: list[str] | None = None) -> int:
                               "provision": config["provision"], "state": config["state"]}, indent=2))
             return 0
         deploy_dir.mkdir(parents=True, exist_ok=True)
-        if args.command == "install":
+        if args.command == "activate":
+            # The receiver holds deploy.lock while this runs.
+            status = activate_revision(source, deploy_dir, args.sha)
+            args.result.write_text(json.dumps({"status": status}))
+        elif args.command == "install":
             with (deploy_dir / "deploy.lock").open("w") as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 install(source, deploy_dir, args.repo, args.tunnel_name)

@@ -26,6 +26,17 @@ workflow path, push event, branch, and successful GitHub verification job. It
 accepts only revisions on `main` that descend from the deployed revision.
 Pull requests and manual workflow runs verify without deploying.
 
+The receiver extracts the requested revision without reading its
+`deploy.json` and hands activation to that release's own code: it runs
+`deploy.py activate --sha SHA --run-id N --attempt N --result FILE` from the
+new release while holding `deploy.lock`, with its output in the receiver's
+journal. The activation writes `{"status": ...}` to the result file, and the
+receiver answers the request with that result and the revision. A revision
+older than the deployed one is ignored without a handoff; the deployed
+revision itself is handed off and reports `already-deployed`. When the
+`current` pointer moved, the receiver restarts after answering and runs the
+new release's receiver.
+
 Each release contains the complete tracked repository at the requested
 revision. Paths in `state` are untracked files or directories in the local
 checkout, linked into releases. Services run from one atomic `current`
@@ -91,9 +102,8 @@ journalctl --user -u jomaa-deploy -f
 
 ## Change the manifest format
 
-The running receiver validates a new release's `deploy.json` with its own
-code, and activation validates the current release's `deploy.json` with the
-new code. A change to the manifest's required keys therefore can't deploy
+Activation validates the current release's `deploy.json` with the new code.
+A change to the manifest's required keys therefore can't deploy
 through the receiver. On jerry, bring the current release's
 `jomaa-deploy/deploy.json` to the new format, check out the new revision in
 the state checkout (`JOMAA_DEPLOY_SOURCE` in the `jomaa-deploy` unit), and run
