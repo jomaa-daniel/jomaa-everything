@@ -194,7 +194,7 @@ function parseObservation(value) {
 // Hub API
 
 /**
- * Sends one request. A 401 outside sign-in ends the session and throws
+ * Sends one request. A 401 or 403 outside sign-in ends the session and throws
  * SessionExpired; other failures throw HttpError with the hub's message and
  * any per-device failures.
  * @param {string} path @param {"GET" | "POST"} method @param {object | null} body
@@ -216,8 +216,17 @@ async function api(path, method = "GET", body = null) {
     expect(isJSON);
     return data;
   }
-  if (response.status === 401 && path !== "/api/login") {
-    if (session === app.session) sessionEnded();
+  if (
+    (response.status === 401 || response.status === 403) &&
+    path !== "/api/login"
+  ) {
+    const refusal =
+      response.status === 403 &&
+      isRecord(data) &&
+      typeof data.error === "string"
+        ? data.error
+        : null;
+    if (session === app.session) sessionEnded(refusal);
     throw new SessionExpired("signed out");
   }
   throw new HttpError(
@@ -541,15 +550,16 @@ function startSession(authenticated) {
   $("color-dialog").close();
 }
 
-function sessionEnded() {
+/** Shows sign-in; refusal is the hub's message when the account lacks access. */
+function sessionEnded(refusal = null) {
   const wasSignedIn = app.authenticated === true;
   startSession(false);
   app.loginMessage = {
-    text: wasSignedIn ? "Your session ended. Sign in again." : "",
-    error: false,
+    text: refusal ?? (wasSignedIn ? "Your session ended. Sign in again." : ""),
+    error: refusal !== null,
   };
   render();
-  if (wasSignedIn) $("password").focus();
+  if (wasSignedIn || refusal !== null) $("password").focus();
 }
 
 // Actions

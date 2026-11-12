@@ -16,6 +16,7 @@ import { OrganizationError, type Organization } from "./organization.js";
 import {
   AccountError,
   isScope,
+  refusal,
   scopes,
   sessionLifetimeMs,
   type Access,
@@ -89,17 +90,18 @@ function access(principal: Principal | null, requires: Requirement): Access {
 
 function requireAccess(principal: Principal | null, requires: Requirement): void {
   const result = access(principal, requires);
-  if (result === "allowed") return;
+  if (result === "allowed" || requires === null) return;
   if (result === "signed-out") throw new HttpError(401, "sign in first");
   if (requires === "owner") throw new HttpError(403, "Only the hub owner can manage accounts and invites");
-  const name = scopes.find((scope) => scope.id === requires)?.name ?? "this page";
-  throw new HttpError(403, `Your account does not have access to ${name}. Ask the hub owner to grant it.`);
+  throw new HttpError(403, refusal(requires));
 }
 
 /** Serves the hub API. */
 export class Api {
   readonly #token: string;
-  readonly #limiter = new LoginLimiter();
+  /** Counts failed owner and account sign-ins separately. */
+  readonly #ownerLimiter = new LoginLimiter();
+  readonly #accountLimiter = new LoginLimiter();
   readonly #public: Route[];
   readonly #authed: Route[];
   readonly #healthHttp: HealthHttp | undefined;
@@ -249,13 +251,18 @@ export class Api {
     return Promise.resolve();
   }
 
-  /** Without a username the password is the hub password; with one it is that account's password. */
+  /**
+   * Without a username the password is the hub password; with one it is that
+   * account's password. A previous account session on the request ends.
+   */
   async #login({ req, res }: RequestContext): Promise<void> {
+    requireSameOrigin(req);
     const body = (await readBody(req)).only("username", "password");
     const username = body.string("username");
     const password = body.string("password") ?? "";
     const client = clientIP(req);
-    const { ok, waitMs } = this.#limiter.allow(client);
+    const limiter = username === null ? this.#ownerLimiter : this.#accountLimiter;
+    const { ok, waitMs } = limiter.allow(client);
     if (!ok) {
       res.setHeader("Retry-After", String(Math.trunc(waitMs / 1000) + 1));
       throw new HttpError(429, "too many failed sign-ins; try again later");
@@ -268,30 +275,37 @@ export class Api {
       if (account) token = this.accounts.createSession(account.username);
     }
     if (token === null) {
-      this.#limiter.fail(client);
+      limiter.fail(client);
       this.log.warn("failed sign-in", { client, account: username !== null });
       throw new HttpError(401, username === null ? "wrong password" : "wrong username or password");
     }
-    this.#limiter.succeed(client);
+    limiter.succeed(client);
+    this.#endAccountSession(req);
     signIn(req, res, token);
     writeJSON(res, 200, { token });
   }
 
   async #logout({ req, res }: RequestContext): Promise<void> {
-    const token = requestToken(req);
-    if (token !== "" && !sameSecret(token, this.#token)) this.accounts.endSession(token);
+    requireSameOrigin(req);
+    this.#endAccountSession(req);
     res.setHeader("Set-Cookie", cookie("", 0, isHTTPS(req)));
     writeJSON(res, 200, { ok: true });
     return Promise.resolve();
   }
 
+  #endAccountSession(req: IncomingMessage): void {
+    const token = requestToken(req);
+    if (token !== "" && !sameSecret(token, this.#token)) this.accounts.endSession(token);
+  }
+
   async #session({ res, principal }: RequestContext): Promise<void> {
+    if (principal === null) throw new HttpError(401, "sign in first");
     writeJSON(
       res,
       200,
-      principal?.kind === "account"
-        ? { owner: false, username: principal.account.username, scopes: principal.account.scopes }
-        : { owner: true, username: null, scopes: scopes.map((scope) => scope.id) },
+      principal.kind === "owner"
+        ? { owner: true, username: null, scopes: scopes.map((scope) => scope.id) }
+        : { owner: false, username: principal.account.username, scopes: principal.account.scopes },
     );
     return Promise.resolve();
   }
@@ -301,7 +315,7 @@ export class Api {
     writeJSON(res, 200, { expiresAt: this.accounts.checkInvite(token).expiresAt });
   }
 
-  /** Creates an account from an invite and signs it in. */
+  /** Creates an account from an invite; the caller's session is unchanged. */
   async #join({ req, res }: RequestContext): Promise<void> {
     requireSameOrigin(req);
     const body = (await readBody(req)).only("token", "username", "password");
@@ -311,7 +325,6 @@ export class Api {
       body.string("password") ?? "",
     );
     this.log.info("account created", { username: account.username });
-    signIn(req, res, this.accounts.createSession(account.username));
     writeJSON(res, 201, { account });
   }
 

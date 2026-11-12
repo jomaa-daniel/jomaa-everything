@@ -463,7 +463,7 @@ test("tunnel clients are limited separately", async () => {
 
 const accountPassword = "correct horse battery";
 
-/** Creates an invite as the owner and joins with it, returning the new account's session token. */
+/** Creates an invite as the owner, joins with it, and signs in, returning the new account's session token. */
 async function joinAs(env: Env, username: string): Promise<string> {
   const invite = await call(env, "POST", "/api/invites", "{}");
   assert.equal(invite.status, 201);
@@ -475,10 +475,61 @@ async function joinAs(env: Env, username: string): Promise<string> {
   const account = joined.body["account"] as Json;
   assert.equal(account["username"], username);
   assert.deepEqual(account["scopes"], []);
-  const cookie = joined.res.headers.get("set-cookie") ?? "";
+  assert.equal(joined.res.headers.get("set-cookie"), null, "joining leaves the browser's session alone");
+  const login = await call(anon, "POST", "/api/login", JSON.stringify({ username, password: accountPassword }));
+  const cookie = login.res.headers.get("set-cookie") ?? "";
   assert.match(cookie, /^hub_auth=[\w-]{43}; Path=\/; Max-Age=2592000; HttpOnly; SameSite=Lax$/);
-  return /^hub_auth=([^;]+)/.exec(cookie)?.[1] ?? "";
+  return login.body["token"] as string;
 }
+
+test("accounts with every scope still can't manage accounts or invites", async () => {
+  const env = await setup();
+  const session = { url: env.url, token: await joinAs(env, "trusted") };
+  const all = JSON.stringify({ scopes: ["lights", "devices", "manage"] });
+  assert.equal(
+    (await call(env, "PUT", "/api/accounts/TRUSTED/scopes", all)).status,
+    200,
+    "usernames in paths ignore case",
+  );
+  for (const [method, path, body] of [
+    ["PUT", "/api/accounts/trusted/scopes", all],
+    ["GET", "/api/accounts", undefined],
+    ["POST", "/api/invites", "{}"],
+    ["GET", "/api/invites", undefined],
+  ] as const) {
+    assert.equal((await call(session, method, path, body)).status, 403, `${method} ${path}`);
+  }
+  assert.equal((await call(session, "GET", "/api/targets")).status, 200);
+});
+
+test("sign-in refuses cross-site requests and ends the session it replaces", async () => {
+  const env = await setup();
+  const first = { url: env.url, token: await joinAs(env, "switcher") };
+  const anon = { url: env.url, token: "" };
+  const body = JSON.stringify({ username: "switcher", password: accountPassword });
+  const crossSite = await call(anon, "POST", "/api/login", body, { Origin: "https://evil.example" });
+  assert.equal(crossSite.status, 403);
+  assert.equal((await call(first, "POST", "/api/logout", "{}", { Origin: "https://evil.example" })).status, 403);
+  assert.equal((await call(first, "POST", "/api/login", body)).status, 200);
+  assert.equal((await call(first, "GET", "/api/session")).status, 401, "the replaced session ended");
+});
+
+test("an account's sign-in does not clear failed hub password guesses", async () => {
+  const env = await setup();
+  await joinAs(env, "guesser");
+  const anon = { url: env.url, token: "" };
+  const guess = () => call(anon, "POST", "/api/login", JSON.stringify({ password: "guess" }));
+  for (let i = 0; i < 4; i++) assert.equal((await guess()).status, 401);
+  const own = await call(
+    anon,
+    "POST",
+    "/api/login",
+    JSON.stringify({ username: "guesser", password: accountPassword }),
+  );
+  assert.equal(own.status, 200);
+  assert.equal((await guess()).status, 401);
+  assert.equal((await guess()).status, 429, "five failed guesses block the next one");
+});
 
 test("invited accounts start with no access and gain only granted scopes", async () => {
   const env = await setup();

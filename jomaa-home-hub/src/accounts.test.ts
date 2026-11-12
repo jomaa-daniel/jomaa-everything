@@ -30,6 +30,14 @@ test("passwords are verified without storing them", async () => {
   assert.equal(await accounts.verify("nobody", "a long enough password"), null);
 });
 
+test("an account keeps its 20 newest sessions", async () => {
+  const accounts = new Accounts(":memory:");
+  await accounts.join(accounts.createInvite().token, "sam", "a long enough password");
+  const sessions = Array.from({ length: 21 }, () => accounts.createSession("sam"));
+  assert.equal(accounts.session(sessions[0] ?? ""), null, "the oldest session ended");
+  assert.ok(sessions.slice(1).every((token) => accounts.session(token)?.username === "sam"));
+});
+
 test("scopes are stored in a fixed order without duplicates", async () => {
   const accounts = new Accounts(":memory:");
   await accounts.join(accounts.createInvite().token, "sam", "a long enough password");
