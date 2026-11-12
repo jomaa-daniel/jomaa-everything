@@ -13,6 +13,9 @@
   releases, or restart services by hand to ship a change. Only steps that need
   root on jerry, such as `jomaa-tailscale/setup_server.py`, run by hand; the
   user runs them because sudo asks for a password.
+- Clean up when the work is done: delete temporary files, review artifacts,
+  journals and notes, and remove temporary worktrees along with their branches,
+  local and remote, once merged. Leave nothing behind but the committed change.
 - No hardcoded configuration. Hostnames, URLs, ports, account and zone IDs,
   file paths, timeouts, intervals, limits, retry counts, cache lifetimes, and
   lists of sites, devices or hosts go in the component's committed config file,
