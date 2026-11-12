@@ -16,6 +16,7 @@ import { OrganizationError, type Organization } from "./organization.js";
 import {
   AccountError,
   isScope,
+  passwordLength,
   refusal,
   scopes,
   sessionLifetimeMs,
@@ -312,7 +313,7 @@ export class Api {
 
   async #inviteCheck({ req, res }: RequestContext): Promise<void> {
     const token = (await readBody(req)).only("token").string("token") ?? "";
-    writeJSON(res, 200, { expiresAt: this.accounts.checkInvite(token).expiresAt });
+    writeJSON(res, 200, { expiresAt: this.accounts.checkInvite(token).expiresAt, passwordLength });
   }
 
   /** Creates an account from an invite; the caller's session is unchanged. */

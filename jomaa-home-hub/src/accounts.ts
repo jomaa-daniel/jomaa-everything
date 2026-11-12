@@ -2,6 +2,7 @@ import { createHash, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { settings } from "./settings.js";
 
 /** The pages an account can be granted, by scope ID. */
 export const scopes = [
@@ -50,12 +51,11 @@ export interface Invite {
   expiresAt: number;
 }
 
-export const sessionLifetimeMs = 30 * 24 * 60 * 60_000;
-export const inviteLifetimeMs = 7 * 24 * 60 * 60_000;
-export const minPasswordLength = 12;
-const maxPasswordLength = 256;
+const dayMs = 24 * 60 * 60_000;
+export const sessionLifetimeMs = settings.accounts.sessionLifetimeDays * dayMs;
+export const inviteLifetimeMs = settings.accounts.inviteLifetimeDays * dayMs;
+export const passwordLength = settings.accounts.passwordLength;
 const keyLength = 64;
-const maxSessionsPerAccount = 20;
 const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
 
 function hashScrypt(password: string, salt: Buffer): Promise<Buffer> {
@@ -217,7 +217,7 @@ export class Accounts {
 
   /**
    * Starts a session and returns its token; only the token's hash is stored.
-   * An account keeps its 20 newest sessions.
+   * An account keeps its newest accounts.sessionsPerAccount sessions.
    */
   createSession(username: string): string {
     const token = newToken();
@@ -229,7 +229,7 @@ export class Accounts {
         `DELETE FROM sessions WHERE username=? AND token_hash NOT IN
           (SELECT token_hash FROM sessions WHERE username=? ORDER BY expires_at DESC, rowid DESC LIMIT ?)`,
       )
-      .run(username, username, maxSessionsPerAccount);
+      .run(username, username, settings.accounts.sessionsPerAccount);
     return token;
   }
 
@@ -278,6 +278,6 @@ function validUsername(value: string): string {
 }
 
 function validPassword(value: string): void {
-  if (value.length < minPasswordLength || value.length > maxPasswordLength)
-    throw new AccountError(400, `Password must contain ${minPasswordLength} to ${maxPasswordLength} characters`);
+  if (value.length < passwordLength.min || value.length > passwordLength.max)
+    throw new AccountError(400, `Password must contain ${passwordLength.min} to ${passwordLength.max} characters`);
 }

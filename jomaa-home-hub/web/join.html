@@ -26,8 +26,8 @@
           title="3 to 32 lowercase letters, digits, dots, dashes, or underscores"
           required
         />
-        <label for="password">Password (at least 12 characters)</label>
-        <input id="password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required />
+        <label for="password">Password (at least <span id="password-min"></span> characters)</label>
+        <input id="password" type="password" autocomplete="new-password" required />
         <label for="confirm">Confirm password</label>
         <input id="confirm" type="password" autocomplete="new-password" required />
         <button class="primary">Create account</button>

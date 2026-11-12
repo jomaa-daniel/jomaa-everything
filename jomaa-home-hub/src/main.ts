@@ -11,6 +11,7 @@ import { Hub } from "./hub.js";
 import { HealthStore } from "./health/store.js";
 import { Organization } from "./organization.js";
 import { Accounts } from "./accounts.js";
+import { settings } from "./settings.js";
 import { dirname, join } from "node:path";
 import { stderrLog, type Log } from "./log.js";
 import { MatterNotReadyError, type MatterAdmin, type MatterNodes } from "./matter/nodes.js";
@@ -81,7 +82,7 @@ async function run(log: Log): Promise<void> {
         ? ":memory:"
         : join(dirname(process.env["HEALTH_DB_PATH"] ?? "data/health.sqlite"), name);
     organization = new Organization(besideHealth("organization.sqlite"));
-    const people = new Accounts(besideHealth("accounts.sqlite"));
+    const people = new Accounts(besideHealth(settings.accounts.databaseFile));
     accounts = people;
     const api = new Api(
       Hub.build(cfg, govee, matter),
