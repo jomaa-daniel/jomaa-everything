@@ -4,6 +4,7 @@ import { Api } from "./api.js";
 import { allFeatures, type Command, type Device, type Features, type State } from "./device.js";
 import { Group } from "./group.js";
 import { Hub } from "./hub.js";
+import { Accounts } from "./accounts.js";
 import { silentLog } from "./log.js";
 import {
   MatterError,
@@ -125,6 +126,7 @@ interface Env {
   a: Light;
   b: Light;
   matter: FakeMatter;
+  accounts: Accounts;
 }
 
 type Json = Record<string, unknown>;
@@ -133,14 +135,15 @@ async function setup(): Promise<Env> {
   const a = new Light("a");
   const b = new Light("b");
   const matter = new FakeMatter();
+  const accounts = new Accounts(":memory:");
   const hub = new Hub();
   hub.addDevice("test", a);
   hub.addDevice("test", b);
   hub.addRoom(new Group("room", "Room", [a, b]));
-  const url = await serve(new Api(hub, matter, "hunter2", silentLog).handle);
+  const url = await serve(new Api(hub, matter, "hunter2", accounts, silentLog).handle);
   const { status, body } = await call({ url, token: "" }, "POST", "/api/login", '{"password":"hunter2"}');
   assert.equal(status, 200);
-  return { url, token: body["token"] as string, a, b, matter };
+  return { url, token: body["token"] as string, a, b, matter, accounts };
 }
 
 await test("light controller assets are public without a health store, while commands require sign-in", async () => {
@@ -456,4 +459,139 @@ test("tunnel clients are limited separately", async () => {
   }
   assert.equal(await login("203.0.113.1", "hunter2"), 429, "attacker not blocked");
   assert.equal(await login("198.51.100.7", "hunter2"), 200, "another tunnel client blocked");
+});
+
+const accountPassword = "correct horse battery";
+
+/** Creates an invite as the owner and joins with it, returning the new account's session token. */
+async function joinAs(env: Env, username: string): Promise<string> {
+  const invite = await call(env, "POST", "/api/invites", "{}");
+  assert.equal(invite.status, 201);
+  const token = invite.body["token"] as string;
+  const anon = { url: env.url, token: "" };
+  assert.equal((await call(anon, "POST", "/api/invites/check", JSON.stringify({ token }))).status, 200);
+  const joined = await call(anon, "POST", "/api/join", JSON.stringify({ token, username, password: accountPassword }));
+  assert.equal(joined.status, 201);
+  const account = joined.body["account"] as Json;
+  assert.equal(account["username"], username);
+  assert.deepEqual(account["scopes"], []);
+  const cookie = joined.res.headers.get("set-cookie") ?? "";
+  assert.match(cookie, /^hub_auth=[\w-]{43}; Path=\/; Max-Age=2592000; HttpOnly; SameSite=Lax$/);
+  return /^hub_auth=([^;]+)/.exec(cookie)?.[1] ?? "";
+}
+
+test("invited accounts start with no access and gain only granted scopes", async () => {
+  const env = await setup();
+  const session = { url: env.url, token: await joinAs(env, "guest") };
+  assert.deepEqual((await call(session, "GET", "/api/session")).body, { owner: false, username: "guest", scopes: [] });
+  for (const [method, path] of [
+    ["GET", "/api/targets"],
+    ["POST", "/api/targets/room/command"],
+    ["GET", "/api/manage"],
+    ["GET", "/api/matter/nodes"],
+    ["GET", "/api/accounts"],
+    ["POST", "/api/invites"],
+  ] as const) {
+    const result = await call(session, method, path, method === "POST" ? "{}" : undefined);
+    assert.equal(result.status, 403, `${method} ${path}`);
+  }
+  assert.match((await call(session, "GET", "/api/targets")).body["error"] as string, /does not have access to Lights/);
+
+  const granted = await call(env, "PUT", "/api/accounts/guest/scopes", JSON.stringify({ scopes: ["lights"] }));
+  assert.equal(granted.status, 200);
+  assert.deepEqual((granted.body["account"] as Json)["scopes"], ["lights"]);
+  assert.equal((await call(session, "GET", "/api/targets")).status, 200, "grant applies to the open session");
+  assert.equal((await call(session, "POST", "/api/targets/room/command", JSON.stringify({ on: true }))).status, 200);
+  assert.equal((await call(session, "GET", "/api/manage")).status, 403);
+
+  const unknown = await call(env, "PUT", "/api/accounts/guest/scopes", JSON.stringify({ scopes: ["admin"] }));
+  assert.equal(unknown.status, 400, "unknown scopes are refused");
+  assert.equal((await call(env, "PUT", "/api/accounts/guest/scopes", '{"scopes":[]}')).status, 200);
+  assert.equal((await call(session, "GET", "/api/targets")).status, 403, "revoking applies immediately");
+});
+
+test("accounts sign in with a username, sign out, and lose their sessions when deleted", async () => {
+  const env = await setup();
+  await joinAs(env, "visitor");
+  const anon = { url: env.url, token: "" };
+  const login = (body: Json) => call(anon, "POST", "/api/login", JSON.stringify(body));
+  assert.equal((await login({ username: "visitor", password: "wrong password!" })).status, 401);
+  assert.equal((await login({ password: accountPassword })).status, 401, "an account password is not the hub password");
+  const signedIn = await login({ username: "Visitor", password: accountPassword });
+  assert.equal(signedIn.status, 200, "usernames are case-insensitive");
+  const session = { url: env.url, token: signedIn.body["token"] as string };
+  assert.equal((await call(session, "GET", "/api/session")).status, 200);
+  assert.equal((await call(session, "POST", "/api/logout", "{}")).status, 200);
+  assert.equal((await call(session, "GET", "/api/session")).status, 401, "sign-out ends the session");
+
+  const other = {
+    url: env.url,
+    token: (await login({ username: "visitor", password: accountPassword })).body["token"] as string,
+  };
+  const listed = (await call(env, "GET", "/api/accounts")).body["accounts"] as Json[];
+  assert.deepEqual(
+    listed.map((account) => [account["username"], account["scopes"]]),
+    [["visitor", []]],
+  );
+  assert.equal((await call(env, "DELETE", "/api/accounts/visitor")).status, 200);
+  assert.equal((await call(other, "GET", "/api/session")).status, 401, "deleting signs the account out");
+  assert.equal((await call(env, "DELETE", "/api/accounts/visitor")).status, 404);
+});
+
+test("invites are single-use, revocable, and owner-only", async () => {
+  const env = await setup();
+  const anon = { url: env.url, token: "" };
+  assert.equal((await call(anon, "POST", "/api/invites", "{}")).status, 401);
+  const created = await call(env, "POST", "/api/invites", "{}");
+  const token = created.body["token"] as string;
+  const id = (created.body["invite"] as Json)["id"] as string;
+  const pending = (await call(env, "GET", "/api/invites")).body["invites"] as Json[];
+  assert.deepEqual(
+    pending.map((invite) => invite["id"]),
+    [id],
+  );
+  const join = (username: string, password = accountPassword, headers: Record<string, string> = {}) =>
+    call(anon, "POST", "/api/join", JSON.stringify({ token, username, password }), headers);
+  assert.equal((await join("x")).status, 400, "short usernames are refused");
+  assert.equal((await join("valid-name", "short")).status, 400, "short passwords are refused");
+  assert.equal(
+    (await join("first", accountPassword, { Origin: "https://evil.example" })).status,
+    403,
+    "cross-site joins are refused",
+  );
+  assert.equal((await join("first")).status, 201);
+  assert.equal((await join("second")).status, 404, "an invite works once");
+  assert.equal((await call(anon, "POST", "/api/invites/check", JSON.stringify({ token }))).status, 404);
+  assert.deepEqual((await call(env, "GET", "/api/invites")).body["invites"], []);
+
+  const taken = (await call(env, "POST", "/api/invites", "{}")).body["token"] as string;
+  const duplicate = await call(
+    anon,
+    "POST",
+    "/api/join",
+    JSON.stringify({ token: taken, username: "FIRST", password: accountPassword }),
+  );
+  assert.equal(duplicate.status, 409, "usernames are unique regardless of case");
+  const kept = await call(anon, "POST", "/api/invites/check", JSON.stringify({ token: taken }));
+  assert.equal(kept.status, 200, "a failed join keeps the invite");
+
+  const revoked = await call(env, "POST", "/api/invites", "{}");
+  const revokedId = (revoked.body["invite"] as Json)["id"] as string;
+  assert.equal((await call(env, "DELETE", `/api/invites/${revokedId}`)).status, 200);
+  const check = await call(anon, "POST", "/api/invites/check", JSON.stringify({ token: revoked.body["token"] }));
+  assert.equal(check.status, 404);
+});
+
+test("the owner session reports every scope", async () => {
+  const body = (await call(e, "GET", "/api/session")).body;
+  assert.deepEqual(body, { owner: true, username: null, scopes: ["lights", "devices", "manage"] });
+});
+
+test("account pages are public", async () => {
+  for (const path of ["/invite", "/invite/app.js", "/join", "/join/app.js", "/permissions", "/permissions/app.js"]) {
+    assert.equal((await fetch(e.url + path)).status, 200, path);
+  }
+  for (const path of ["/home/accounts.js", "/home/accounts.css"]) {
+    assert.equal((await fetch(e.url + path)).status, 200, path);
+  }
 });

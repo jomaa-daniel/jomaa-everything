@@ -23,7 +23,7 @@ node --env-file=.env dist/main.js --config config.json
 ```
 
 The build copies the management page into `dist/web`. Include that directory when packaging the compiled hub.
-Open `https://jomaa.org/devices` and sign in with the existing hub password.
+Open `https://jomaa.org/devices` and sign in with the hub password or an account with the `devices` scope.
 Add device scans the home network for Matter devices advertising for pairing or
 sharing. Scans continue while the discovery window is open. Pair and register on
 a discovered device opens the setup-code form. Successful network pairing stores

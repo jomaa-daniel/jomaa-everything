@@ -176,9 +176,14 @@ async function api(path, method = "GET", data, signal) {
     body: data === undefined ? undefined : JSON.stringify(data),
   });
   const result = await response.json();
-  if (response.status === 401) signedIn(false);
-  if (!response.ok) throw new Error(result.error || "Request failed");
+  if (response.status === 401 || response.status === 403) signedIn(false);
+  if (!response.ok) throw Object.assign(new Error(result.error || "Request failed"), { status: response.status });
   return result;
+}
+
+function credentials() {
+  const username = $("username").value.trim();
+  return { password: $("password").value, ...(username ? { username } : {}) };
 }
 
 function error(reason) {
@@ -577,7 +582,7 @@ $("login-form").addEventListener("submit", async (event) => {
   const button = event.submitter;
   button.disabled = true;
   try {
-    await api("/api/login", "POST", { password: $("password").value });
+    await api("/api/login", "POST", credentials());
     $("notice").textContent = "";
     await refresh();
   } catch (reason) {
@@ -765,7 +770,7 @@ $("download-credential").addEventListener("click", () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
 refresh().catch((reason) => {
-  if (!$("login-section").hidden) $("notice").textContent = "";
+  if (reason.status === 401) $("notice").textContent = "";
   else error(reason);
 });
 setInterval(() => {

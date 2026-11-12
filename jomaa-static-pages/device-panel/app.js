@@ -1070,7 +1070,11 @@ $("login-form").addEventListener("submit", async (event) => {
   app.loginMessage = { text: "", error: false };
   renderLogin();
   try {
-    await api("/api/login", "POST", { password: $("password").value });
+    const username = $("username").value.trim();
+    await api("/api/login", "POST", {
+      password: $("password").value,
+      ...(username ? { username } : {}),
+    });
     $("password").value = "";
     startSession(true);
     await refresh();
