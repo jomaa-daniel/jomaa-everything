@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Deploys the health Worker and stores the hub password as its HUB_PASSWORD secret.
-//   CLOUDFLARE_API_TOKEN, or the token file ~/.config/jomaa-health/cloudflare-token (mode 600)
+//   Cloudflare access: CLOUDFLARE_API_TOKEN, the token file ~/.config/jomaa-health/cloudflare-token
+//   (mode 600), or else wrangler's own login (npx wrangler login)
 //   HUB_PASSWORD from ../jomaa-home-hub/.env
 import { spawnSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
@@ -22,11 +23,11 @@ function privateFile(path) {
 }
 
 function token() {
-  if (process.env.CLOUDFLARE_API_TOKEN) return process.env.CLOUDFLARE_API_TOKEN;
+  if (process.env.CLOUDFLARE_API_TOKEN) return { CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN };
   try {
-    return privateFile(tokenFile).trim();
+    return { CLOUDFLARE_API_TOKEN: privateFile(tokenFile).trim() };
   } catch (err) {
-    if (err.code === "ENOENT") fail(`set CLOUDFLARE_API_TOKEN or save a Workers token in ${tokenFile}`);
+    if (err.code === "ENOENT") return {};
     throw err;
   }
 }
@@ -40,7 +41,7 @@ function hubPassword() {
 }
 
 const password = hubPassword();
-const env = { ...process.env, CLOUDFLARE_API_TOKEN: token(), WRANGLER_SEND_METRICS: "false" };
+const env = { ...process.env, ...token(), WRANGLER_SEND_METRICS: "false" };
 const wrangler = (args, input) => {
   const run = spawnSync("npx", ["wrangler", ...args], {
     cwd: here,

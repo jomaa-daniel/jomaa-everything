@@ -39,14 +39,19 @@ commands and changes no settings.
 
 ## Deploy
 
-Deployment runs on jerry. It needs a Cloudflare API token that can deploy
-Workers: create one from the **Edit Cloudflare Workers** template, limited to
-the Jomaa account and the `jomaa.org` zone. Save it once:
+Deployment runs on jerry with wrangler's Cloudflare login, stored in
+`~/.config/.wrangler`. Jerry has no browser, so forward wrangler's OAuth
+callback port from a laptop and open the printed URL there:
 
 ```bash
-mkdir -p ~/.config/jomaa-health
-install -m 600 /dev/stdin ~/.config/jomaa-health/cloudflare-token   # paste the token, then Ctrl-D
+ssh -L 8976:localhost:8976 jerry
+cd ~/jomaa-everything/jomaa-health && npm ci && npx wrangler login --browser=false
 ```
+
+A Cloudflare API token that can deploy Workers works instead: set
+`CLOUDFLARE_API_TOKEN`, or save it with mode 600 in
+`~/.config/jomaa-health/cloudflare-token`. Either takes precedence over the
+login.
 
 Then, from this directory on jerry:
 
@@ -57,8 +62,7 @@ npm run deploy
 
 `scripts/deploy.mjs` runs `wrangler deploy`, which attaches the custom domain
 `health.jomaa.org` and creates its DNS record, then stores `HUB_PASSWORD` from
-`../jomaa-home-hub/.env` as the Worker secret. `CLOUDFLARE_API_TOKEN` in the
-environment takes precedence over the token file. Redeploy after changing
+`../jomaa-home-hub/.env` as the Worker secret. Redeploy after changing
 routes, static sites, the hub password, or this folder.
 
 ## Check locally
