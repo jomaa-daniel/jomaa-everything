@@ -20,6 +20,17 @@ class ServerTest(unittest.TestCase):
     def test_ipv4_and_ipv6_forwarding_are_enabled(self):
         self.assertEqual(server.SYSCTL_TEXT, "net.ipv4.ip_forward = 1\nnet.ipv6.conf.all.forwarding = 1\n")
 
+    def test_gro_dispatcher_runs_on_physical_interfaces_coming_up(self):
+        script = server.dispatcher_script()
+        self.assertTrue(script.startswith("#!/bin/sh\n"))
+        self.assertIn('[ "$2" = up ] || exit 0', script)
+        self.assertIn("lo|tailscale*|docker*", script)
+        self.assertIn(f'{server.ETHTOOL} -K "$1" rx-udp-gro-forwarding on rx-gro-list off', script)
+
+    def test_default_device_comes_from_the_route(self):
+        route = "1.1.1.1 via 192.168.1.1 dev enp2s0 src 192.168.1.239 uid 1000 \\    cache \n"
+        self.assertEqual(server.default_device(route), "enp2s0")
+
     def test_apt_source_is_signed(self):
         line = server.apt_source("resolute")
         self.assertEqual(line, f"deb [signed-by={server.KEYRING}] {server.REPO} resolute main\n")

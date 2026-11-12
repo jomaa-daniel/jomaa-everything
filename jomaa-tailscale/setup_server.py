@@ -2,7 +2,7 @@
 """Join jerry to the tailnet as the home LAN's subnet router and an exit node.
 
 Installs Tailscale from its Ubuntu package repository, keeps IPv4 and IPv6
-forwarding on, and runs `tailscale up` with the auth key from jomaa-tailscale/main.tf,
+forwarding on, keeps UDP GRO forwarding on for physical interfaces, and runs `tailscale up` with the auth key from jomaa-tailscale/main.tf,
 read from ~/.local/share/jomaa-tailscale/authkey and deleted afterwards.
 Without that file, `tailscale up` prints a login URL instead. Uses sudo for
 system changes. Safe to rerun.
@@ -23,6 +23,9 @@ SOURCES = Path("/etc/apt/sources.list.d/tailscale.list")
 SYSCTL = Path("/etc/sysctl.d/99-jomaa-tailscale.conf")
 SYSCTL_TEXT = "net.ipv4.ip_forward = 1\nnet.ipv6.conf.all.forwarding = 1\n"
 KEY_FILE = Path.home() / ".local/share/jomaa-tailscale/authkey"
+ETHTOOL = "/usr/sbin/ethtool"
+GRO_ARGS = ("rx-udp-gro-forwarding", "on", "rx-gro-list", "off")
+DISPATCHER = Path("/etc/NetworkManager/dispatcher.d/50-jomaa-tailscale-gro")
 
 
 class SetupError(Exception):
@@ -33,8 +36,25 @@ def run(*args: str, stdin: str | None = None) -> None:
     subprocess.run(args, check=True, text=True, input=stdin, timeout=600)
 
 
-def write_root(path: Path, text: str) -> None:
-    run("sudo", "tee", str(path), stdin=text)
+def write_root(path: Path, text: str, mode: str = "644") -> None:
+    subprocess.run(["sudo", "tee", str(path)], check=True, text=True, input=text,
+                   stdout=subprocess.DEVNULL, timeout=60)
+    run("sudo", "chmod", mode, str(path))
+
+
+def dispatcher_script() -> str:
+    return f"""#!/bin/sh
+# Written by jomaa-tailscale/setup_server.py. Turns on UDP GRO forwarding for
+# Tailscale's forwarded traffic whenever a physical interface comes up.
+[ "$2" = up ] || exit 0
+case "$1" in lo|tailscale*|docker*|veth*|br-*) exit 0 ;; esac
+{ETHTOOL} -K "$1" {" ".join(GRO_ARGS)} 2>/dev/null || true
+"""
+
+
+def default_device(route: str) -> str:
+    words = route.split()
+    return words[words.index("dev") + 1]
 
 
 def os_release(text: str) -> dict[str, str]:
@@ -73,6 +93,10 @@ def main() -> int:
             install(release["VERSION_CODENAME"])
         write_root(SYSCTL, SYSCTL_TEXT)
         run("sudo", "sysctl", "-p", str(SYSCTL))
+        write_root(DISPATCHER, dispatcher_script(), mode="755")
+        route = subprocess.run(["ip", "-o", "route", "get", "1.1.1.1"], check=True, text=True,
+                               capture_output=True, timeout=10).stdout
+        run("sudo", ETHTOOL, "-K", default_device(route), *GRO_ARGS)
         run("sudo", "systemctl", "enable", "--now", "tailscaled")
 
         key_file = KEY_FILE if KEY_FILE.is_file() else None

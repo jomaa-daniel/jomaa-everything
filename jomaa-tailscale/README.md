@@ -45,7 +45,9 @@ ssh -t jerry python3 .local/share/jomaa-deploy/current/jomaa-tailscale/setup_ser
 ```
 
 The setup installs Tailscale from its Ubuntu repository, keeps IPv4 and IPv6
-forwarding on in `/etc/sysctl.d/99-jomaa-tailscale.conf`, joins as `jerry` with
+forwarding on in `/etc/sysctl.d/99-jomaa-tailscale.conf`, turns on UDP GRO forwarding
+for faster forwarded traffic (kept on across reboots by
+`/etc/NetworkManager/dispatcher.d/50-jomaa-tailscale-gro`), joins as `jerry` with
 `tag:jerry` (reauthenticating if it was already logged in), advertises the LAN
 and the exit node, and deletes the key file. It
 asks for jerry's sudo password. Terraform state stays in `jomaa-tailscale/`
@@ -71,7 +73,8 @@ ping 192.168.1.1            # the router, through jerry (admins)
 ## Remove it
 
 On jerry: `sudo tailscale logout`, `sudo apt-get remove tailscale`, and delete
-`/etc/sysctl.d/99-jomaa-tailscale.conf`. On the laptop:
+`/etc/sysctl.d/99-jomaa-tailscale.conf` and
+`/etc/NetworkManager/dispatcher.d/50-jomaa-tailscale-gro`. On the laptop:
 `terraform -chdir=jomaa-tailscale destroy`.
 
 ## Test
