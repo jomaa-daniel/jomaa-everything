@@ -58,11 +58,18 @@
       >
         <header class="status-row">
           <h2 id="target-title" class="room-title"></h2>
-          <div class="status">
+          <button
+            id="status-toggle"
+            class="status"
+            type="button"
+            aria-expanded="false"
+            aria-controls="device-problems"
+          >
             <span id="power-state" class="status-note"></span>
             <span id="device-dots" class="dots" role="img" hidden></span>
-          </div>
+          </button>
         </header>
+        <ul id="device-problems" class="device-problems" hidden></ul>
         <p id="target-description" class="sr-only"></p>
 
         <div
@@ -140,7 +147,7 @@
               <div class="swatch-cell">
                 <button
                   class="swatch"
-                  data-color="#ff3b30"
+                  data-color="#ff0000"
                   aria-label="Red"
                   aria-pressed="false"
                 ></button>
@@ -148,7 +155,7 @@
               <div class="swatch-cell">
                 <button
                   class="swatch"
-                  data-color="#ff9500"
+                  data-color="#ff8000"
                   aria-label="Orange"
                   aria-pressed="false"
                 ></button>
@@ -206,7 +213,6 @@
             </div>
           </div>
         </div>
-        <p id="notice" class="notice" role="alert" hidden></p>
       </section>
 
       <nav id="tabs" class="rooms" aria-label="Rooms" hidden>

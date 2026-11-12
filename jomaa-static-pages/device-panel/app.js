@@ -22,17 +22,12 @@ const CUSTOM_COLORS_KEY = "device-panel.custom-colors";
 const DEFAULT_CUSTOM_COLORS = { "custom-1": "#007aff", "custom-2": "#af52de" };
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const REFRESH_INTERVAL_MS = 60_000;
-const CONFIRM_INTERVAL_MS = 1_000;
-const CONFIRM_ATTEMPTS = 10;
-/** Percent points within which a device counts as having reached a value. */
-const TOLERANCE = 2;
-const NOT_REACHED = "didn't reach the requested state";
 
 /** Colors offered for the custom swatches: vivid hues, then softer tints. */
 const PALETTE = [
-  "#ff3b30",
+  "#ff0000",
   "#ff6b2c",
-  "#ff9500",
+  "#ff8000",
   "#ffcc00",
   "#c7e600",
   "#34c759",
@@ -77,18 +72,18 @@ const app = {
   session: 0,
   /** Bumps when the selection or target list changes; older reads are dropped. */
   view: 0,
-  /** Bumps on every command; older confirmation loops stop. */
-  commandToken: 0,
   targets: /** @type {Map<string, Target>} */ (new Map()),
   targetsLoaded: false,
   tabs: /** @type {Tab[]} */ ([]),
   selected: /** @type {string[]} */ ([]),
   selectionInitialized: false,
   observation: /** @type {Observation | null} */ (null),
-  /** Devices waiting to reach the state of the last command. */
+  /** Devices whose command the hub hasn't answered yet. */
   pending: /** @type {Set<string>} */ (new Set()),
-  /** Devices that failed to answer or to reach the last command, with reasons. */
+  /** Devices that failed to answer or to take the last command, with reasons. */
   failed: /** @type {Record<string, string>} */ ({}),
+  /** Whether the status row is expanded to name devices that aren't answering. */
+  statusOpen: false,
   stale: false,
   loading: false,
   busy: false,
@@ -98,8 +93,6 @@ const app = {
   selectedSwatch: /** @type {string | null} */ (null),
   customColors: { ...DEFAULT_CUSTOM_COLORS },
   editing: /** @type {string | null} */ (null),
-  error: /** @type {Message} */ ({ text: "", error: true }),
-  errorDetail: "",
   loginMessage: /** @type {Message} */ ({ text: "", error: false }),
   reconnect: false,
 };
@@ -270,18 +263,18 @@ async function readState(ids) {
   return merged;
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 // Messages
 
 const sentence = (text) =>
   `${text.charAt(0).toUpperCase()}${text.slice(1)}${/[.!?]$/.test(text) ? "" : "."}`;
 
+const HUB_TIMEOUT = "The hub took too long to respond.";
+const HUB_UNREACHABLE = "Can't reach the hub. Check your connection.";
+
 function describe(error) {
   if (error instanceof DOMException && error.name === "TimeoutError")
-    return "The hub took too long to respond.";
-  if (error instanceof TypeError)
-    return "Can't reach the hub. Check your connection.";
+    return HUB_TIMEOUT;
+  if (error instanceof TypeError) return HUB_UNREACHABLE;
   if (error instanceof HttpError || error instanceof BadResponse)
     return sentence(error.message);
   return "Something went wrong.";
@@ -290,36 +283,16 @@ function describe(error) {
 function reasonText(reason) {
   if (/HTTP (401|403)/.test(reason)) return "access refused";
   if (/HTTP 429/.test(reason)) return "too many requests, try again shortly";
-  if (reason === NOT_REACHED) return NOT_REACHED;
+  if (reason === HUB_TIMEOUT) return "the hub took too long";
+  if (reason === HUB_UNREACHABLE) return "can't reach the hub";
   return "not responding";
 }
 
-/** Groups failures by reason: "Lamp A, Lamp B: not responding." */
-function failureText(failed) {
-  const groups = new Map();
-  for (const [id, reason] of Object.entries(failed)) {
-    const text = reasonText(reason);
-    groups.set(text, [...(groups.get(text) ?? []), nameOf(id)]);
-  }
-  return [...groups]
-    .map(([text, names]) => `${names.sort().join(", ")}: ${text}.`)
-    .join(" ");
-}
-
-function showError(text, detail = "") {
-  app.error = { text, error: true };
-  app.errorDetail = detail;
-  if (text) announce(text);
-}
-
-function showFailures(failed, problems) {
-  const detail = Object.entries(failed)
-    .map(([id, reason]) => `${nameOf(id)}: ${reason}`)
-    .join("\n");
-  showError(
-    [...problems, failureText(failed)].filter(Boolean).join(" "),
-    detail,
-  );
+/** Marks every selected device as not answering after a whole read failed. */
+function unreachable(error) {
+  const reason = describe(error);
+  for (const id of selectedDevices()) app.failed[id] = reason;
+  app.stale = app.observation !== null;
 }
 
 function announce(text) {
@@ -421,20 +394,6 @@ function applyChanges(state, changes, features) {
   };
 }
 
-/** @param {LightState} state @param {Changes} changes @param {Features} features */
-function reached(state, changes, features) {
-  const near = (a, b) => Math.abs(a - b) <= TOLERANCE;
-  return (
-    (changes.on === undefined || state.on === changes.on) &&
-    (changes.brightness === undefined ||
-      !features.brightness ||
-      near(state.brightness, changes.brightness)) &&
-    (changes.colorTemperaturePct === undefined ||
-      !features.colorTemperature ||
-      near(state.colorTemperaturePct, changes.colorTemperaturePct))
-  );
-}
-
 /** @returns {DeviceStatus} */
 function deviceStatus(id) {
   if (app.pending.has(id)) return "pending";
@@ -506,7 +465,7 @@ function saveCustomColors() {
   try {
     localStorage.setItem(CUSTOM_COLORS_KEY, JSON.stringify(app.customColors));
   } catch {
-    showError("This browser couldn't save the custom color.");
+    announce("This browser couldn't save the custom color.");
   }
 }
 
@@ -527,7 +486,6 @@ function startSession(authenticated) {
     authenticated,
     session: app.session + 1,
     view: app.view + 1,
-    commandToken: app.commandToken + 1,
     targets: new Map(),
     targetsLoaded: false,
     tabs: [],
@@ -536,14 +494,13 @@ function startSession(authenticated) {
     observation: null,
     pending: new Set(),
     failed: {},
+    statusOpen: false,
     stale: false,
     loading: false,
     busy: false,
     queued: null,
     selectedColor: null,
     selectedSwatch: null,
-    error: { text: "", error: true },
-    errorDetail: "",
     reconnect: false,
   });
   $("tab-list").replaceChildren();
@@ -564,12 +521,14 @@ function sessionEnded(refusal = null) {
 
 // Actions
 
-/** Stores a fresh read of the selection. */
+/**
+ * Stores a fresh read of the selection. Devices that didn't answer show as
+ * red dots, which the status row names when expanded.
+ */
 function observed(observation) {
   app.observation = observation;
   app.failed = { ...observation.failed };
   app.stale = false;
-  showFailures(observation.failed, []);
 }
 
 /**
@@ -597,7 +556,6 @@ async function refresh(background = false) {
         : [];
     app.selectionInitialized = true;
     buildTabs();
-    showError("");
     if (app.selected.length) {
       const observation = await readState(app.selected);
       if (session !== app.session || view !== app.view) return;
@@ -613,8 +571,7 @@ async function refresh(background = false) {
     )
       return;
     if (app.authenticated === true) {
-      app.stale = app.observation !== null;
-      showError(describe(error));
+      unreachable(error);
     } else {
       app.authenticated = false;
       app.loginMessage = { text: describe(error), error: true };
@@ -632,7 +589,6 @@ async function selectTargets(ids) {
   if (app.authenticated !== true) return;
   const session = app.session;
   const view = ++app.view;
-  app.commandToken += 1;
   app.selected = [...new Set(ids)].filter((id) => app.targets.has(id));
   app.observation = null;
   app.pending = new Set();
@@ -642,7 +598,6 @@ async function selectTargets(ids) {
   app.selectedSwatch = null;
   app.queued = null;
   app.loading = app.selected.length > 0;
-  showError("");
   render();
   if (!app.loading) return;
   try {
@@ -656,7 +611,7 @@ async function selectTargets(ids) {
       error instanceof SessionExpired
     )
       return;
-    showError(describe(error));
+    unreachable(error);
   } finally {
     if (session === app.session && view === app.view) {
       app.loading = false;
@@ -676,21 +631,22 @@ function command(changes) {
 }
 
 /**
- * Sends a command, marks every selected device pending, and then confirms
- * each device as it reaches the requested state.
+ * Sends a command and shows the requested state right away. Each device is
+ * pending until the hub answers; a device the hub reports as failed returns
+ * to its previous state and turns red.
  * @param {Changes} changes
  */
 async function send(changes) {
   const session = app.session;
   const view = app.view;
-  const token = ++app.commandToken;
   const ids = [...app.selected];
   const devices = selectedDevices();
-  if (app.observation)
+  const before = app.observation;
+  if (before)
     app.observation = {
-      ...app.observation,
+      ...before,
       devices: Object.fromEntries(
-        Object.entries(app.observation.devices).map(([id, state]) => [
+        Object.entries(before.devices).map(([id, state]) => [
           id,
           applyChanges(state, changes, featuresOf(id)),
         ]),
@@ -699,40 +655,48 @@ async function send(changes) {
   app.pending = new Set(devices);
   for (const id of devices) delete app.failed[id];
   app.busy = true;
-  showError("");
   announce("Applying…");
   render();
 
-  const problems = [];
-  let accepted = false;
   try {
     const results = await Promise.allSettled(
       ids.map((id) => api(targetPath(id, "command"), "POST", changes)),
     );
     if (session !== app.session) return;
-    accepted = true;
+    if (results.some((result) => result.reason instanceof SessionExpired))
+      return;
+    if (view !== app.view) return;
+    /** @type {Record<string, string>} */
+    const failed = {};
     for (const [index, result] of results.entries()) {
       if (result.status === "fulfilled") continue;
       const error = result.reason;
-      if (error instanceof SessionExpired) return;
-      const failed =
+      Object.assign(
+        failed,
         error instanceof HttpError && Object.keys(error.failed).length
           ? error.failed
           : Object.fromEntries(
               targetDeviceIds(ids[index]).map((id) => [id, describe(error)]),
-            );
-      for (const [id, reason] of Object.entries(failed)) {
-        app.failed[id] = reason;
-        app.pending.delete(id);
-      }
+            ),
+      );
     }
-    if (view === app.view && !Object.keys(app.failed).length) {
+    for (const id of devices) app.pending.delete(id);
+    Object.assign(app.failed, failed);
+    if (app.observation && before)
+      for (const id of Object.keys(failed)) {
+        if (before.devices[id])
+          app.observation.devices[id] = before.devices[id];
+        else delete app.observation.devices[id];
+      }
+    if (!Object.keys(failed).length) {
       if (changes.color !== undefined) app.selectedColor = changes.color;
       if (changes.colorTemperaturePct !== undefined) {
         app.selectedColor = null;
         app.selectedSwatch = null;
       }
     }
+    const count = Object.keys(failed).length;
+    announce(count ? `Done. ${count} not answering.` : "Done.");
   } finally {
     if (session === app.session) {
       app.busy = false;
@@ -742,64 +706,6 @@ async function send(changes) {
       if (next) command(next);
     }
   }
-  if (accepted) await confirm({ session, view, token }, ids, changes, problems);
-}
-
-/**
- * Re-reads the selection until every pending device reaches the requested
- * state, fails, or runs out of attempts. Pending devices keep showing the
- * requested values so the controls don't jump back while they catch up.
- */
-async function confirm(stamp, ids, changes, problems) {
-  const current = () =>
-    stamp.session === app.session &&
-    stamp.view === app.view &&
-    stamp.token === app.commandToken;
-  for (
-    let attempt = 0;
-    attempt < CONFIRM_ATTEMPTS && app.pending.size;
-    attempt++
-  ) {
-    if (attempt) await sleep(CONFIRM_INTERVAL_MS);
-    if (!current()) return;
-    let observation;
-    try {
-      observation = await readState(ids);
-    } catch (error) {
-      if (!current() || error instanceof SessionExpired) return;
-      problems.push(describe(error));
-      for (const id of app.pending) app.failed[id] = describe(error);
-      app.pending.clear();
-      app.stale = app.observation !== null;
-      break;
-    }
-    if (!current()) return;
-    for (const [id, reason] of Object.entries(observation.failed)) {
-      app.failed[id] = reason;
-      app.pending.delete(id);
-    }
-    for (const [id, state] of Object.entries(observation.devices))
-      if (app.pending.has(id) && reached(state, changes, featuresOf(id)))
-        app.pending.delete(id);
-    const shown = app.observation?.devices ?? {};
-    app.observation = {
-      devices: Object.fromEntries(
-        Object.entries(observation.devices).map(([id, state]) => [
-          id,
-          app.pending.has(id) && shown[id] ? shown[id] : state,
-        ]),
-      ),
-      failed: observation.failed,
-    };
-    app.stale = false;
-    render();
-  }
-  if (!current()) return;
-  for (const id of app.pending) app.failed[id] = NOT_REACHED;
-  app.pending.clear();
-  showFailures(app.failed, problems);
-  if (!app.error.text) announce("Done.");
-  render();
 }
 
 // Rendering
@@ -837,7 +743,6 @@ function render() {
   $("controller").hidden = !signedIn;
   $("tabs").hidden = !signedIn || app.tabs.length < 2;
   renderLogin();
-  renderNotice();
   if (!signedIn) return;
   const chosen = selection();
   const summary = summarize();
@@ -852,13 +757,6 @@ function renderLogin() {
   $("login-message").hidden = !app.loginMessage.text;
   $("login-message").classList.toggle("error", app.loginMessage.error);
   $("reconnect").hidden = !app.reconnect;
-}
-
-function renderNotice() {
-  const text = app.authenticated === true ? app.error.text : "";
-  $("notice").textContent = text;
-  $("notice").title = app.errorDetail;
-  $("notice").hidden = !text;
 }
 
 function renderTabs() {
@@ -946,6 +844,43 @@ function renderDevices() {
       .join(", "),
   );
   dots.hidden = !ids.length;
+
+  const toggle = $("status-toggle");
+  const open = app.statusOpen && ids.length > 0;
+  toggle.setAttribute("aria-expanded", String(open));
+  toggle.disabled = !ids.length;
+  $("controller").classList.toggle("status-open", open);
+  const offline = ids.filter((id) => deviceStatus(id) === "offline");
+  const problems = $("device-problems");
+  problems.replaceChildren(
+    ...(offline.length
+      ? offline
+          .sort((a, b) => nameOf(a).localeCompare(nameOf(b)))
+          .map((id) => {
+            const item = document.createElement("li");
+            item.title = app.failed[id];
+            const dot = document.createElement("span");
+            dot.className = "dot offline";
+            const name = document.createElement("span");
+            name.className = "problem-name";
+            name.textContent = nameOf(id);
+            const reason = document.createElement("span");
+            reason.className = "problem-reason";
+            reason.textContent = reasonText(app.failed[id]);
+            item.append(dot, name, reason);
+            return item;
+          })
+      : [
+          Object.assign(document.createElement("li"), {
+            className: "problem-none",
+            textContent:
+              ids.length === 1
+                ? "The device is answering."
+                : `All ${ids.length} devices are answering.`,
+          }),
+        ]),
+  );
+  problems.hidden = !open;
 }
 
 function renderSettings(chosen, summary) {
@@ -1109,6 +1044,11 @@ $("tab-list").addEventListener("click", (event) => {
 $("power-toggle").addEventListener("click", () =>
   command({ on: summarize().on === 0 }),
 );
+
+$("status-toggle").addEventListener("click", () => {
+  app.statusOpen = !app.statusOpen;
+  render();
+});
 
 $("brightness").addEventListener("input", () => {
   showBrightness(Number($("brightness").value));

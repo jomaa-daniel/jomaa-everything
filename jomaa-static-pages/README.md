@@ -16,26 +16,35 @@ The session stays signed in until it expires.
 
 The screen fills the viewport from top to bottom:
 
-- The top row shows the room name on the left and a dot for each device in
-  the room on the right: filled for on, hollow for off, yellow after a
-  command until that device reaches the requested state, and red when it
-  is not answering. Short notes such as "1 of 2 on" or "last known" sit
-  beside the dots.
+- The top row shows the room name on the left, wrapping onto more lines
+  when it doesn't fit, and a dot for each device in the room on the right:
+  filled for on, hollow for off, yellow while the hub sends a command, and
+  red when the device is not answering or rejected the command. Short notes
+  such as "1 of 2 on" or "last known" sit beside the dots. Tapping the dots
+  enlarges them and lists the devices that aren't answering, with the
+  reason.
 - A round power button glows with the light's color or white temperature at
   its brightness.
 - The remaining height is split evenly between a brightness slider, a
-  warm-to-cool temperature track, and red, orange, green, pink, and two
-  custom color circles. Each band names its control and shows its current
+  warm-to-cool temperature track, and red (`#ff0000`), orange (`#ff8000`),
+  green, pink, and two custom color circles. Each band names its control and shows its current
   value; brightness shows "Mixed" when the room's lit devices differ, and
   sliding it sets the whole room to one level. Each control fills its band.
-- The bottom edge selects one room at a time. Without rooms, it lists
-  devices.
+- The bottom edge selects one room at a time, wrapping long names. Without
+  rooms, it lists devices.
+
+Sizes are in `rem`, and the root font size grows with the screen's shorter
+side, so the panel scales from phones to wall tablets.
 
 The pencil on a custom circle opens a grid of colors; picking one saves it in
-the browser and applies it. After a command the panel re-reads the hub about
-once a second until every device confirms or ten seconds pass, then names
-devices that didn't get there. It also re-reads the hub when it becomes
-visible and every minute.
+the browser and applies it. A command shows the requested state as soon as
+the hub accepts it for each device; a device the hub reports as failed goes
+back to its previous state and turns red. When the hub can't be reached,
+every device in the room turns red. The panel shows no pop-up messages; the
+expanded status row names the red devices and why. The panel
+doesn't wait for devices to report the new state, because Govee's cloud keeps
+reporting the old state for a while after taking a command. It re-reads the
+hub when it becomes visible and every minute.
 
 The hub serves this panel with its API. `jomaa-home-hub/scripts/build-web.mjs`
 copies the panel and its styles into the hub build. Run
