@@ -28,7 +28,7 @@ import settings
 from cloudflare_api import CloudflareError
 from modules import VERIFY_JOB, Context, DeployError
 from modules import ingress
-from modules.base import quote
+from modules.base import atomic_write, quote
 from settings import load_env
 
 CONFIG = settings.CONFIG
@@ -119,7 +119,10 @@ def extract_release(repo: Path, sha: str, deploy_dir: Path) -> Path:
 
 
 def prune_releases(deploy_dir: Path, keep: int) -> None:
-    """Delete old releases, keeping the newest, the current one and every module's current and previous one."""
+    """Delete old releases, keeping the newest, the current one and every module's current and previous one.
+
+    Stored activation results go with their release.
+    """
     releases = deploy_dir / "releases"
     pointers = [deploy_dir / "current", *deploy_dir.glob("modules/*/current"), *deploy_dir.glob("modules/*/previous")]
     used = {pointer.resolve() for pointer in pointers if pointer.exists()}
@@ -131,6 +134,9 @@ def prune_releases(deploy_dir: Path, keep: int) -> None:
                 shutil.rmtree(old)
             except OSError as error:
                 print(f"Could not remove release {old.name}: {error}", file=sys.stderr)
+    for stored in (deploy_dir / "results").glob("*.json"):
+        if not (releases / stored.name.split("-", 1)[0]).is_dir():
+            stored.unlink(missing_ok=True)
 
 
 def context(source: Path, deploy_dir: Path, release: Path, sha: str) -> Context:
@@ -147,6 +153,10 @@ def activate_revision(source: Path, deploy_dir: Path, repo_name: str, sha: str, 
     release = deploy_dir / "releases" / sha
     if (release / ".revision").read_text().strip() != sha:
         raise DeployError(f"release {release} has the wrong revision")
+    stored = deploy_dir / "results" / f"{sha}-{run_id}-{attempt}.json"
+    if stored.exists():
+        print(f"run {run_id} attempt {attempt} already activated {sha[:12]}; reporting its result", flush=True)
+        return json.loads(stored.read_text())
     try:
         jobs = github_jobs(repo_name, run_id, attempt)
     except (OSError, ValueError, urllib.error.URLError) as error:
@@ -154,6 +164,7 @@ def activate_revision(source: Path, deploy_dir: Path, repo_name: str, sha: str, 
               file=sys.stderr, flush=True)
         jobs = {}
     result = engine.activate(context(source, deploy_dir, release, sha), jobs)
+    atomic_write(stored, json.dumps(result) + "\n")
     prune_releases(deploy_dir, CONFIG["releasesKept"])
     return result
 

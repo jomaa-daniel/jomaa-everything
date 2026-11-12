@@ -33,7 +33,7 @@ GitHub Actions secret `JOMAA_DEPLOY_SECRET` holds the same value.
 | `tunnel` | object | The locally managed Cloudflare tunnel. |
 | `tunnel.name` | string | Tunnel created or selected by the installer, unless `--tunnel-name` names another. |
 | `tunnel.unit` | unit name | systemd user unit that runs cloudflared. Services cannot use it. |
-| `tunnel.directory` | path | Checkout folder holding the cloudflared binary and `tunnel.yml`. `jomaa-deploy/boot.py` starts the tunnel from the hub's `data/native`, which is this folder. |
+| `tunnel.directory` | path | Checkout folder holding the cloudflared binary and `tunnel.yml`, inside the hub's linked `data` state. `jomaa-deploy/boot.py` reads it to start the tunnel and to find the hub's Matter storage. |
 | `tunnel.cloudflaredVersion` | version | cloudflared release the installer downloads. |
 | `tunnel.cloudflaredRepository` | `OWNER/REPOSITORY` | GitHub repository of the cloudflared releases. |
 | `tunnel.downloadTimeoutSeconds` | seconds | Deadline of the cloudflared download. |

@@ -33,7 +33,7 @@ it. Every key is described in [`config.md`](config.md).
 
 | Class | Deploys |
 | --- | --- |
-| `Service` | Runs its build commands, writes a systemd user unit, restarts it and waits for its HTTP health check. A failure restores the previous release, unit and process. Its routes reach its loopback origin. |
+| `Service` | Runs its build commands, writes a systemd user unit, restarts it and waits for its HTTP health check. A failure restores the previous release, unit and process; without a recorded version, it restores the unit file it replaced, or stops and removes the new unit. Its routes reach its loopback origin. |
 | `StaticSite` | One hostname folder of a static server, created by the server's `children()`. It is served from the site map. |
 | `Command` | Runs its build commands and command on every activation, from the new release. Commands compare desired and actual state themselves; a failure is not rolled back. |
 | `External` | Nothing; publishes routes to an origin provisioned outside deployment, such as SSH. |
@@ -162,12 +162,20 @@ module with checks is eligible only when its `check (<module>)` job
 succeeded; a failed, skipped, cancelled or missing job makes it ineligible,
 and it keeps its deployed version.
 
-Each module's fingerprint is a hash of the git objects of its folder and
-`inputs` at the revision, together with its declaration. A module is built
-and activated only when its fingerprint differs from its record or its last
-attempt failed; an unchanged module is not built or restarted. Commands run
-on every activation. A static site's folder is part of the static server's
-folder, so a site change also restarts the static server.
+Each module's fingerprint is a hash of the git objects of its folder's
+top-level entries and of its `inputs` at the revision, together with its
+declaration. Entries that the module's children own are left out: a static
+site's folder counts for that site alone, so a site change does not restart
+the static server. A module is built and activated only when its fingerprint
+differs from its record or its last attempt failed; an unchanged module is
+not built or restarted. Commands run on every activation.
+
+The result of each run attempt is stored in
+`results/<sha>-<run id>-<attempt>.json`. A repeated request for the same
+attempt, such as `notify.py` sending again after its request timed out while
+the activation ran, reports the stored result without activating again. A new
+attempt of the workflow, such as rerunning the `deploy` job, activates again
+and retries the failed modules.
 
 The phases run in this order, each module on its own with the time budget
 `moduleTimeoutSeconds`:
@@ -230,9 +238,12 @@ job retries the failed modules.
   modules/<name>/current -> releases/<sha>
   modules/<name>/previous -> releases/<sha>
   modules/<name>/record.json         revision, fingerprint, live declaration, failed
+  results/<sha>-<run id>-<attempt>.json  result of each run attempt
   sites.json                         static site map
   ingress.json                       hostnames under DNS management
 ```
+
+Result files are deleted with their release.
 
 A service's unit runs from its module pointer, so it keeps its release when
 other modules deploy. `previous` is the release the module replaced. Local

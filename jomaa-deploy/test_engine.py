@@ -167,8 +167,46 @@ class EngineTest(ModuleTestCase):
         self.assertEqual(ctx.sites.load(), {"one.example.org": str(first.release / "web/one.example.org")})
         self.assertIn("one.example.org", self.tunnel.read_text())
         self.assertNotIn("two.example.org", self.tunnel.read_text())
-        # Site folders are part of the static service's folder, so its fingerprint changed too.
-        self.assertEqual(result["modules"]["web"], "deployed")
+        self.assertEqual(result["modules"]["web"], "unchanged")
+        self.assertEqual(self.restarted(ctx), set())
+
+    def test_site_change_redeploys_only_that_site_and_server_change_the_server(self):
+        self.first_deployment()
+        self.write("web/one.example.org/index.html", "one, second version")
+        ctx = self.context(self.commit())
+        result = engine.activate(ctx, ALL_JOBS)
+        self.assertEqual((result["modules"]["web"], result["modules"]["one.example.org"]), ("unchanged", "deployed"))
+        self.assertEqual(self.restarted(ctx), set())
+        self.assertEqual(ctx.sites.load(), {"one.example.org": str(ctx.release / "web/one.example.org")})
+        self.write("web/serve.py", "# web, second version\n")
+        ctx = self.context(self.commit())
+        result = engine.activate(ctx, ALL_JOBS)
+        self.assertEqual((result["modules"]["web"], result["modules"]["one.example.org"]), ("deployed", "unchanged"))
+        self.assertEqual(self.restarted(ctx), {"jomaa-web"})
+
+    def test_failed_first_activation_restores_a_unit_it_replaced(self):
+        old_unit = b"[Service]\nExecStart=/previous/deployer/hub\n"
+        (self.unit_dir / "jomaa-app.service").write_bytes(old_unit)
+        self.add_all()
+        ctx = self.context(self.commit())
+        checks = []
+
+        def healthy(check):
+            checks.append(check["url"])
+            # The new version is unhealthy; the restored unit answers again.
+            return check["url"] != "http://127.0.0.1:9001/healthz" or checks.count(check["url"]) > 1
+        ctx.healthy = healthy
+        result = engine.activate(ctx, ALL_JOBS)
+        self.assertEqual(result["modules"]["app"], "failed")
+        self.assertEqual((self.unit_dir / "jomaa-app.service").read_bytes(), old_unit)
+        self.assertEqual([c for c in ctx.calls if "jomaa-app.service" in c][-1],
+                         ("systemctl", "--user", "restart", "jomaa-app.service"))
+        self.assertNotIn(("systemctl", "--user", "disable", "--now", "jomaa-app.service"), ctx.calls)
+        self.assertFalse((self.deploy_dir / "modules/app/current").exists())
+        unhealthy = self.context(self.git("rev-parse", "HEAD"), unhealthy={"http://127.0.0.1:9001/healthz"})
+        (self.unit_dir / "jomaa-app.service").write_bytes(old_unit)
+        self.assertEqual(engine.activate(unhealthy, ALL_JOBS)["modules"]["app"], "failed-unrestored")
+        self.assertEqual((self.unit_dir / "jomaa-app.service").read_bytes(), old_unit)
 
     def test_site_without_an_index_fails_alone(self):
         self.add_all()
@@ -184,7 +222,7 @@ class EngineTest(ModuleTestCase):
         result = engine.activate(ctx, ALL_JOBS)
         self.assertEqual(result["modules"]["one.example.org"], "removed")
         self.assertEqual(ctx.sites.load(), {})
-        self.assertEqual(result["modules"]["web"], "deployed")
+        self.assertEqual(result["modules"]["web"], "unchanged")
 
     def test_dns_conflict_on_one_host_leaves_the_others(self):
         self.cloudflare.records["9"] = {"id": "9", "type": "A", "name": "shell.example.org", "content": "192.0.2.1"}

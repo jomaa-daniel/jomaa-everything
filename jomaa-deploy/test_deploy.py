@@ -175,6 +175,22 @@ class DeploymentTest(ModuleTestCase):
         self.assertEqual((ctx.release, ctx.sha, given), (self.deploy_dir / "releases" / self.second, self.second,
                                                           {"check (app)": "success"}))
 
+    def test_a_repeated_request_reports_the_stored_result_and_a_new_attempt_activates(self):
+        deploy.extract_release(self.repo, self.second, self.deploy_dir)
+        reported = {"status": "deployed", "modules": {"app": "deployed"}, "ingress": {}}
+        with mock.patch.object(deploy, "github_jobs", return_value={}), \
+                mock.patch.object(deploy.engine, "activate", return_value=reported) as activated, \
+                contextlib.redirect_stdout(io.StringIO()):
+            first = deploy.activate_revision(self.source, self.deploy_dir, "example/hub", self.second, 12, 1)
+            again = deploy.activate_revision(self.source, self.deploy_dir, "example/hub", self.second, 12, 1)
+            self.assertEqual(activated.call_count, 1)
+            deploy.activate_revision(self.source, self.deploy_dir, "example/hub", self.second, 12, 2)
+            self.assertEqual(activated.call_count, 2)
+        self.assertEqual(first, reported)
+        self.assertEqual(again, reported)
+        self.assertEqual(sorted(p.name for p in (self.deploy_dir / "results").iterdir()),
+                         [f"{self.second}-12-1.json", f"{self.second}-12-2.json"])
+
     def test_unreadable_jobs_make_modules_with_checks_ineligible(self):
         deploy.extract_release(self.repo, self.second, self.deploy_dir)
         with mock.patch.object(deploy, "github_jobs", side_effect=OSError("offline")), \
@@ -195,8 +211,13 @@ class DeploymentTest(ModuleTestCase):
         switch_link(self.deploy_dir / "current", made[1])
         switch_link(self.deploy_dir / "modules/app/current", made[0])
         switch_link(self.deploy_dir / "modules/app/previous", made[2])
+        results = self.deploy_dir / "results"
+        results.mkdir()
+        for name in ("r3-12-1.json", "r4-12-1.json"):
+            (results / name).write_text("{}")
         deploy.prune_releases(self.deploy_dir, keep=3)
         self.assertEqual(sorted(p.name for p in releases.iterdir()), ["r0", "r1", "r2", "r4", "r5", "r6"])
+        self.assertEqual([p.name for p in results.iterdir()], ["r4-12-1.json"])
 
     def test_modules_command_lists_the_check_matrix(self):
         output = io.StringIO()

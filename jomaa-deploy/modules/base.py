@@ -229,6 +229,16 @@ def git_object(repo: Path, sha: str, path: str) -> str:
     return result.stdout.strip()
 
 
+def tree_entries(repo: Path, sha: str, directory: str) -> list[tuple[str, str]]:
+    """(path, object id) of each top-level entry of a folder at a revision."""
+    result = subprocess.run(["git", "-C", str(repo), "ls-tree", sha, f"{directory}/"], capture_output=True,
+                            text=True, check=True, timeout=settings.CONFIG["gitTimeoutSeconds"])
+    entries = [(line.split("\t", 1)[1], line.split()[2]) for line in result.stdout.splitlines()]
+    if not entries:
+        raise ValueError(f"{directory} does not exist at {sha[:12]}")
+    return entries
+
+
 class Module(abc.ABC):
     """A deployable part of the repository, declared by <directory>/deploy.json.
 
@@ -310,9 +320,16 @@ class Module(abc.ABC):
         """Repository paths whose content the module deploys."""
         return [self.directory, *self.inputs]
 
+    def objects(self, repo: Path, sha: str) -> dict[str, str]:
+        """Git object ids of the folder's top-level entries, except those its children own, and of inputs."""
+        owned = {path for child in self.children() for path in child.paths()}
+        ids = {path: oid for path, oid in tree_entries(repo, sha, self.directory) if path not in owned}
+        ids.update({path: git_object(repo, sha, path) for path in self.inputs})
+        return ids
+
     def fingerprint(self, repo: Path, sha: str) -> str:
-        ids = {path: git_object(repo, sha, path) for path in self.paths()}
-        content = json.dumps({"kind": self.kind, "objects": ids, "declaration": self.declaration}, sort_keys=True)
+        content = json.dumps({"kind": self.kind, "objects": self.objects(repo, sha),
+                              "declaration": self.declaration}, sort_keys=True)
         return hashlib.sha256(content.encode()).hexdigest()
 
     def check_job(self) -> str | None:

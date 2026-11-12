@@ -5,10 +5,11 @@ import os
 import sys
 from pathlib import Path
 
+import settings
 from deploy import load_env
 
 ROOT = Path(__file__).resolve().parent.parent / "jomaa-home-hub"
-DATA = ROOT / "data" / "native"
+DATA = Path(__file__).resolve().parent.parent / settings.CONFIG["tunnel"]["directory"]
 
 
 def main() -> None:

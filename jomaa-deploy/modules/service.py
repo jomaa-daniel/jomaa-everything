@@ -5,8 +5,8 @@ import re
 from pathlib import Path
 
 import settings
-from modules.base import (Context, Module, commands, command, declared_routes, expand, hostname, local_url,
-                          routes, switch_link, unit_text)
+from modules.base import (Context, Module, commands, command, declared_routes, expand, git_object, hostname,
+                          local_url, routes, switch_link, unit_text)
 
 
 class Service(Module):
@@ -15,6 +15,8 @@ class Service(Module):
     kind = "Service"
     phase = 1
     keys = (*Module.keys, "unit", "origin", "command", "build", "health", "routes")
+    replaced_pointer: Path | None = None
+    replaced_unit: bytes | None = None
 
     def validate(self) -> None:
         super().validate()
@@ -69,7 +71,11 @@ class Service(Module):
         ctx.systemctl("daemon-reload")
 
     def activate(self, ctx: Context, release: Path) -> None:
-        switch_link(ctx.pointer(self.name), release)
+        pointer = ctx.pointer(self.name)
+        unit = self.unit_file(ctx)
+        self.replaced_pointer = pointer.resolve() if pointer.exists() else None
+        self.replaced_unit = unit.read_bytes() if unit.exists() else None
+        switch_link(pointer, release)
         self.start(ctx)
         previous = self.previous()
         if previous is not None and previous.unit != self.unit:
@@ -86,14 +92,27 @@ class Service(Module):
     def rollback(self, ctx: Context) -> str:
         previous = self.previous()
         if previous is None:
-            self.stop(ctx)
-            ctx.pointer(self.name).unlink(missing_ok=True)
-            return "failed"
+            return self.restore_replaced(ctx)
         if previous.unit != self.unit:
             self.stop(ctx)
         switch_link(ctx.pointer(self.name), ctx.release_of(self.record["revision"]))
         previous.start(ctx)
         return "failed" if previous.verify(ctx) else "failed-unrestored"
+
+    def restore_replaced(self, ctx: Context) -> str:
+        """Without a recorded version, put back the unit file and pointer that activate() replaced."""
+        pointer = ctx.pointer(self.name)
+        if self.replaced_pointer is None:
+            pointer.unlink(missing_ok=True)
+        else:
+            switch_link(pointer, self.replaced_pointer)
+        if self.replaced_unit is None:
+            self.stop(ctx)
+            return "failed"
+        self.unit_file(ctx).write_bytes(self.replaced_unit)
+        ctx.systemctl("daemon-reload")
+        ctx.systemctl("restart", f"{self.unit}.service")
+        return "failed" if self.verify(ctx) else "failed-unrestored"
 
     def remove(self, ctx: Context, record: dict) -> None:
         if record["declaration"] is not None:
@@ -131,6 +150,9 @@ class StaticSite(Module):
 
     def paths(self) -> list[str]:
         return [f"{self.directory}/{self.name}"]
+
+    def objects(self, repo: Path, sha: str) -> dict[str, str]:
+        return {path: git_object(repo, sha, path) for path in self.paths()}
 
     def check_job(self) -> str | None:
         return self.parent.check_job() if self.parent is not None else None
