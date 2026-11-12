@@ -1051,24 +1051,22 @@ $("tab-list").addEventListener("click", (event) => {
 
 /**
  * A light tap of haptic feedback. Browsers with the Vibration API vibrate
- * briefly; Safari on iOS has no such API but ticks when a switch control
- * toggles, so a hidden switch is toggled instead.
+ * briefly. Safari on iOS ticks when a switch control toggles, so a hidden
+ * switch is created, toggled and removed on every tap.
  */
-const haptic = (() => {
+function haptic() {
+  if (typeof navigator.vibrate === "function") navigator.vibrate(HAPTIC_MS);
   const label = document.createElement("label");
-  label.hidden = true;
   label.setAttribute("aria-hidden", "true");
+  label.style.display = "none";
   const input = document.createElement("input");
   input.type = "checkbox";
   input.setAttribute("switch", "");
-  input.tabIndex = -1;
   label.append(input);
-  document.body.append(label);
-  return () => {
-    if (typeof navigator.vibrate === "function") navigator.vibrate(HAPTIC_MS);
-    else label.click();
-  };
-})();
+  document.head.append(label);
+  label.click();
+  label.remove();
+}
 
 document.addEventListener("click", (event) => {
   const button =
