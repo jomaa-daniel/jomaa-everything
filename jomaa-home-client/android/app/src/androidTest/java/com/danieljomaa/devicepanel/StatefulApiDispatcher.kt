@@ -87,10 +87,10 @@ class StatefulApiDispatcher : Dispatcher() {
 
     private fun command(request: RecordedRequest, apply: (JSONObject) -> Unit): MockResponse {
         val fail = synchronized(lock) { failNextCommand.also { failNextCommand = false } }
-        if (fail) return json(502, """{"ok":false,"failed":{"lamp-b":"device did not respond"}}""")
+        if (fail) return json(200, """{"failed":{"lamp-b":"device did not respond"}}""")
         val body = JSONObject(request.body.readUtf8())
         synchronized(lock) { apply(body) }
-        return json(200, """{"ok":true}""")
+        return json(200, """{"failed":{}}""")
     }
 
     private fun roomLight(): String {

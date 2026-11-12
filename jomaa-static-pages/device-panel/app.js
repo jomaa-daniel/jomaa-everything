@@ -52,11 +52,10 @@ const PALETTE = [
 ];
 
 class HttpError extends Error {
-  /** @param {number} status @param {string} message @param {Record<string, string>} failed */
-  constructor(status, message, failed) {
+  /** @param {number} status @param {string} message */
+  constructor(status, message) {
     super(message);
     this.status = status;
-    this.failed = failed;
   }
 }
 
@@ -170,6 +169,12 @@ function parseFailed(value) {
   );
 }
 
+/** The devices that didn't take a command, by id. @returns {Record<string, string>} */
+function parseCommandResult(value) {
+  expect(isRecord(value));
+  return parseFailed(value.failed);
+}
+
 /** @returns {Observation} */
 function parseObservation(value) {
   expect(isRecord(value) && isRecord(value.devices));
@@ -188,8 +193,7 @@ function parseObservation(value) {
 
 /**
  * Sends one request. A 401 or 403 outside sign-in ends the session and throws
- * SessionExpired; other failures throw HttpError with the hub's message and
- * any per-device failures.
+ * SessionExpired; other failures throw HttpError with the hub's message.
  * @param {string} path @param {"GET" | "POST"} method @param {object | null} body
  */
 async function api(path, method = "GET", body = null) {
@@ -227,7 +231,6 @@ async function api(path, method = "GET", body = null) {
     isRecord(data) && typeof data.error === "string"
       ? data.error
       : `the hub answered with HTTP ${response.status}`,
-    isRecord(data) && isRecord(data.failed) ? parseFailed(data.failed) : {},
   );
 }
 
@@ -660,7 +663,11 @@ async function send(changes) {
 
   try {
     const results = await Promise.allSettled(
-      ids.map((id) => api(targetPath(id, "command"), "POST", changes)),
+      ids.map((id) =>
+        api(targetPath(id, "command"), "POST", changes).then(
+          parseCommandResult,
+        ),
+      ),
     );
     if (session !== app.session) return;
     if (results.some((result) => result.reason instanceof SessionExpired))
@@ -669,14 +676,15 @@ async function send(changes) {
     /** @type {Record<string, string>} */
     const failed = {};
     for (const [index, result] of results.entries()) {
-      if (result.status === "fulfilled") continue;
-      const error = result.reason;
       Object.assign(
         failed,
-        error instanceof HttpError && Object.keys(error.failed).length
-          ? error.failed
+        result.status === "fulfilled"
+          ? result.value
           : Object.fromEntries(
-              targetDeviceIds(ids[index]).map((id) => [id, describe(error)]),
+              targetDeviceIds(ids[index]).map((id) => [
+                id,
+                describe(result.reason),
+              ]),
             ),
       );
     }

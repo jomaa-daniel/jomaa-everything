@@ -232,7 +232,7 @@ test("a command fans out to the room", async () => {
     "/api/targets/room/command",
     '{"on":true,"brightness":60,"clientId":"phone","revision":3}',
   );
-  assert.deepEqual([cmd.status, cmd.body], [200, { ok: true }]);
+  assert.deepEqual([cmd.status, cmd.body], [200, { failed: {} }]);
   for (const l of [e.a, e.b]) {
     assert.deepEqual(l.s, { on: true, brightness: 60, colorTemperaturePct: 0 });
   }
@@ -258,12 +258,12 @@ test("targets list each device and room", async () => {
   ]);
 });
 
-test("partial failure is a 502 with details", async () => {
+test("partial failure is a 200 that names the failed devices", async () => {
   const fresh = await setup();
   fresh.b.err = new Error("govee: HTTP 401");
   const { status, body } = await call(fresh, "POST", "/api/targets/room/command", '{"on":true}');
-  assert.equal(status, 502);
-  assert.deepEqual(body, { ok: false, failed: { b: "govee: HTTP 401" } });
+  assert.equal(status, 200);
+  assert.deepEqual(body, { failed: { b: "govee: HTTP 401" } });
 });
 
 test("bad requests", async () => {

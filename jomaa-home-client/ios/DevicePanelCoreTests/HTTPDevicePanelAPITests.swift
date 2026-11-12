@@ -38,7 +38,7 @@ final class HTTPDevicePanelAPITests: XCTestCase {
             XCTAssertEqual(body["color"] as? String, "#ff8000")
             XCTAssertEqual(body["clientId"] as? String, clientID.uuidString)
             XCTAssertEqual((body["revision"] as? NSNumber)?.int64Value, 1_700_000_000_000_001)
-            return Self.response(request, json: #"{"ok":true}"#)
+            return Self.response(request, json: #"{"failed":{}}"#)
         }
 
         try await makeClient().send(
@@ -169,7 +169,7 @@ final class HTTPDevicePanelAPITests: XCTestCase {
 
     func testMapsPartialFailureToFailedDevices() async {
         URLProtocolStub.handler = { request in
-            Self.response(request, status: 502, json: #"{"ok":false,"failed":{"lamp-b":"timeout"}}"#)
+            Self.response(request, json: #"{"failed":{"lamp-b":"timeout"}}"#)
         }
 
         await assertThrows(.devicesFailed(["lamp-b": "timeout"])) {

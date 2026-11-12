@@ -201,7 +201,9 @@ def cmd_thread(env: dict[str, str], args) -> None:
 
 
 def cmd_power(env: dict[str, str], args) -> None:
-    hub_from_env(env).call("POST", f"/api/targets/{args.target}/command", {"on": args.command == "on"})
+    out = hub_from_env(env).call("POST", f"/api/targets/{args.target}/command", {"on": args.command == "on"})
+    if out["failed"]:
+        raise HubError(f"{args.target}: {args.command} failed for {out['failed']}")
     print(f"{args.target}: {args.command}")
 
 

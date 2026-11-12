@@ -109,6 +109,11 @@ public struct MatterNode: Decodable, Equatable, Identifiable, Sendable {
     }
 }
 
+/// The devices that didn't take a command, keyed by device id.
+struct CommandResponse: Decodable, Sendable {
+    let failed: [String: String]
+}
+
 struct MatterNodeList: Decodable, Sendable {
     let nodes: [MatterNode]
 }

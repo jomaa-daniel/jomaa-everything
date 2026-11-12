@@ -321,30 +321,30 @@ scope (`lights` for targets, `devices` for Matter and `/api/devices`, `manage`
 for `/api/manage`) and get 403 without it. Invite and account routes are
 owner-only.
 
-| Method | Path                          | Body                                                                      | Does                                                                  |
-| ------ | ----------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| POST   | `/api/login`                  | `{"password"}` or `{"username","password"}`                               | owner or account sign-in; returns `{"token"}` and sets a cookie       |
-| POST   | `/api/logout`                 |                                                                           | clears the cookie and ends an account session                         |
-| GET    | `/api/session`                |                                                                           | `{"owner","username","scopes"}` for the caller                        |
-| POST   | `/api/invites/check`          | `{"token"}`                                                               | the invite's `expiresAt`, 404 when invalid, used, or expired          |
-| POST   | `/api/join`                   | `{"token","username","password"}`                                         | creates an account with no scopes                                     |
-| GET    | `/api/invites`                |                                                                           | unused invites                                                        |
-| POST   | `/api/invites`                | `{}`                                                                      | creates an invite; returns `{"invite","token"}`                       |
-| DELETE | `/api/invites/{id}`           |                                                                           | revokes an invite                                                     |
-| GET    | `/api/accounts`               |                                                                           | accounts with their scopes, and the scope list                        |
-| PUT    | `/api/accounts/{user}/scopes` | `{"scopes"}`                                                              | replaces an account's scopes                                          |
-| DELETE | `/api/accounts/{user}`        |                                                                           | deletes an account and its sessions                                   |
-| GET    | `/api/targets`                |                                                                           | every device and room, with what each can do                          |
-| GET    | `/api/targets/{id}/state`     |                                                                           | room summary plus each device's state                                 |
-| POST   | `/api/targets/{id}/command`   | `{"on","brightness","colorTemperaturePct","color","clientId","revision"}` | 200 when every device took it, 502 with `failed` per device otherwise |
-| POST   | `/api/targets/{id}/sync`      | `{"on","brightness","colorTemperaturePct","clientId","revision"}`         | fixes devices that drifted, returns `synchronized`                    |
-| GET    | `/api/matter/nodes`           |                                                                           | paired Matter devices                                                 |
-| GET    | `/api/matter/discover`        |                                                                           | commissionable devices advertised over local-network mDNS             |
-| POST   | `/api/matter/register`        | `{"code","instanceName"}`                                                 | Pair the selected network advertisement and persist its Matter node.  |
-| POST   | `/api/matter/commission`      | `{"code","networkOnly"}`                                                  | pair a device                                                         |
-| POST   | `/api/matter/wifi`            | `{"ssid","password"}`                                                     | Wi-Fi credentials for pairing                                         |
-| POST   | `/api/matter/thread`          | `{"dataset"}`                                                             | Thread dataset for pairing                                            |
-| DELETE | `/api/matter/nodes/{nodeId}`  |                                                                           | unpair                                                                |
+| Method | Path                          | Body                                                                      | Does                                                                                    |
+| ------ | ----------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| POST   | `/api/login`                  | `{"password"}` or `{"username","password"}`                               | owner or account sign-in; returns `{"token"}` and sets a cookie                         |
+| POST   | `/api/logout`                 |                                                                           | clears the cookie and ends an account session                                           |
+| GET    | `/api/session`                |                                                                           | `{"owner","username","scopes"}` for the caller                                          |
+| POST   | `/api/invites/check`          | `{"token"}`                                                               | the invite's `expiresAt`, 404 when invalid, used, or expired                            |
+| POST   | `/api/join`                   | `{"token","username","password"}`                                         | creates an account with no scopes                                                       |
+| GET    | `/api/invites`                |                                                                           | unused invites                                                                          |
+| POST   | `/api/invites`                | `{}`                                                                      | creates an invite; returns `{"invite","token"}`                                         |
+| DELETE | `/api/invites/{id}`           |                                                                           | revokes an invite                                                                       |
+| GET    | `/api/accounts`               |                                                                           | accounts with their scopes, and the scope list                                          |
+| PUT    | `/api/accounts/{user}/scopes` | `{"scopes"}`                                                              | replaces an account's scopes                                                            |
+| DELETE | `/api/accounts/{user}`        |                                                                           | deletes an account and its sessions                                                     |
+| GET    | `/api/targets`                |                                                                           | every device and room, with what each can do                                            |
+| GET    | `/api/targets/{id}/state`     |                                                                           | room summary plus each device's state                                                   |
+| POST   | `/api/targets/{id}/command`   | `{"on","brightness","colorTemperaturePct","color","clientId","revision"}` | 200 with `failed`: each device that didn't take it, with the reason; empty when all did |
+| POST   | `/api/targets/{id}/sync`      | `{"on","brightness","colorTemperaturePct","clientId","revision"}`         | fixes devices that drifted, returns `synchronized`                                      |
+| GET    | `/api/matter/nodes`           |                                                                           | paired Matter devices                                                                   |
+| GET    | `/api/matter/discover`        |                                                                           | commissionable devices advertised over local-network mDNS                               |
+| POST   | `/api/matter/register`        | `{"code","instanceName"}`                                                 | Pair the selected network advertisement and persist its Matter node.                    |
+| POST   | `/api/matter/commission`      | `{"code","networkOnly"}`                                                  | pair a device                                                                           |
+| POST   | `/api/matter/wifi`            | `{"ssid","password"}`                                                     | Wi-Fi credentials for pairing                                                           |
+| POST   | `/api/matter/thread`          | `{"dataset"}`                                                             | Thread dataset for pairing                                                              |
+| DELETE | `/api/matter/nodes/{nodeId}`  |                                                                           | unpair                                                                                  |
 
 `/healthz` answers `{"ok", "matterConnected"}`; `matterConnected` is true once
 the Matter controller has started and loaded the paired devices. While it

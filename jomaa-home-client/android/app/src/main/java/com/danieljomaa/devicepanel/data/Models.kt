@@ -191,8 +191,11 @@ data class CommissionResponse(val node: CommissionedNode)
 @Serializable
 data class ApiErrorPayload(
     val error: String?,
-    val failed: Map<String, String>?,
 )
+
+/** The devices that didn't take a command, keyed by device id. */
+@Serializable
+data class CommandResponse(val failed: Map<String, String>)
 
 /** Checks a Matter setup code before it goes to the hub. */
 object MatterSetupCode {

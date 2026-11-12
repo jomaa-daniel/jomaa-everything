@@ -79,13 +79,14 @@ class OkHttpDevicePanelApi(
         execute(baseUrl, listOf("api", "targets", targetId, "state"), "GET", token)
 
     override suspend fun command(baseUrl: HttpUrl, token: String, targetId: String, request: CommandRequest) {
-        execute<Map<String, Boolean>>(
+        val response: CommandResponse = execute(
             baseUrl,
             listOf("api", "targets", targetId, "command"),
             "POST",
             token,
             json.encodeToString(request),
         )
+        if (response.failed.isNotEmpty()) throw DevicePanelException.DevicesFailed(response.failed)
     }
 
     override suspend fun sync(baseUrl: HttpUrl, token: String, targetId: String, request: SyncRequest): SyncResponse =
@@ -165,7 +166,6 @@ class OkHttpDevicePanelApi(
         }
         throw when {
             response.code == 401 -> unauthorizedError
-            response.code == 502 && !payload?.failed.isNullOrEmpty() -> DevicePanelException.DevicesFailed(payload!!.failed!!)
             response.code == 503 -> DevicePanelException.MatterUnavailable
             else -> DevicePanelException.Server(response.code, payload?.error)
         }

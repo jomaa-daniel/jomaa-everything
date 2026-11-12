@@ -1,10 +1,8 @@
 import Foundation
 
-/// The body of a hub error. `failed` names the devices that didn't respond,
-/// keyed by device id.
+/// The body of a hub error.
 struct APIErrorPayload: Decodable, Sendable {
     let error: String?
-    let failed: [String: String]?
 }
 
 public enum DevicePanelError: Error, Equatable, Sendable {

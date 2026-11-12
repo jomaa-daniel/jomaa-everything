@@ -109,7 +109,7 @@ class HubApiTest {
 
     @Test
     fun commandSendsOnlyChangedFieldsAndHexColor() = runBlocking {
-        json(200, """{"ok":true}""")
+        json(200, """{"failed":{}}""")
         val changes = RoomChanges(color = ColorPreset.ORANGE)
         api.command(base, "t", "living-room", CommandRequest.from(changes, "phone", 7))
         val sent = body()
@@ -121,7 +121,7 @@ class HubApiTest {
 
     @Test
     fun partialFailureNamesTheDevices() {
-        json(502, """{"ok":false,"failed":{"lamp-b":"timeout"}}""")
+        json(200, """{"failed":{"lamp-b":"timeout"}}""")
         val error = runCatching {
             runBlocking { api.command(base, "t", "living-room", CommandRequest.from(RoomChanges(on = true), "c", 1)) }
         }.exceptionOrNull()

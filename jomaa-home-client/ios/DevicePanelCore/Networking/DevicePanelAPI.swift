@@ -80,13 +80,16 @@ public actor HTTPDevicePanelAPI: DevicePanelAPI {
     }
 
     public func send(baseURL: URL, token: String, targetID: String, command: HubCommand) async throws {
-        let _: [String: Bool] = try await send(
+        let response: CommandResponse = try await send(
             baseURL: baseURL,
             path: ["api", "targets", targetID, "command"],
             method: "POST",
             token: token,
             body: try encoder.encode(command)
         )
+        if !response.failed.isEmpty {
+            throw DevicePanelError.devicesFailed(response.failed)
+        }
     }
 
     public func sync(baseURL: URL, token: String, targetID: String, request: SyncRequest) async throws -> SyncResponse {
@@ -213,8 +216,6 @@ public actor HTTPDevicePanelAPI: DevicePanelAPI {
             case 429:
                 let retryAfter = response.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init)
                 throw DevicePanelError.rateLimited(retryAfter: retryAfter)
-            case 502 where !(payload?.failed ?? [:]).isEmpty:
-                throw DevicePanelError.devicesFailed(payload?.failed ?? [:])
             case 503:
                 throw DevicePanelError.matterUnavailable
             default:

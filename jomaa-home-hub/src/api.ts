@@ -520,8 +520,8 @@ export class Api {
   }
 
   /**
-   * Answers 200 when every device took the command, and 502 with the failures
-   * otherwise, so a client can roll back its optimistic update.
+   * Answers 200 with the devices that didn't take the command, by id; the map
+   * is empty when every device took it.
    */
   async #command({ req, res, params, signal }: RequestContext): Promise<void> {
     const body = (await readBody(req)).only("on", "brightness", "colorTemperaturePct", "color", "clientId", "revision");
@@ -543,12 +543,8 @@ export class Api {
         withTimeout(signal, commandTimeoutMs),
       );
     });
-    if (Object.keys(failed).length > 0) {
-      this.log.warn("command partly failed", { target: id, failed });
-      writeJSON(res, 502, { ok: false, failed });
-      return;
-    }
-    writeJSON(res, 200, { ok: true });
+    if (Object.keys(failed).length > 0) this.log.warn("command partly failed", { target: id, failed });
+    writeJSON(res, 200, { failed });
   }
 
   async #sync({ req, res, params, signal }: RequestContext): Promise<void> {

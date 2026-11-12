@@ -28,7 +28,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/login" and body.get("password") == PASSWORD:
             return self.reply(200, {"token": TOKEN})
         if self.path == "/api/targets/room/command" and self.headers.get("Authorization") == "Bearer " + TOKEN:
-            return self.reply(502, {"failed": {"lamp": "unavailable"}})
+            return self.reply(200, {"failed": {"lamp": "unavailable"}})
         return self.reply(401, {"error": "unauthorized"})
 
     def do_GET(self):
@@ -71,9 +71,8 @@ class HubApiTest(unittest.TestCase):
 
     def test_command_reports_partial_failure(self):
         result = self.call("POST", "/api/targets/room/command", "--json-stdin", body='{"on":true}')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("HTTP 502", result.stderr)
-        self.assertIn("unavailable", result.stderr)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("unavailable", result.stdout)
         self.assertNotIn(TOKEN, result.stderr)
 
     def test_nonlocal_plain_http_is_rejected(self):
