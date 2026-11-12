@@ -8,6 +8,7 @@ import { parseConfig } from "./config.js";
 import { GoveeClient } from "./govee.js";
 import { Hub } from "./hub.js";
 import { HealthStore } from "./health/store.js";
+import { Accounts } from "./accounts.js";
 import { silentLog } from "./log.js";
 import type { MatterAdmin, MatterNodes, NodeSummary } from "./matter/nodes.js";
 import { serve } from "./testing.js";
@@ -61,7 +62,9 @@ test("group edits persist room membership and update the running fan-out", async
   };
   const store = new HealthStore(":memory:");
   const hub = Hub.build(parseConfig(JSON.stringify(cfg)), new GoveeClient("test", "http://127.0.0.1:1"), controller);
-  const origin = await serve(new Api(hub, controller, "test-password", silentLog, store, path).handle);
+  const origin = await serve(
+    new Api(hub, controller, "test-password", new Accounts(":memory:"), silentLog, store, path).handle,
+  );
   const headers = { Authorization: `Bearer ${sessionToken("test-password")}`, "Content-Type": "application/json" };
   const save = (body: unknown) =>
     fetch(origin + "/api/matter/nodes/3/group", { method: "PATCH", headers, body: JSON.stringify(body) });

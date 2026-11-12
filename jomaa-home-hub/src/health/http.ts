@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Access } from "../accounts.js";
 import { isHTTPS, LoginLimiter, clientIP } from "../limiter.js";
 import type { Log } from "../log.js";
 import type { MatterAdmin } from "../matter/nodes.js";
@@ -6,7 +7,7 @@ import type { Hub } from "../hub.js";
 import type { Organization } from "../organization.js";
 import { HealthError, type HealthStore } from "./store.js";
 
-/** Shares the hub's administrator session, while pings use only device credentials. */
+/** Serves device health to sessions with the devices scope, while pings use only device credentials. */
 export class HealthHttp {
   readonly #limiter = new LoginLimiter();
   constructor(
@@ -17,7 +18,8 @@ export class HealthHttp {
     private readonly organization?: Organization,
   ) {}
 
-  async handle(req: IncomingMessage, res: ServerResponse, authed: boolean): Promise<boolean> {
+  /** access is the caller's access to the devices scope; device pings authenticate with their own credentials. */
+  async handle(req: IncomingMessage, res: ServerResponse, access: Access): Promise<boolean> {
     const url = new URL(req.url ?? "/", "http://hub");
     if (url.pathname !== "/api/devices" && !url.pathname.startsWith("/api/devices/")) return false;
     res.setHeader("Cache-Control", "no-store");
@@ -41,7 +43,9 @@ export class HealthHttp {
       json(res, result.registered ? 201 : 200, { ok: true, ...result });
       return true;
     }
-    if (!authed) throw new HealthError(401, "sign in first");
+    if (access === "signed-out") throw new HealthError(401, "sign in first");
+    if (access === "forbidden")
+      throw new HealthError(403, "Your account does not have access to Device health. Ask the hub owner to grant it.");
     // Browser mutations must be same-origin; scripts use the Authorization header.
     if (!["GET", "HEAD"].includes(req.method ?? "")) {
       if (req.headers["sec-fetch-site"] === "cross-site") throw new HealthError(403, "cross-site request refused");

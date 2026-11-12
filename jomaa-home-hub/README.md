@@ -68,12 +68,12 @@ state lives in `data/matter`.
 
 ## Home page
 
-`https://jomaa.org/home` links to lights, device health, device organization, hub status, the Pico imaging guide,
+`https://jomaa.org/home` links to lights, device health, device organization, accounts, hub status, the Pico imaging guide,
 and the project documentation. The hub serves the page at `/home` and its CSS under
-`/home/`; edit `web/home.html` to add another page. It needs no administrator session.
+`/home/`; edit `web/home.html` to add another page. It needs no session.
 
 The locally managed Cloudflare tunnel also routes hostname `jomaa.org`, paths `/`,
-`/home`, `/devices`, `/manage`, `/lights` (including assets), and the panel's API requests to the hub on port 8080. Its proxied DNS record
+`/home`, `/devices`, `/manage`, `/lights`, `/invite`, `/join`, `/permissions` (including assets), and the pages' API requests to the hub on port 8080. Its proxied DNS record
 points to the same tunnel as `hub.jomaa.org`. The apex `/` redirects to `/home`;
 the hub subdomain's `/` continues to open device health.
 
@@ -81,7 +81,7 @@ the hub subdomain's `/` continues to open device health.
 
 `https://jomaa.org/manage` manages custom device types, groups, and assignments
 for configured Govee lights, paired Matter devices, and health reporters. It
-shares the hub administrator session. Types have distinct colors; assigning a
+needs the owner or an account with the `manage` scope. Types have distinct colors; assigning a
 custom type changes the inventory category while hardware types and capabilities
 stay device-reported. Deleting a type clears its assignments.
 
@@ -97,8 +97,8 @@ group, and status.
 ## Web light controller
 
 `https://jomaa.org/lights` controls rooms, one at a time. It does not control
-individual devices. Sign in with the hub password; the page shares the
-administrator session with device health. Power, brightness, white
+individual devices. It needs the owner or an account with the `lights`
+scope. Power, brightness, white
 temperature, and color use the same API as the phone apps. Controls appear
 according to the selected room's capabilities. Brightness, temperature, and
 color changes turn the room on. The page reads device states after each
@@ -114,12 +114,42 @@ includes its HTML, JavaScript, and styles; releases
 package the panel from the same repository revision as the API.
 
 `../jomaa-deploy/deploy.json` declares the `jomaa.org` path route for the home
-page, light panel, sign-in, and target API. The deployment workflow validates
+page, light panel, account pages, sign-in, and target API. The deployment workflow validates
 this routing with cloudflared and applies it automatically.
 
-The deployment tunnel serves the hub over HTTPS. Sign in with the password
-from the private `.env`. Sign-in is rate limited: 5 wrong passwords per address
-every 15 minutes, and 50 across all addresses.
+The deployment tunnel serves the hub over HTTPS. Sign-in is rate limited: 5
+wrong passwords per address every 15 minutes, and 50 across all addresses.
+
+## Accounts
+
+The owner signs in with the hub password from the private `.env`, leaving the
+username blank. The owner can open every page and is the only one who can
+invite people and change permissions. The phone apps and scripts sign in as the
+owner.
+
+`https://jomaa.org/invite` creates share links of the form
+`https://jomaa.org/join#<token>`. Each link works once and expires after 7
+days; the page shows a link only when it is created and lists unused invites
+for revoking. The token stays in the URL fragment, so it never reaches the
+tunnel or the hub's logs.
+
+Opening a link walks through choosing a username (3 to 32 lowercase letters,
+digits, dots, dashes, or underscores) and a password (at least 12 characters),
+then signs the new account in. A new account can't open any page.
+
+`https://jomaa.org/permissions` lists accounts with a checkbox per scope:
+
+| Scope     | Grants                                                             |
+| --------- | ------------------------------------------------------------------ |
+| `lights`  | `/lights` and the target API                                       |
+| `devices` | `/devices`, health reports, device credentials, and Matter pairing |
+| `manage`  | `/manage`: types, groups, and assignments                          |
+
+Changes apply to signed-in accounts on their next request. Deleting an account
+signs it out everywhere. Accounts sign in on any page with their username and
+password; a page they lack the scope for says so. Accounts, password hashes
+(scrypt), scopes, unused invites, and sessions persist in
+`data/accounts.sqlite`. Sessions last 30 days; only token hashes are stored.
 
 ## Register lights
 
@@ -269,23 +299,37 @@ shared from Apple Home or Google Home.
 
 ## API
 
-Every request except `/healthz` and `/api/login` needs
-`Authorization: Bearer <token>` or the login cookie.
+Every request except `/healthz`, `/api/login`, `/api/logout`,
+`/api/invites/check`, and `/api/join` needs `Authorization: Bearer <token>` or
+the login cookie. The owner can use every route. Accounts need the route's
+scope (`lights` for targets, `devices` for Matter and `/api/devices`, `manage`
+for `/api/manage`) and get 403 without it. Invite and account routes are
+owner-only.
 
-| Method | Path                         | Body                                                                      | Does                                                                  |
-| ------ | ---------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| POST   | `/api/login`                 | `{"password"}`                                                            | returns `{"token"}` and sets a cookie                                 |
-| GET    | `/api/targets`               |                                                                           | every device and room, with what each can do                          |
-| GET    | `/api/targets/{id}/state`    |                                                                           | room summary plus each device's state                                 |
-| POST   | `/api/targets/{id}/command`  | `{"on","brightness","colorTemperaturePct","color","clientId","revision"}` | 200 when every device took it, 502 with `failed` per device otherwise |
-| POST   | `/api/targets/{id}/sync`     | `{"on","brightness","colorTemperaturePct","clientId","revision"}`         | fixes devices that drifted, returns `synchronized`                    |
-| GET    | `/api/matter/nodes`          |                                                                           | paired Matter devices                                                 |
-| GET    | `/api/matter/discover`       |                                                                           | commissionable devices advertised over local-network mDNS             |
-| POST   | `/api/matter/register`       | `{"code","instanceName"}`                                                 | Pair the selected network advertisement and persist its Matter node.  |
-| POST   | `/api/matter/commission`     | `{"code","networkOnly"}`                                                  | pair a device                                                         |
-| POST   | `/api/matter/wifi`           | `{"ssid","password"}`                                                     | Wi-Fi credentials for pairing                                         |
-| POST   | `/api/matter/thread`         | `{"dataset"}`                                                             | Thread dataset for pairing                                            |
-| DELETE | `/api/matter/nodes/{nodeId}` |                                                                           | unpair                                                                |
+| Method | Path                          | Body                                                                      | Does                                                                  |
+| ------ | ----------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| POST   | `/api/login`                  | `{"password"}` or `{"username","password"}`                               | owner or account sign-in; returns `{"token"}` and sets a cookie       |
+| POST   | `/api/logout`                 |                                                                           | clears the cookie and ends an account session                         |
+| GET    | `/api/session`                |                                                                           | `{"owner","username","scopes"}` for the caller                        |
+| POST   | `/api/invites/check`          | `{"token"}`                                                               | the invite's `expiresAt`, 404 when invalid, used, or expired          |
+| POST   | `/api/join`                   | `{"token","username","password"}`                                         | creates an account with no scopes and signs it in                     |
+| GET    | `/api/invites`                |                                                                           | unused invites                                                        |
+| POST   | `/api/invites`                | `{}`                                                                      | creates an invite; returns `{"invite","token"}`                       |
+| DELETE | `/api/invites/{id}`           |                                                                           | revokes an invite                                                     |
+| GET    | `/api/accounts`               |                                                                           | accounts with their scopes, and the scope list                        |
+| PUT    | `/api/accounts/{user}/scopes` | `{"scopes"}`                                                              | replaces an account's scopes                                          |
+| DELETE | `/api/accounts/{user}`        |                                                                           | deletes an account and its sessions                                   |
+| GET    | `/api/targets`                |                                                                           | every device and room, with what each can do                          |
+| GET    | `/api/targets/{id}/state`     |                                                                           | room summary plus each device's state                                 |
+| POST   | `/api/targets/{id}/command`   | `{"on","brightness","colorTemperaturePct","color","clientId","revision"}` | 200 when every device took it, 502 with `failed` per device otherwise |
+| POST   | `/api/targets/{id}/sync`      | `{"on","brightness","colorTemperaturePct","clientId","revision"}`         | fixes devices that drifted, returns `synchronized`                    |
+| GET    | `/api/matter/nodes`           |                                                                           | paired Matter devices                                                 |
+| GET    | `/api/matter/discover`        |                                                                           | commissionable devices advertised over local-network mDNS             |
+| POST   | `/api/matter/register`        | `{"code","instanceName"}`                                                 | Pair the selected network advertisement and persist its Matter node.  |
+| POST   | `/api/matter/commission`      | `{"code","networkOnly"}`                                                  | pair a device                                                         |
+| POST   | `/api/matter/wifi`            | `{"ssid","password"}`                                                     | Wi-Fi credentials for pairing                                         |
+| POST   | `/api/matter/thread`          | `{"dataset"}`                                                             | Thread dataset for pairing                                            |
+| DELETE | `/api/matter/nodes/{nodeId}`  |                                                                           | unpair                                                                |
 
 `/healthz` answers `{"ok", "matterConnected"}`; `matterConnected` is true once
 the Matter controller has started and loaded the paired devices. While it

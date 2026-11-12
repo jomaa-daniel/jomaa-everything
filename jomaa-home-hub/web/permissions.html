@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Permissions · Jomaa Home</title>
+    <link rel="stylesheet" href="/home/base.css" />
+    <link rel="stylesheet" href="/home/accounts.css" />
+    <script type="module" src="/permissions/app.js"></script>
+  </head>
+  <body>
+    <header>
+      <a href="/home">Jomaa Home</a>
+      <nav><a href="/invite">Invite someone</a><button id="logout" hidden>Sign out</button></nav>
+    </header>
+    <main>
+      <h1>Permissions</h1>
+      <p class="muted">
+        Choose which pages each account can open. New accounts start with no access. Changes apply immediately, even to
+        accounts that are signed in.
+      </p>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <section id="login-section" hidden>
+        <form id="login-form" class="login">
+          <h2>Sign in as the hub owner</h2>
+          <label for="username">Username</label
+          ><input id="username" autocomplete="username" placeholder="Leave blank for the hub password" /><label
+            for="password"
+            >Password</label
+          ><input id="password" type="password" autocomplete="current-password" required /><button class="primary">
+            Sign in
+          </button>
+        </form>
+      </section>
+      <section id="not-owner" hidden>
+        <p>
+          You're signed in as <strong id="not-owner-name"></strong>. Only the hub owner can manage permissions. Sign out
+          and sign in with the hub password.
+        </p>
+      </section>
+      <div id="content" hidden>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr id="scope-head"></tr>
+            </thead>
+            <tbody id="account-rows"></tbody>
+          </table>
+        </div>
+        <p id="accounts-empty" class="muted" hidden>
+          No accounts yet. <a href="/invite">Create an invite link</a> to add one.
+        </p>
+      </div>
+    </main>
+  </body>
+</html>

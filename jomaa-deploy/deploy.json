@@ -8,6 +8,14 @@
       ]
     },
     {
+      "directory": "jomaa-home-hub",
+      "command": [
+        "npm",
+        "run",
+        "test:browser"
+      ]
+    },
+    {
       "directory": "jomaa-health",
       "command": [
         "npm",
@@ -148,7 +156,7 @@
     },
     {
       "hostname": "jomaa.org",
-      "path": "^/(home(/.*)?|devices(/.*)?|manage(/.*)?|lights(/.*)?|api/(login|logout|manage|targets(/.*)?|devices(/.*)?|matter/(discover|register|nodes/[1-9][0-9]*/(name|group))))?$",
+      "path": "^/(home(/.*)?|devices(/.*)?|manage(/.*)?|lights(/.*)?|invite(/.*)?|join(/.*)?|permissions(/.*)?|api/(login|logout|session|join|invites(/.*)?|accounts(/.*)?|manage|targets(/.*)?|devices(/.*)?|matter/(discover|register|nodes/[1-9][0-9]*/(name|group))))?$",
       "service": "hub",
       "probes": [
         "/",
@@ -170,7 +178,20 @@
         "/lights/app.js",
         "/api/login",
         "/api/logout",
-        "/api/targets/living-room/state"
+        "/api/targets/living-room/state",
+        "/home/accounts.js",
+        "/invite",
+        "/invite/app.js",
+        "/join",
+        "/join/app.js",
+        "/permissions",
+        "/permissions/app.js",
+        "/api/session",
+        "/api/join",
+        "/api/invites",
+        "/api/invites/check",
+        "/api/accounts",
+        "/api/accounts/someone/scopes"
       ]
     },
     {

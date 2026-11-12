@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Create your account · Jomaa Home</title>
+    <link rel="stylesheet" href="/home/base.css" />
+    <link rel="stylesheet" href="/home/accounts.css" />
+    <script type="module" src="/join/app.js"></script>
+  </head>
+  <body class="join-page">
+    <header><a href="/home">Jomaa Home</a></header>
+    <main>
+      <h1>Create your account</h1>
+      <ol id="steps" class="steps" aria-label="Progress">
+        <li data-step="username">Username</li>
+        <li data-step="password">Password</li>
+        <li data-step="done">Done</li>
+      </ol>
+      <p id="checking" class="muted">Checking your invite…</p>
+      <noscript><p>Enable JavaScript to create your account.</p></noscript>
+      <p id="notice" role="status" aria-live="polite"></p>
+
+      <section id="invalid" hidden>
+        <p>This invite link is invalid, already used, or expired. Ask the person who sent it for a new one.</p>
+      </section>
+
+      <form id="step-username" class="join-step card" hidden>
+        <h2>Choose a username</h2>
+        <label for="username">Username</label>
+        <input
+          id="username"
+          autocomplete="username"
+          autocapitalize="none"
+          spellcheck="false"
+          minlength="3"
+          maxlength="32"
+          pattern="[A-Za-z0-9][A-Za-z0-9._\-]{2,31}"
+          required
+        />
+        <p class="hint">3 to 32 letters, digits, dots, dashes, or underscores. You'll use it to sign in.</p>
+        <p id="invite-expires" class="hint"></p>
+        <div class="actions"><span></span><button class="primary">Next</button></div>
+      </form>
+
+      <form id="step-password" class="join-step card" hidden>
+        <h2>Create a password</h2>
+        <p class="hint">Signing in as <strong id="chosen-username"></strong>.</p>
+        <input id="password-username" autocomplete="username" hidden />
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="new-password" minlength="12" maxlength="256" required />
+        <p class="hint">At least 12 characters.</p>
+        <label for="confirm">Confirm password</label>
+        <input id="confirm" type="password" autocomplete="new-password" minlength="12" maxlength="256" required />
+        <p class="hint"></p>
+        <div class="actions">
+          <button type="button" id="back">Back</button><button class="primary">Create account</button>
+        </div>
+      </form>
+
+      <section id="step-done" class="join-step card" hidden>
+        <h2>You're signed in as <span id="done-username"></span></h2>
+        <p>
+          Your account is ready, but it can't open any pages yet. The hub owner decides which pages you can use. Once
+          they grant access, sign in with your username and password.
+        </p>
+        <div class="actions"><span></span><a href="/home">Go to Jomaa Home</a></div>
+      </section>
+    </main>
+  </body>
+</html>

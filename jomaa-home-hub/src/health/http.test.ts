@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { Api, sessionToken } from "../api.js";
 import { Hub } from "../hub.js";
+import { Accounts } from "../accounts.js";
 import { silentLog } from "../log.js";
 import type { MatterAdmin, NodeSummary } from "../matter/nodes.js";
 import { HealthStore } from "./store.js";
@@ -57,7 +58,8 @@ await test("HTTPS API separates admin and device auth and persists authenticated
   );
   const ca = readFileSync(join(dir, "cert.pem"));
   const store = new HealthStore(join(dir, "health.sqlite"));
-  const api = new Api(new Hub(), matter, "test-hub-password", silentLog, store);
+  const accounts = new Accounts(":memory:");
+  const api = new Api(new Hub(), matter, "test-hub-password", accounts, silentLog, store);
   const secure = createServer({ cert: ca, key: readFileSync(join(dir, "key.pem")) }, api.handle);
   const insecure = httpServer(api.handle);
   await Promise.all([
@@ -148,6 +150,12 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     assert.equal(await homeHead.text(), "");
     const admin = sessionToken("test-hub-password");
     assert.equal((await call("/api/devices")).status, 401);
+    await accounts.join(accounts.createInvite().token, "guest", "a long enough password");
+    const guest = accounts.createSession("guest");
+    assert.equal((await call("/api/devices", "GET", undefined, guest)).status, 403, "accounts start without access");
+    assert.equal((await call("/api/devices/enroll", "POST", { id: "x", name: "X" }, guest)).status, 403);
+    accounts.setScopes("guest", ["devices"]);
+    assert.equal((await call("/api/devices", "GET", undefined, guest)).status, 200, "the devices scope grants access");
     const issued = await call("/api/devices/enroll", "POST", { id: "pico-api", name: "API Pico" }, admin);
     assert.equal(issued.status, 201);
     const token = issued.body["token"];
@@ -224,7 +232,9 @@ await test("device inventory includes registered Matter nodes without issuing Pi
     },
   };
   const store = new HealthStore(":memory:");
-  const server = httpServer(new Api(new Hub(), controller, "inventory-test-password", silentLog, store).handle);
+  const server = httpServer(
+    new Api(new Hub(), controller, "inventory-test-password", new Accounts(":memory:"), silentLog, store).handle,
+  );
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const headers = {

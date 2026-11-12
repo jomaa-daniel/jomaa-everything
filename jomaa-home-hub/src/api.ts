@@ -13,6 +13,16 @@ import { MatterError, MatterNotReadyError, type MatterAdmin } from "./matter/nod
 import { serveWeb } from "./web.js";
 import { assignMatterGroup, editLayout } from "./group-assignment.js";
 import { OrganizationError, type Organization } from "./organization.js";
+import {
+  AccountError,
+  isScope,
+  scopes,
+  sessionLifetimeMs,
+  type Access,
+  type Account,
+  type Accounts,
+  type Scope,
+} from "./accounts.js";
 
 const authCookie = "hub_auth";
 const commandTimeoutMs = 15_000;
@@ -45,18 +55,45 @@ function sameSecret(a: string, b: string): boolean {
 
 type Handler = (ctx: RequestContext) => Promise<void>;
 
+/** Who sent a request: the owner signed in with the hub password, or an invited account. */
+type Principal = { kind: "owner" } | { kind: "account"; account: Account };
+
+/**
+ * What a route needs: a scope, the owner, or nothing beyond what its route
+ * list needs (public routes need nothing; authed routes need a session).
+ */
+type Requirement = Scope | "owner" | null;
+
 interface RequestContext {
   req: IncomingMessage;
   res: ServerResponse;
   params: string[];
   /** Aborted when the client goes away. */
   signal: AbortSignal;
+  principal: Principal | null;
 }
 
 interface Route {
   method: string;
   pattern: RegExp;
   handler: Handler;
+  requires: Requirement;
+}
+
+function access(principal: Principal | null, requires: Requirement): Access {
+  if (requires === null) return "allowed";
+  if (principal === null) return "signed-out";
+  if (principal.kind === "owner") return "allowed";
+  return requires !== "owner" && principal.account.scopes.includes(requires) ? "allowed" : "forbidden";
+}
+
+function requireAccess(principal: Principal | null, requires: Requirement): void {
+  const result = access(principal, requires);
+  if (result === "allowed") return;
+  if (result === "signed-out") throw new HttpError(401, "sign in first");
+  if (requires === "owner") throw new HttpError(403, "Only the hub owner can manage accounts and invites");
+  const name = scopes.find((scope) => scope.id === requires)?.name ?? "this page";
+  throw new HttpError(403, `Your account does not have access to ${name}. Ask the hub owner to grant it.`);
 }
 
 /** Serves the hub API. */
@@ -68,11 +105,15 @@ export class Api {
   readonly #healthHttp: HealthHttp | undefined;
   #groupChange: Promise<void> = Promise.resolve();
 
-  /** password must be non-empty; clients exchange it for a session token at POST /api/login. */
+  /**
+   * password must be non-empty; the owner exchanges it for a session token at
+   * POST /api/login. Invited accounts sign in with a username and password.
+   */
   constructor(
     private readonly hub: Hub,
     private readonly matter: MatterAdmin,
     password: string,
+    private readonly accounts: Accounts,
     private readonly log: Log,
     private readonly health?: HealthStore,
     private readonly layoutPath?: string,
@@ -82,32 +123,42 @@ export class Api {
     this.#healthHttp = health
       ? new HealthHttp(health, log.with({ component: "device-health" }), matter, hub, organization)
       : undefined;
-    const route = (method: string, path: string, handler: Handler): Route => ({
+    const route = (method: string, path: string, requires: Requirement, handler: Handler): Route => ({
       method,
       pattern: new RegExp("^" + path.replace(/\{\w+\}/g, "([^/]+)") + "$"),
       handler: handler.bind(this),
+      requires,
     });
     this.#public = [
-      route("GET", "/healthz", this.#health),
-      route("POST", "/api/login", this.#login),
-      route("POST", "/api/logout", this.#logout),
+      route("GET", "/healthz", null, this.#health),
+      route("POST", "/api/login", null, this.#login),
+      route("POST", "/api/logout", null, this.#logout),
+      route("POST", "/api/invites/check", null, this.#inviteCheck),
+      route("POST", "/api/join", null, this.#join),
     ];
     this.#authed = [
-      route("GET", "/api/targets", this.#listTargets),
-      route("GET", "/api/manage", this.#manageRead),
-      route("POST", "/api/manage", this.#manageWrite),
-      route("GET", "/api/targets/{id}/state", this.#targetState),
-      route("POST", "/api/targets/{id}/command", this.#command),
-      route("POST", "/api/targets/{id}/sync", this.#sync),
-      route("GET", "/api/matter/nodes", this.#matterNodes),
-      route("GET", "/api/matter/discover", this.#matterDiscover),
-      route("POST", "/api/matter/register", this.#matterRegister),
-      route("PATCH", "/api/matter/nodes/{nodeId}/name", this.#matterRename),
-      route("PATCH", "/api/matter/nodes/{nodeId}/group", this.#matterGroup),
-      route("DELETE", "/api/matter/nodes/{nodeId}", this.#matterRemove),
-      route("POST", "/api/matter/commission", this.#matterCommission),
-      route("POST", "/api/matter/wifi", this.#matterWiFi),
-      route("POST", "/api/matter/thread", this.#matterThread),
+      route("GET", "/api/session", null, this.#session),
+      route("GET", "/api/invites", "owner", this.#inviteList),
+      route("POST", "/api/invites", "owner", this.#inviteCreate),
+      route("DELETE", "/api/invites/{id}", "owner", this.#inviteRevoke),
+      route("GET", "/api/accounts", "owner", this.#accountList),
+      route("PUT", "/api/accounts/{username}/scopes", "owner", this.#accountScopes),
+      route("DELETE", "/api/accounts/{username}", "owner", this.#accountDelete),
+      route("GET", "/api/targets", "lights", this.#listTargets),
+      route("GET", "/api/manage", "manage", this.#manageRead),
+      route("POST", "/api/manage", "manage", this.#manageWrite),
+      route("GET", "/api/targets/{id}/state", "lights", this.#targetState),
+      route("POST", "/api/targets/{id}/command", "lights", this.#command),
+      route("POST", "/api/targets/{id}/sync", "lights", this.#sync),
+      route("GET", "/api/matter/nodes", "devices", this.#matterNodes),
+      route("GET", "/api/matter/discover", "devices", this.#matterDiscover),
+      route("POST", "/api/matter/register", "devices", this.#matterRegister),
+      route("PATCH", "/api/matter/nodes/{nodeId}/name", "devices", this.#matterRename),
+      route("PATCH", "/api/matter/nodes/{nodeId}/group", "devices", this.#matterGroup),
+      route("DELETE", "/api/matter/nodes/{nodeId}", "devices", this.#matterRemove),
+      route("POST", "/api/matter/commission", "devices", this.#matterCommission),
+      route("POST", "/api/matter/wifi", "devices", this.#matterWiFi),
+      route("POST", "/api/matter/thread", "devices", this.#matterThread),
     ];
   }
 
@@ -120,7 +171,7 @@ export class Api {
       }
     });
     this.#dispatch(req, res, gone.signal).catch((err: unknown) => {
-      if (err instanceof HttpError || err instanceof HealthError) {
+      if (err instanceof HttpError || err instanceof HealthError || err instanceof AccountError) {
         if (err instanceof HealthError && err.status === 429) res.setHeader("Retry-After", "15");
         writeError(res, err.status, err.message);
         return;
@@ -137,22 +188,26 @@ export class Api {
   async #dispatch(req: IncomingMessage, res: ServerResponse, signal: AbortSignal): Promise<void> {
     const path = new URL(req.url ?? "/", "http://hub").pathname;
     if (serveWeb(req, res)) return;
-    if (await this.#healthHttp?.handle(req, res, this.#authedRequest(req))) return;
-    if (await this.#serve(this.#public, req, res, path, signal, false)) {
+    const principal = this.#principal(req);
+    if (await this.#healthHttp?.handle(req, res, access(principal, "devices"))) return;
+    if (await this.#serve(this.#public, req, res, path, signal, false, principal)) {
       return;
     }
     if (!path.startsWith("/api/")) {
       throw new HttpError(404, "not found");
     }
-    if (!this.#authedRequest(req)) {
+    if (principal === null) {
       throw new HttpError(401, "sign in first");
     }
-    if (!(await this.#serve(this.#authed, req, res, path, signal, true))) {
+    if (!(await this.#serve(this.#authed, req, res, path, signal, true, principal))) {
       throw new HttpError(404, "not found");
     }
   }
 
-  /** Runs the matching route. A path served under another method is a 405 when strict. */
+  /**
+   * Runs the matching route once the principal meets its requirement. A path
+   * served under another method is a 405 when strict.
+   */
   async #serve(
     routes: Route[],
     req: IncomingMessage,
@@ -160,6 +215,7 @@ export class Api {
     path: string,
     signal: AbortSignal,
     strict: boolean,
+    principal: Principal | null,
   ): Promise<boolean> {
     let pathMatched = false;
     for (const r of routes) {
@@ -169,7 +225,8 @@ export class Api {
       }
       pathMatched = true;
       if (r.method === req.method) {
-        await r.handler({ req, res, params: m.slice(1).map(decodeParam), signal });
+        requireAccess(principal, r.requires);
+        await r.handler({ req, res, params: m.slice(1).map(decodeParam), signal, principal });
         return true;
       }
     }
@@ -179,10 +236,12 @@ export class Api {
     return false;
   }
 
-  #authedRequest(req: IncomingMessage): boolean {
-    const header = req.headers.authorization ?? "";
-    const got = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : (cookies(req).get(authCookie) ?? "");
-    return got !== "" && sameSecret(got, this.#token);
+  #principal(req: IncomingMessage): Principal | null {
+    const token = requestToken(req);
+    if (token === "") return null;
+    if (sameSecret(token, this.#token)) return { kind: "owner" };
+    const account = this.accounts.session(token);
+    return account ? { kind: "account", account } : null;
   }
 
   async #health({ res }: RequestContext): Promise<void> {
@@ -190,29 +249,114 @@ export class Api {
     return Promise.resolve();
   }
 
+  /** Without a username the password is the hub password; with one it is that account's password. */
   async #login({ req, res }: RequestContext): Promise<void> {
-    const password = (await readBody(req)).only("password").string("password") ?? "";
+    const body = (await readBody(req)).only("username", "password");
+    const username = body.string("username");
+    const password = body.string("password") ?? "";
     const client = clientIP(req);
     const { ok, waitMs } = this.#limiter.allow(client);
     if (!ok) {
       res.setHeader("Retry-After", String(Math.trunc(waitMs / 1000) + 1));
       throw new HttpError(429, "too many failed sign-ins; try again later");
     }
-    if (!sameSecret(sessionToken(password), this.#token)) {
+    let token: string | null = null;
+    if (username === null) {
+      if (sameSecret(sessionToken(password), this.#token)) token = this.#token;
+    } else {
+      const account = await this.accounts.verify(username, password);
+      if (account) token = this.accounts.createSession(account.username);
+    }
+    if (token === null) {
       this.#limiter.fail(client);
-      this.log.warn("failed sign-in", { client });
-      throw new HttpError(401, "wrong password");
+      this.log.warn("failed sign-in", { client, account: username !== null });
+      throw new HttpError(401, username === null ? "wrong password" : "wrong username or password");
     }
     this.#limiter.succeed(client);
-    // Secure only over HTTPS (directly or through the tunnel): on the home
-    // network the hub is often plain HTTP, and a Secure cookie would never be
-    // sent back.
-    res.setHeader("Set-Cookie", cookie(this.#token, 30 * 24 * 60 * 60, isHTTPS(req)));
-    writeJSON(res, 200, { token: this.#token });
+    signIn(req, res, token);
+    writeJSON(res, 200, { token });
   }
 
   async #logout({ req, res }: RequestContext): Promise<void> {
+    const token = requestToken(req);
+    if (token !== "" && !sameSecret(token, this.#token)) this.accounts.endSession(token);
     res.setHeader("Set-Cookie", cookie("", 0, isHTTPS(req)));
+    writeJSON(res, 200, { ok: true });
+    return Promise.resolve();
+  }
+
+  async #session({ res, principal }: RequestContext): Promise<void> {
+    writeJSON(
+      res,
+      200,
+      principal?.kind === "account"
+        ? { owner: false, username: principal.account.username, scopes: principal.account.scopes }
+        : { owner: true, username: null, scopes: scopes.map((scope) => scope.id) },
+    );
+    return Promise.resolve();
+  }
+
+  async #inviteCheck({ req, res }: RequestContext): Promise<void> {
+    const token = (await readBody(req)).only("token").string("token") ?? "";
+    writeJSON(res, 200, { expiresAt: this.accounts.checkInvite(token).expiresAt });
+  }
+
+  /** Creates an account from an invite and signs it in. */
+  async #join({ req, res }: RequestContext): Promise<void> {
+    requireSameOrigin(req);
+    const body = (await readBody(req)).only("token", "username", "password");
+    const account = await this.accounts.join(
+      body.string("token") ?? "",
+      body.string("username") ?? "",
+      body.string("password") ?? "",
+    );
+    this.log.info("account created", { username: account.username });
+    signIn(req, res, this.accounts.createSession(account.username));
+    writeJSON(res, 201, { account });
+  }
+
+  async #inviteList({ res }: RequestContext): Promise<void> {
+    writeJSON(res, 200, { invites: this.accounts.invites() });
+    return Promise.resolve();
+  }
+
+  /** Returns the invite's token once; the page turns it into a share link. */
+  async #inviteCreate({ req, res }: RequestContext): Promise<void> {
+    requireSameOrigin(req);
+    (await readBody(req)).only();
+    writeJSON(res, 201, this.accounts.createInvite());
+  }
+
+  async #inviteRevoke({ req, res, params }: RequestContext): Promise<void> {
+    requireSameOrigin(req);
+    this.accounts.revokeInvite(params[0] ?? "");
+    writeJSON(res, 200, { ok: true });
+    return Promise.resolve();
+  }
+
+  async #accountList({ res }: RequestContext): Promise<void> {
+    writeJSON(res, 200, { accounts: this.accounts.accounts(), scopes });
+    return Promise.resolve();
+  }
+
+  async #accountScopes({ req, res, params }: RequestContext): Promise<void> {
+    requireSameOrigin(req);
+    const body = (await readBody(req)).only("scopes").required("scopes");
+    if (!Array.isArray(body.value("scopes"))) throw new HttpError(400, "scopes must be a list");
+    const granted = body.list("scopes").map((value) => {
+      if (!isScope(value)) throw new HttpError(400, `unknown scope ${JSON.stringify(value)}`);
+      return value;
+    });
+    const account = this.accounts.setScopes(params[0] ?? "", granted);
+    this.log.info("account scopes changed", { username: account.username, scopes: account.scopes });
+    writeJSON(res, 200, { account });
+  }
+
+  async #accountDelete({ req, res, params }: RequestContext): Promise<void> {
+    requireSameOrigin(req);
+    const username = params[0] ?? "";
+    this.accounts.deleteAccount(username);
+    this.log.info("account deleted", { username });
     writeJSON(res, 200, { ok: true });
     return Promise.resolve();
   }
@@ -583,6 +727,20 @@ function decodeParam(param: string): string {
 /** The request's signal, also aborted after ms. */
 function withTimeout(signal: AbortSignal, ms: number): AbortSignal {
   return AbortSignal.any([signal, AbortSignal.timeout(ms)]);
+}
+
+function requestToken(req: IncomingMessage): string {
+  const header = req.headers.authorization ?? "";
+  return header.startsWith("Bearer ") ? header.slice("Bearer ".length) : (cookies(req).get(authCookie) ?? "");
+}
+
+/**
+ * Sets the session cookie. It is Secure only over HTTPS (directly or through
+ * the tunnel): on the home network the hub is often plain HTTP, and a Secure
+ * cookie would never be sent back.
+ */
+function signIn(req: IncomingMessage, res: ServerResponse, token: string): void {
+  res.setHeader("Set-Cookie", cookie(token, sessionLifetimeMs / 1000, isHTTPS(req)));
 }
 
 function cookie(value: string, maxAge: number, secure: boolean): string {

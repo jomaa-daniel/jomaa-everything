@@ -10,6 +10,7 @@ import { GoveeClient, defaultBaseURL } from "./govee.js";
 import { Hub } from "./hub.js";
 import { HealthStore } from "./health/store.js";
 import { Organization } from "./organization.js";
+import { Accounts } from "./accounts.js";
 import { dirname, join } from "node:path";
 import { stderrLog, type Log } from "./log.js";
 import { MatterNotReadyError, type MatterAdmin, type MatterNodes } from "./matter/nodes.js";
@@ -66,6 +67,7 @@ async function run(log: Log): Promise<void> {
   const matter = await startMatter(log);
   let health: HealthStore | undefined;
   let organization: Organization | undefined;
+  let accounts: Accounts | undefined;
   let cleanup: ReturnType<typeof setInterval> | undefined;
   try {
     const govee = new GoveeClient(goveeKey, process.env["GOVEE_BASE_URL"] || defaultBaseURL);
@@ -74,12 +76,23 @@ async function run(log: Log): Promise<void> {
       Number(process.env["HEALTH_RETENTION_DAYS"] ?? 30),
     );
     health = store;
-    organization = new Organization(
+    const besideHealth = (name: string) =>
       process.env["HEALTH_DB_PATH"] === ":memory:"
         ? ":memory:"
-        : join(dirname(process.env["HEALTH_DB_PATH"] ?? "data/health.sqlite"), "organization.sqlite"),
+        : join(dirname(process.env["HEALTH_DB_PATH"] ?? "data/health.sqlite"), name);
+    organization = new Organization(besideHealth("organization.sqlite"));
+    const people = new Accounts(besideHealth("accounts.sqlite"));
+    accounts = people;
+    const api = new Api(
+      Hub.build(cfg, govee, matter),
+      matter,
+      password,
+      people,
+      log,
+      store,
+      cliOptions.config,
+      organization,
     );
-    const api = new Api(Hub.build(cfg, govee, matter), matter, password, log, store, cliOptions.config, organization);
     const cert = process.env["HUB_TLS_CERT"];
     const key = process.env["HUB_TLS_KEY"];
     if (Boolean(cert) !== Boolean(key)) throw new Error("set both HUB_TLS_CERT and HUB_TLS_KEY");
@@ -102,6 +115,11 @@ async function run(log: Log): Promise<void> {
       } catch (err) {
         log.error("health log retention failed", { err });
       }
+      try {
+        people.prune();
+      } catch (err) {
+        log.error("expired session cleanup failed", { err });
+      }
     }, 60 * 60_000);
     cleanup.unref();
     await shutdown;
@@ -121,6 +139,7 @@ async function run(log: Log): Promise<void> {
     try {
       health?.close();
       organization?.close();
+      accounts?.close();
     } finally {
       await matter.stop();
     }

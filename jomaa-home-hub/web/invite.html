@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Invite someone · Jomaa Home</title>
+    <link rel="stylesheet" href="/home/base.css" />
+    <link rel="stylesheet" href="/home/accounts.css" />
+    <script type="module" src="/invite/app.js"></script>
+  </head>
+  <body>
+    <header>
+      <a href="/home">Jomaa Home</a>
+      <nav><a href="/permissions">Permissions</a><button id="logout" hidden>Sign out</button></nav>
+    </header>
+    <main>
+      <h1>Invite someone</h1>
+      <p class="muted">
+        Create a single-use link. Whoever opens it chooses a username and password. New accounts can't open any page
+        until you grant access on <a href="/permissions">Permissions</a>.
+      </p>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <section id="login-section" hidden>
+        <form id="login-form" class="login">
+          <h2>Sign in as the hub owner</h2>
+          <label for="username">Username</label
+          ><input id="username" autocomplete="username" placeholder="Leave blank for the hub password" /><label
+            for="password"
+            >Password</label
+          ><input id="password" type="password" autocomplete="current-password" required /><button class="primary">
+            Sign in
+          </button>
+        </form>
+      </section>
+      <section id="not-owner" hidden>
+        <p>
+          You're signed in as <strong id="not-owner-name"></strong>. Only the hub owner can create invites. Sign out and
+          sign in with the hub password.
+        </p>
+      </section>
+      <div id="content" hidden>
+        <section class="card" aria-labelledby="create-title">
+          <h2 id="create-title">New invite link</h2>
+          <p class="muted">Each link works once and expires after 7 days.</p>
+          <div class="actions"><button id="create" class="primary">Create invite link</button></div>
+          <div id="created" hidden>
+            <label for="link" class="sr-only">Invite link</label>
+            <div class="link-box">
+              <input id="link" readonly /><button id="copy">Copy</button><button id="share" hidden>Share</button>
+            </div>
+            <p class="muted">
+              This link is shown only once. It expires <span id="link-expires"></span>. Send it privately; anyone with
+              it can create an account.
+            </p>
+          </div>
+        </section>
+        <section aria-labelledby="pending-title">
+          <h2 id="pending-title">Unused invites</h2>
+          <ul id="invites" class="list"></ul>
+          <p id="invites-empty" class="muted" hidden>No unused invites.</p>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>
