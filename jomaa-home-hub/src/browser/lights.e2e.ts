@@ -97,7 +97,7 @@ test("a command the hub accepts shows as done even while the lamp still reports 
   assert.ok(lamps.every((lamp) => lamp.commands.some((command) => command.on === true)));
   assert.equal(await page.locator("#device-dots .dot.on").count(), lamps.length);
   assert.equal(await page.locator("#device-dots .dot.offline").count(), 1);
-  assert.equal(await page.locator("#power-state").textContent(), `${lamps.length} of 11 on · 1 not answering`);
+  assert.equal(await page.locator("#power-state").textContent(), `${lamps.length} of 11 on`);
   assert.equal(await page.locator("[role=alert]").count(), 0);
   await page.close();
 });

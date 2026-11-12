@@ -780,8 +780,6 @@ function powerState(chosen, summary) {
   const notes = [];
   if (summary.on && summary.on < summary.total)
     notes.push(`${summary.on} of ${summary.total} on`);
-  const failed = Object.keys(app.failed).length;
-  if (failed) notes.push(`${failed} not answering`);
   if (app.stale) notes.push("last known");
   return notes.join(" · ");
 }

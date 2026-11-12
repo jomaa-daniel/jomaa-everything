@@ -168,12 +168,6 @@ input:disabled {
   font: inherit;
   text-align: right;
   cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.status:hover:not(:disabled),
-.status[aria-expanded="true"] {
-  background: var(--line);
 }
 
 .status:disabled {
