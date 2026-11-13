@@ -165,8 +165,8 @@ after answering when the `current` pointer moved, which it does at the end of
 every activation, so the next request runs the new receiver.
 
 Pull requests, manual and scheduled workflow runs check without deploying.
-Scheduled runs use their own concurrency group, so they never hold back a
-push to `main`.
+Only the `deploy` job is serialized: one deployment runs at a time, and the
+checks and container suite of a later push run alongside it.
 
 ### Activation
 

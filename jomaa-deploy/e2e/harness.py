@@ -674,7 +674,14 @@ chmod 600 "$7"
         printed = self.printed_activation(result.out)
         if printed is not None:
             self.last_result = printed
+        if result.code == 0:
+            self.wait_running(self.settings["tunnel"]["unit"])
         return result
+
+    def wait_running(self, unit: str) -> None:
+        """Wait until a user unit is active with a main process."""
+        wait_for(lambda: self.unit_active(unit) and self.unit_property(unit, "MainPID") != "0",
+                 TIMEOUTS["bootSeconds"], f"{unit} is not running")
 
     @staticmethod
     def printed_activation(output: str) -> dict | None:

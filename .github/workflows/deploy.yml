@@ -15,10 +15,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: jomaa-deploy-${{ github.event_name == 'schedule' && 'schedule' || github.ref }}
-  cancel-in-progress: false
-
 jobs:
   modules:
     runs-on: ubuntu-latest
@@ -120,6 +116,9 @@ jobs:
 
   deploy:
     needs: [verify, check]
+    concurrency:
+      group: jomaa-deploy-${{ github.ref }}
+      cancel-in-progress: false
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verify.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
