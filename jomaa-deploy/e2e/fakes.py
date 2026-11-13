@@ -8,12 +8,15 @@ POST /_control merges a JSON object into the state:
   runs          {"<run id>": run object or null}
   jobs          {"<run id>/<attempt>": [{"name": ..., "conclusion": ...}] or null}
   github        {"run" | "jobs" | "release" | "asset": 500 | "hang" | null}
+  githubAfter   {"run" | "jobs" | "release" | "asset": n}: the endpoint's fault applies once n more requests to it
+                have been answered
   release       {"digest": "wrong" | null, "missingAsset": true | false}
   dns           {"<hostname>": 500 | "hang" | "success-false" | null}
   missingZones  [zone names that do not exist]
   records       [DNS records added as they are, marked as seeded]
   token         Cloudflare API token that requests must carry
-  clearFaults   true: clear github, release, dns, missingZones and seeded records, and end hanging requests
+  clearFaults   true: clear github, githubAfter, release, dns, missingZones and seeded records, and end hanging
+                requests
 GET /_control returns the state and every logged request. POST /_control/reset clears everything but
 the token and ends hanging requests.
 """
@@ -64,6 +67,7 @@ class State:
 
     def clear_faults(self) -> None:
         self.github: dict[str, object] = {}
+        self.github_after: dict[str, int] = {}
         self.release: dict[str, object] = {"digest": None, "missingAsset": False}
         self.dns: dict[str, object] = {}
         self.missing_zones: set[str] = set()
@@ -82,6 +86,10 @@ class State:
             if key not in GITHUB_FAULTS or value not in (500, "hang", None):
                 raise ValueError(f"unknown GitHub fault {key}={value!r}")
             self.set_or_delete(self.github, key, value)
+        for key, value in change.get("githubAfter", {}).items():
+            if key not in GITHUB_FAULTS or not (value is None or (type(value) is int and value >= 0)):
+                raise ValueError(f"unknown GitHub fault delay {key}={value!r}")
+            self.set_or_delete(self.github_after, key, value)
         if "release" in change:
             self.release.update(change["release"])
         for host, value in change.get("dns", {}).items():
@@ -105,8 +113,8 @@ class State:
 
     def snapshot(self) -> dict:
         return {"requests": self.requests, "records": [public(r) for r in self.records.values()],
-                "runs": self.runs, "jobs": self.jobs, "github": self.github, "release": self.release,
-                "dns": self.dns, "missingZones": sorted(self.missing_zones)}
+                "runs": self.runs, "jobs": self.jobs, "github": self.github, "githubAfter": self.github_after,
+                "release": self.release, "dns": self.dns, "missingZones": sorted(self.missing_zones)}
 
 
 def public(record: dict) -> dict:
@@ -217,19 +225,28 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def github_fault(self, endpoint: str) -> object:
+        """The endpoint's fault, or None while githubAfter still lets requests to it through."""
+        with self.state.lock:
+            passes = self.state.github_after.get(endpoint, 0)
+            if passes:
+                self.state.github_after[endpoint] = passes - 1
+                return None
+            return self.state.github.get(endpoint)
+
     def github(self, method: str, path: str, query: dict) -> None:
         state = self.state
         if method != "GET":
             self.send(404, {"message": "Not Found"})
             return
         if match := RUN.match(path):
-            if self.fault(state.github.get("run")):
+            if self.fault(self.github_fault("run")):
                 return
             with state.lock:
                 run = state.runs.get(match[1])
             self.send(200, run) if run is not None else self.send(404, {"message": "Not Found"})
         elif match := JOBS.match(path):
-            if self.fault(state.github.get("jobs")):
+            if self.fault(self.github_fault("jobs")):
                 return
             with state.lock:
                 jobs = state.jobs.get(f"{match[1]}/{match[2]}")
@@ -243,7 +260,7 @@ class Handler(BaseHTTPRequestHandler):
                       for i, job in enumerate(jobs)]
             self.send(200, {"total_count": len(listed), "jobs": listed[(page - 1) * per_page:page * per_page]})
         elif match := RELEASE.match(path):
-            if self.fault(state.github.get("release")):
+            if self.fault(self.github_fault("release")):
                 return
             digest = asset_digest(state.asset)
             if state.release.get("digest") == "wrong":
@@ -254,7 +271,7 @@ class Handler(BaseHTTPRequestHandler):
                  "browser_download_url": f"http://{host}{ASSETS}{ASSET_PREFIX}{arch}"} for arch in ARCHES]
             self.send(200, {"tag_name": match[1], "assets": assets})
         elif path.startswith(ASSETS) and path[len(ASSETS):] in {ASSET_PREFIX + a for a in ARCHES}:
-            if self.fault(state.github.get("asset")):
+            if self.fault(self.github_fault("asset")):
                 return
             self.send(200, raw=state.asset.read_bytes(), content_type="application/octet-stream")
         else:
