@@ -50,6 +50,8 @@ Requires Docker with Compose and Python 3.12+ on the host.
 python3 jomaa-deploy/e2e/harness.py install
 ```
 
+The jerry image gets the real cloudflared from `cloudflaredCache`; the
+harness downloads it from its GitHub release when the cache lacks it.
 `harness.py SUITE` runs `scenario_SUITE.py`. Files run in parallel; the tests
 of one file share jerry and run in name order. When a test fails, the
 journal, user units, the deployment directory tree and archive, processes,

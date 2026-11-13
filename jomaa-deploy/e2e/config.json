@@ -1,6 +1,7 @@
 {
   "project": "jomaa-e2e",
   "artifactDirectory": "jomaa-deploy/e2e/artifacts",
+  "cloudflaredCache": "~/.cache/jomaa-e2e/cloudflared",
   "image": {
     "tag": "jomaa-e2e-jerry",
     "base": "ubuntu:26.04",
@@ -60,6 +61,10 @@
         "retryDelaySeconds": 1
       }
     }
+  },
+  "chaos": {
+    "extractionHoldSeconds": 60,
+    "releasesFreeBytes": 65536
   },
   "timeouts": {
     "buildSeconds": 1800,
