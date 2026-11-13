@@ -625,7 +625,7 @@ chmod 600 "$7"
 
     def push(self, force: bool = False, ref: str = "main", commit: str = "HEAD") -> Result:
         """Push a commit of the fixture repository to a branch of jerry's bare repository."""
-        remote = f"ext::docker exec -i -u {JERRY['user']} {self.container('jerry')} %s {self.bare}"
+        remote = f"ext::docker exec -i -u {JERRY['user']} {self.container('jerry')} git %s {self.bare}"
         args = ["-c", "protocol.ext.allow=always", "push", "-q"]
         if force:
             args.append("--force")
