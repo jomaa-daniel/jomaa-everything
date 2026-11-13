@@ -68,12 +68,12 @@ state lives in `data/matter`.
 
 ## Home page
 
-`https://jomaa.org/home` links to lights, device health, device organization, accounts, hub status, the Pico imaging guide,
+`https://jomaa.org/home` links to lights, device health, device organization, accounts, secrets, hub status, the Pico imaging guide,
 and the project documentation. The hub serves the page at `/home` and its CSS under
 `/home/`; edit `web/home.html` to add another page. It needs no session.
 
 The locally managed Cloudflare tunnel also routes hostname `jomaa.org`, paths `/`,
-`/home`, `/devices`, `/manage`, `/lights`, `/invite`, `/join`, `/permissions` (including assets), and the pages' API requests to the hub on port 8080. Its proxied DNS record
+`/home`, `/devices`, `/manage`, `/lights`, `/invite`, `/join`, `/permissions`, `/secrets` (including assets), and the pages' API requests to the hub on port 8080. Its proxied DNS record
 points to the same tunnel as `hub.jomaa.org`. The apex `/` redirects to `/home`;
 the hub subdomain's `/` continues to open device health.
 
@@ -161,10 +161,36 @@ settings are in [`settings.json`](settings.json), described in
 [`settings.md`](settings.md). Owner and account sign-in failures
 are rate limited separately; sign-in and sign-out refuse cross-site requests.
 
+## Secrets
+
+`https://jomaa.org/secrets` views and edits the environment files listed in
+`secrets.envFiles`, resolved from the release the hub runs in, where each is a
+link to the real file in jerry's checkout. Only the owner can open it; there is
+no scope for it. Each file's keys are listed in file order with masked values.
+Reveal, Save and Redeploy ask for the hub password again; wrong passwords count
+toward the owner sign-in rate limit.
+
+Edits stay on the page until saved. Keys are capital letters, digits and
+underscores, starting with a letter; values are one line. `HUB_PASSWORD` keeps
+at least `hubPasswordMinLength` characters from
+[`../jomaa-deploy/config.json`](../jomaa-deploy/config.json) and can't be
+deleted. Saving keeps comments, blank lines and key order, appends new keys,
+and replaces the link's target atomically with the same file mode.
+
+Saved changes apply on the next deploy, which restarts the hub when its `.env`
+changed and runs the tailnet command every time. After a save, Redeploy now
+reruns the latest push run of the `github.workflow` workflow on `main` and
+follows it until it finishes, waiting while the hub restarts. Redeploy needs
+`GITHUB_DEPLOY_TOKEN` in `secrets.tokenFile`: a fine-grained personal access
+token for the `repo` repository with the Actions repository permission set to
+read and write. Add it on the page; the hub reads it on each request, so it
+works without a restart. Without it the Redeploy button is disabled.
+
 ## Browser check
 
-`npm run test:browser` drives the invite, join, and permission pages in Chrome
-against the real API and built pages, with a fake light. It uses the installed
+`npm run test:browser` drives the invite, join, permission and Secrets pages in
+Chrome against the real API and built pages, with a fake light, temporary env
+files and a fake GitHub API. It uses the installed
 Google Chrome (`channel: "chrome"`); CI runs it as a declared check.
 
 ## Register lights
@@ -319,33 +345,38 @@ Every request except `/healthz`, `/api/login`, `/api/logout`,
 `/api/invites/check`, and `/api/join` needs `Authorization: Bearer <token>` or
 the login cookie. The owner can use every route. Accounts need the route's
 scope (`lights` for targets, `devices` for Matter and `/api/devices`, `manage`
-for `/api/manage`) and get 403 without it. Invite and account routes are
+for `/api/manage`) and get 403 without it. Invite, account and Secrets routes are
 owner-only.
 
-| Method | Path                          | Body                                                                      | Does                                                                                    |
-| ------ | ----------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| POST   | `/api/login`                  | `{"password"}` or `{"username","password"}`                               | owner or account sign-in; returns `{"token"}` and sets a cookie                         |
-| POST   | `/api/logout`                 |                                                                           | clears the cookie and ends an account session                                           |
-| GET    | `/api/session`                |                                                                           | `{"owner","username","scopes"}` for the caller                                          |
-| POST   | `/api/invites/check`          | `{"token"}`                                                               | the invite's `expiresAt`, 404 when invalid, used, or expired                            |
-| POST   | `/api/join`                   | `{"token","username","password"}`                                         | creates an account with no scopes                                                       |
-| GET    | `/api/invites`                |                                                                           | unused invites                                                                          |
-| POST   | `/api/invites`                | `{}`                                                                      | creates an invite; returns `{"invite","token"}`                                         |
-| DELETE | `/api/invites/{id}`           |                                                                           | revokes an invite                                                                       |
-| GET    | `/api/accounts`               |                                                                           | accounts with their scopes, and the scope list                                          |
-| PUT    | `/api/accounts/{user}/scopes` | `{"scopes"}`                                                              | replaces an account's scopes                                                            |
-| DELETE | `/api/accounts/{user}`        |                                                                           | deletes an account and its sessions                                                     |
-| GET    | `/api/targets`                |                                                                           | every device and room, with what each can do                                            |
-| GET    | `/api/targets/{id}/state`     |                                                                           | room summary plus each device's state                                                   |
-| POST   | `/api/targets/{id}/command`   | `{"on","brightness","colorTemperaturePct","color","clientId","revision"}` | 200 with `failed`: each device that didn't take it, with the reason; empty when all did |
-| POST   | `/api/targets/{id}/sync`      | `{"on","brightness","colorTemperaturePct","clientId","revision"}`         | fixes devices that drifted, returns `synchronized`                                      |
-| GET    | `/api/matter/nodes`           |                                                                           | paired Matter devices                                                                   |
-| GET    | `/api/matter/discover`        |                                                                           | commissionable devices advertised over local-network mDNS                               |
-| POST   | `/api/matter/register`        | `{"code","instanceName"}`                                                 | Pair the selected network advertisement and persist its Matter node.                    |
-| POST   | `/api/matter/commission`      | `{"code","networkOnly"}`                                                  | pair a device                                                                           |
-| POST   | `/api/matter/wifi`            | `{"ssid","password"}`                                                     | Wi-Fi credentials for pairing                                                           |
-| POST   | `/api/matter/thread`          | `{"dataset"}`                                                             | Thread dataset for pairing                                                              |
-| DELETE | `/api/matter/nodes/{nodeId}`  |                                                                           | unpair                                                                                  |
+| Method | Path                          | Body                                                                      | Does                                                                                          |
+| ------ | ----------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| POST   | `/api/login`                  | `{"password"}` or `{"username","password"}`                               | owner or account sign-in; returns `{"token"}` and sets a cookie                               |
+| POST   | `/api/logout`                 |                                                                           | clears the cookie and ends an account session                                                 |
+| GET    | `/api/session`                |                                                                           | `{"owner","username","scopes"}` for the caller                                                |
+| POST   | `/api/invites/check`          | `{"token"}`                                                               | the invite's `expiresAt`, 404 when invalid, used, or expired                                  |
+| POST   | `/api/join`                   | `{"token","username","password"}`                                         | creates an account with no scopes                                                             |
+| GET    | `/api/invites`                |                                                                           | unused invites                                                                                |
+| POST   | `/api/invites`                | `{}`                                                                      | creates an invite; returns `{"invite","token"}`                                               |
+| DELETE | `/api/invites/{id}`           |                                                                           | revokes an invite                                                                             |
+| GET    | `/api/accounts`               |                                                                           | accounts with their scopes, and the scope list                                                |
+| PUT    | `/api/accounts/{user}/scopes` | `{"scopes"}`                                                              | replaces an account's scopes                                                                  |
+| DELETE | `/api/accounts/{user}`        |                                                                           | deletes an account and its sessions                                                           |
+| GET    | `/api/secrets`                |                                                                           | each env file's keys in file order with masked values, and whether redeploy is available      |
+| PUT    | `/api/secrets`                | `{"file","changes","password"}`                                           | applies `changes`: `{"key","value"}` sets or adds, `{"key","delete":true}` deletes            |
+| POST   | `/api/secrets/reveal`         | `{"file","key","password"}`                                               | returns `{"value"}`                                                                           |
+| POST   | `/api/secrets/redeploy`       | `{"password"}`                                                            | reruns the latest push run of the deploy workflow on `main`; returns `{"id","url","attempt"}` |
+| GET    | `/api/secrets/redeploy/{id}`  |                                                                           | the run's `attempt`, `status` and `conclusion`                                                |
+| GET    | `/api/targets`                |                                                                           | every device and room, with what each can do                                                  |
+| GET    | `/api/targets/{id}/state`     |                                                                           | room summary plus each device's state                                                         |
+| POST   | `/api/targets/{id}/command`   | `{"on","brightness","colorTemperaturePct","color","clientId","revision"}` | 200 with `failed`: each device that didn't take it, with the reason; empty when all did       |
+| POST   | `/api/targets/{id}/sync`      | `{"on","brightness","colorTemperaturePct","clientId","revision"}`         | fixes devices that drifted, returns `synchronized`                                            |
+| GET    | `/api/matter/nodes`           |                                                                           | paired Matter devices                                                                         |
+| GET    | `/api/matter/discover`        |                                                                           | commissionable devices advertised over local-network mDNS                                     |
+| POST   | `/api/matter/register`        | `{"code","instanceName"}`                                                 | Pair the selected network advertisement and persist its Matter node.                          |
+| POST   | `/api/matter/commission`      | `{"code","networkOnly"}`                                                  | pair a device                                                                                 |
+| POST   | `/api/matter/wifi`            | `{"ssid","password"}`                                                     | Wi-Fi credentials for pairing                                                                 |
+| POST   | `/api/matter/thread`          | `{"dataset"}`                                                             | Thread dataset for pairing                                                                    |
+| DELETE | `/api/matter/nodes/{nodeId}`  |                                                                           | unpair                                                                                        |
 
 `/healthz` answers `{"ok", "matterConnected"}`; `matterConnected` is true once
 the Matter controller has started and loaded the paired devices. While it
