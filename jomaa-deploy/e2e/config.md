@@ -10,6 +10,7 @@ of the deployment itself, are read from that file.
 | --- | --- | --- |
 | `project` | string | Prefix of each compose project name; the suite and a random suffix follow, so scenario files run in parallel. |
 | `artifactDirectory` | path | Repository-relative folder that receives the journals, deployment directory, compose logs and fakes state of each failed test, one subfolder per suite and test. |
+| `cloudflaredCache` | path | Host folder of the real cloudflared release binaries, `<cloudflaredVersion>/cloudflared-linux-<arch>`. The harness downloads a missing binary from its GitHub release and copies it into the jerry image; the workflow's `e2e` job caches the folder by version. |
 | `image` | object | Container images. |
 | `image.tag` | image name | Tag of the jerry image that the harness builds from `Dockerfile`. |
 | `image.base` | image name | Base image of jerry: jerry's distribution and release. Its `python3` is the Python that deployment runs with. |
@@ -59,6 +60,9 @@ of the deployment itself, are read from that file.
 | `fixture.settings.notify.deadlineSeconds` | seconds | How long the fixture's `notify.py` retries. |
 | `fixture.settings.notify.requestTimeoutSeconds` | seconds | Deadline of each fixture deployment request; longer than `edge.originTimeoutSeconds`, so a slow activation answers 524 and is retried. |
 | `fixture.settings.notify.retryDelaySeconds` | seconds | Pause between the fixture's attempts. |
+| `chaos` | object | Process and machine faults of `scenario_chaos.py`. |
+| `chaos.extractionHoldSeconds` | seconds | How long a smudge filter in the receiver's git cache holds `git archive` while a test kills the receiver during release extraction. |
+| `chaos.releasesFreeBytes` | bytes | Free space of the size-limited tmpfs mounted over the deployment's `releases/` for the disk-full test; smaller than one release archive. |
 | `timeouts` | object | Deadlines of the harness itself. |
 | `timeouts.buildSeconds` | seconds | Deadline of building the jerry image and starting the project. |
 | `timeouts.bootSeconds` | seconds | How long jerry's systemd, the user manager, the fakes and a restarted unit may take to come up. |

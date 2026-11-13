@@ -5,7 +5,7 @@ FROM ${BASE_IMAGE}
 ARG TARGETARCH
 ARG NODE_VERSION
 ARG NODE_DIST
-ARG CLOUDFLARED_URL
+ARG CLOUDFLARED_FILE
 ARG CLOUDFLARED_PATH
 ARG JERRY_USER
 ARG JERRY_UID
@@ -35,10 +35,8 @@ RUN case "${TARGETARCH}" in amd64) node_arch=x64 ;; arm64) node_arch=arm64 ;; *)
         | tar -xJ -C /usr/local --strip-components=1 \
     && node --version && npm --version
 
-RUN mkdir -p "$(dirname "${CLOUDFLARED_PATH}")" \
-    && curl -fsSL -o "${CLOUDFLARED_PATH}" "${CLOUDFLARED_URL}-${TARGETARCH}" \
-    && chmod 755 "${CLOUDFLARED_PATH}" \
-    && "${CLOUDFLARED_PATH}" --version
+COPY --chmod=755 ${CLOUDFLARED_FILE} ${CLOUDFLARED_PATH}
+RUN "${CLOUDFLARED_PATH}" --version
 
 RUN if id -u "${JERRY_UID}" >/dev/null 2>&1; then userdel -r "$(id -nu "${JERRY_UID}")" || true; fi \
     && useradd --create-home --uid "${JERRY_UID}" --shell /bin/bash "${JERRY_USER}" \

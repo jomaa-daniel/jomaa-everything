@@ -111,6 +111,26 @@ def fixture_settings() -> dict:
     })
 
 
+def cached_cloudflared(arch: str) -> Path:
+    """The real cloudflared release binary for a Linux architecture, from cloudflaredCache.
+
+    A missing binary is downloaded from its GitHub release into the cache first.
+    """
+    tunnel = DEPLOY_CONFIG["tunnel"]
+    name = f"{ASSET_PREFIX}-{arch}"
+    binary = Path(CONFIG["cloudflaredCache"]).expanduser() / tunnel["cloudflaredVersion"] / name
+    if binary.is_file():
+        return binary
+    url = (f"{DEPLOY_CONFIG['github']['remote']}/{tunnel['cloudflaredRepository']}/releases/download/"
+           f"{tunnel['cloudflaredVersion']}/{name}")
+    binary.parent.mkdir(parents=True, exist_ok=True)
+    partial = binary.with_name(f"{name}.download")
+    with urllib.request.urlopen(url, timeout=tunnel["downloadTimeoutSeconds"]) as source, partial.open("wb") as out:
+        shutil.copyfileobj(source, out)
+    partial.replace(binary)
+    return binary
+
+
 def check_job(name: str) -> str:
     return f"check ({name})"
 
@@ -414,17 +434,16 @@ class Harness:
                    check=check, input=input, timeout=timeout, env=self.compose_env())
 
     def build_image(self) -> None:
-        tunnel = DEPLOY_CONFIG["tunnel"]
-        cloudflared = (f"{DEPLOY_CONFIG['github']['remote']}/{tunnel['cloudflaredRepository']}/releases/download/"
-                       f"{tunnel['cloudflaredVersion']}/{ASSET_PREFIX}")
         args = {"BASE_IMAGE": CONFIG["image"]["base"], "NODE_VERSION": CONFIG["image"]["nodeVersion"],
-                "NODE_DIST": CONFIG["image"]["nodeDist"], "CLOUDFLARED_URL": cloudflared,
+                "NODE_DIST": CONFIG["image"]["nodeDist"], "CLOUDFLARED_FILE": ASSET_PREFIX,
                 "CLOUDFLARED_PATH": JERRY["cloudflared"], "JERRY_USER": JERRY["user"],
                 "JERRY_UID": str(JERRY["uid"]), "GIT_ROOT": JERRY["gitRoot"],
                 "EDGE_DIRECTORY": JERRY["edgeDirectory"], "EDGE_CONFIG_ENV": WRAPPER.EDGE_ENV,
                 "EDGE_CONFIG": self.edge_config}
         context = self.work / "context"
         context.mkdir(exist_ok=True)
+        arch = run(["docker", "version", "--format", "{{.Server.Arch}}"]).out.strip()
+        shutil.copyfile(cached_cloudflared(arch), context / ASSET_PREFIX)
         command = ["docker", "build", "-q", "-t", CONFIG["image"]["tag"], "-f", str(E2E / "Dockerfile")]
         for key, value in args.items():
             command += ["--build-arg", f"{key}={value}"]

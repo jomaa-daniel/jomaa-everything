@@ -132,13 +132,23 @@ receives the original request path. DNS is shared by all paths on a hostname.
 
 ## Automatic deployment
 
-`.github/workflows/deploy.yml` runs on every push and pull request:
+`.github/workflows/deploy.yml` runs on every push and pull request, and
+weekly on a schedule:
 
 - `modules` lists the modules with checks, from
-  `python3 jomaa-deploy/deploy.py modules --json`.
+  `python3 jomaa-deploy/deploy.py modules --json`, and decides whether the
+  container suite runs.
 - `verify` runs this folder's checks.
 - `check (<module>)` runs each listed module's checks, one job per module,
   without cancelling the others when one fails.
+- `e2e (<suite>)` runs one file of the [container suite](e2e/README.md) per
+  job, `python3 jomaa-deploy/e2e/harness.py <suite>` for `install`,
+  `modules`, `ingress`, `receiver` and `chaos`, without cancelling the others
+  when one fails. It runs when the push or pull request changes
+  `jomaa-deploy/` or the workflow, and on every scheduled and manual run. The
+  real cloudflared is cached by its `tunnel.cloudflaredVersion`, and a failing
+  suite uploads the artifacts of its failed tests. `deploy` does not wait for
+  it.
 - `deploy`, on pushes to `main`, runs when `verify` succeeded, whatever the
   module checks concluded, and sends a signed request to the receiver.
 
@@ -154,7 +164,9 @@ answers the request with the result and the revision. The receiver restarts
 after answering when the `current` pointer moved, which it does at the end of
 every activation, so the next request runs the new receiver.
 
-Pull requests and manual workflow runs check without deploying.
+Pull requests, manual and scheduled workflow runs check without deploying.
+Scheduled runs use their own concurrency group, so they never hold back a
+push to `main`.
 
 ### Activation
 
