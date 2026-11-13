@@ -13,7 +13,7 @@ import { Organization } from "./organization.js";
 import { Accounts } from "./accounts.js";
 import { deploySettings, releaseRoot, settings } from "./settings.js";
 import { EnvFiles } from "./secrets.js";
-import { DeployWorkflow } from "./redeploy.js";
+import { DeployWorkflow, GitHubCli } from "./redeploy.js";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { stderrLog, type Log } from "./log.js";
@@ -97,18 +97,14 @@ async function run(log: Log): Promise<void> {
       cliOptions.config,
       organization,
       {
-        files: new EnvFiles(
-          fileURLToPath(releaseRoot),
-          settings.secrets.envFiles,
-          settings.secrets.tokenFile,
-          deploySettings.hubPasswordMinLength,
-        ),
+        files: new EnvFiles(fileURLToPath(releaseRoot), settings.secrets.envFiles, deploySettings.hubPasswordMinLength),
         workflow: new DeployWorkflow({
           api: deploySettings.githubApi,
           repo: deploySettings.repo,
           workflow: deploySettings.workflow,
           timeoutMs: deploySettings.githubTimeoutSeconds * 1000,
         }),
+        cli: new GitHubCli(settings.secrets.ghCommand, deploySettings.githubTimeoutSeconds * 1000),
       },
     );
     const cert = process.env["HUB_TLS_CERT"];

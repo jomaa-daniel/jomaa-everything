@@ -1,5 +1,8 @@
-// Reruns the deployment workflow on GitHub and reads the run's status.
+// Reruns the deployment workflow on GitHub and reads the run's status, with
+// the token of the GitHub CLI login on the hub server.
+import { execFile } from "node:child_process";
 import { basename } from "node:path";
+import { promisify } from "node:util";
 import { Fields, isObject, JsonShapeError, parseJson } from "./json.js";
 import { SecretsError } from "./secrets.js";
 
@@ -48,6 +51,39 @@ function parseRun(value: unknown): WorkflowRun {
       conclusion: run.string("conclusion"),
     };
   });
+}
+
+/** The GitHub CLI's token, or why there is none. Reasons never contain the token. */
+export type CliToken = { token: string } | { unavailable: string };
+
+const execFileAsync = promisify(execFile);
+
+/** The arguments that make the GitHub CLI print its login's token. */
+const tokenArgs = ["auth", "token"];
+
+/** Reads the token of the GitHub CLI login by running `<command> auth token`, without a shell. */
+export class GitHubCli {
+  constructor(
+    private readonly command: string,
+    private readonly timeoutMs: number,
+  ) {}
+
+  async token(): Promise<CliToken> {
+    const invocation = `${this.command} ${tokenArgs.join(" ")}`;
+    let stdout: string;
+    try {
+      ({ stdout } = await execFileAsync(this.command, tokenArgs, { timeout: this.timeoutMs, encoding: "utf8" }));
+    } catch (err) {
+      const code = err instanceof Error && "code" in err ? err.code : null;
+      const killed = err instanceof Error && "killed" in err && err.killed === true;
+      if (code === "ENOENT") return { unavailable: `the GitHub CLI is not installed at ${this.command}` };
+      if (killed) return { unavailable: `${invocation} did not finish within ${this.timeoutMs / 1000} seconds` };
+      if (typeof code === "number") return { unavailable: `${invocation} failed with exit code ${code}` };
+      return { unavailable: `${invocation} could not run${typeof code === "string" ? ` (${code})` : ""}` };
+    }
+    const token = stdout.trim();
+    return token === "" ? { unavailable: `${invocation} printed no token` } : { token };
+  }
 }
 
 export class DeployWorkflow {

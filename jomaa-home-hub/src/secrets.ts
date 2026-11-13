@@ -6,7 +6,6 @@ import { open, readFile, realpath, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import {
   applyEnvChanges,
-  effectiveValue,
   EnvError,
   envKeys,
   envValue,
@@ -16,9 +15,6 @@ import {
   type EnvChange,
   type EnvFile,
 } from "./envfile.js";
-
-/** The variable in the token file that authorizes redeploys. */
-export const tokenKey = "GITHUB_DEPLOY_TOKEN";
 
 /** Shown in place of every value that is set. */
 export const mask = "••••••••";
@@ -52,11 +48,10 @@ function missing(err: unknown): boolean {
 export class EnvFiles {
   #saving: Promise<void> = Promise.resolve();
 
-  /** files and tokenFile are paths relative to root; tokenFile is one of files. */
+  /** files are paths relative to root. */
   constructor(
     private readonly root: string,
     readonly files: readonly string[],
-    readonly tokenFile: string,
     private readonly hubPasswordMinLength: number,
   ) {}
 
@@ -99,13 +94,6 @@ export class EnvFiles {
     });
     this.#saving = saved.catch(() => undefined);
     await saved;
-  }
-
-  /** The redeploy token from the token file, or null when it isn't set. */
-  async token(): Promise<string | null> {
-    const env = await this.#read(this.tokenFile);
-    const token = effectiveValue((env && envValue(env, tokenKey)) ?? "");
-    return token === "" ? null : token;
   }
 
   #path(file: string): string {

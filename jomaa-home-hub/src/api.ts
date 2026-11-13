@@ -14,8 +14,8 @@ import { serveWeb } from "./web.js";
 import { assignMatterGroup, editLayout } from "./group-assignment.js";
 import { OrganizationError, type Organization } from "./organization.js";
 import type { EnvChange } from "./envfile.js";
-import { SecretsError, tokenKey, type EnvFiles } from "./secrets.js";
-import type { DeployWorkflow } from "./redeploy.js";
+import { SecretsError, type EnvFiles } from "./secrets.js";
+import type { DeployWorkflow, GitHubCli } from "./redeploy.js";
 import { settings } from "./settings.js";
 import {
   AccountError,
@@ -74,6 +74,8 @@ type Requirement = Scope | "owner" | null;
 export interface SecretsAdmin {
   files: EnvFiles;
   workflow: DeployWorkflow;
+  /** The source of the token that reruns the workflow. */
+  cli: GitHubCli;
 }
 
 interface RequestContext {
@@ -421,12 +423,13 @@ export class Api {
   }
 
   async #secretsList({ res }: RequestContext): Promise<void> {
-    const { files } = this.#secretsAdmin();
+    const { files, cli } = this.#secretsAdmin();
+    const [listed, token] = await Promise.all([files.list(), cli.token()]);
     writeJSON(res, 200, {
-      files: await files.list(),
+      files: listed,
       redeploy: {
-        available: (await files.token()) !== null,
-        tokenFile: files.tokenFile,
+        available: "token" in token,
+        unavailable: "unavailable" in token ? token.unavailable : null,
         pollSeconds: settings.secrets.redeployPollSeconds,
       },
     });
@@ -469,10 +472,13 @@ export class Api {
   }
 
   async #redeployToken(): Promise<{ token: string; workflow: DeployWorkflow }> {
-    const { files, workflow } = this.#secretsAdmin();
-    const token = await files.token();
-    if (token === null) throw new HttpError(409, `${tokenKey} is not set in ${files.tokenFile}`);
-    return { token, workflow };
+    const { cli, workflow } = this.#secretsAdmin();
+    const token = await cli.token();
+    if ("unavailable" in token) {
+      this.log.warn("redeploy unavailable", { reason: token.unavailable });
+      throw new HttpError(409, `redeploy is unavailable: ${token.unavailable}`);
+    }
+    return { token: token.token, workflow };
   }
 
   async #redeploy({ req, res }: RequestContext): Promise<void> {

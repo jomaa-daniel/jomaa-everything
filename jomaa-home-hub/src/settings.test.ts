@@ -25,7 +25,7 @@ test("invalid settings name the setting", () => {
   };
   const secrets = {
     envFiles: ["app/.env", "other/.env"],
-    tokenFile: "app/.env",
+    ghCommand: "/usr/bin/gh",
     deployConfig: "deploy/config.json",
     redeployPollSeconds: 1,
   };
@@ -39,7 +39,8 @@ test("invalid settings name the setting", () => {
   assert.throws(() => parseSettings(badSecrets({ envFiles: ["../outside/.env"] })), /secrets\.envFiles/);
   assert.throws(() => parseSettings(badSecrets({ envFiles: ["/etc/.env"] })), /secrets\.envFiles/);
   assert.throws(() => parseSettings(badSecrets({ envFiles: [] })), /secrets\.envFiles/);
-  assert.throws(() => parseSettings(badSecrets({ tokenFile: "missing/.env" })), /secrets\.tokenFile/);
+  assert.throws(() => parseSettings(badSecrets({ ghCommand: "gh" })), /secrets\.ghCommand/);
+  assert.throws(() => parseSettings(badSecrets({ ghCommand: "" })), /secrets\.ghCommand/);
   assert.throws(() => parseSettings(badSecrets({ redeployPollSeconds: 0 })), /secrets\.redeployPollSeconds/);
 });
 

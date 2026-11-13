@@ -233,7 +233,6 @@ function render() {
   $("files").replaceChildren(...listing.files.map(section));
   $("redeploy-button").disabled = !listing.redeploy.available || runActive;
   $("redeploy-help").hidden = listing.redeploy.available;
-  $("token-file").textContent = listing.redeploy.tokenFile;
 }
 
 async function load() {

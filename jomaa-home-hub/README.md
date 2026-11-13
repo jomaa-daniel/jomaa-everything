@@ -180,17 +180,20 @@ and replaces the link's target atomically with the same file mode.
 Saved changes apply on the next deploy, which restarts the hub when its `.env`
 changed and runs the tailnet command every time. After a save, Redeploy now
 reruns the latest push run of the `github.workflow` workflow on `main` and
-follows it until it finishes, waiting while the hub restarts. Redeploy needs
-`GITHUB_DEPLOY_TOKEN` in `secrets.tokenFile`: a fine-grained personal access
-token for the `repo` repository with the Actions repository permission set to
-read and write. Add it on the page; the hub reads it on each request, so it
-works without a restart. Without it the Redeploy button is disabled.
+follows it until it finishes, waiting while the hub restarts. Redeploy uses
+the GitHub CLI login on jerry: on each request the hub runs `secrets.ghCommand`
+with `auth token`, without a shell and within `github.timeoutSeconds`, and
+sends the printed token to GitHub. The login's token needs the Actions
+repository permission set to read and write on the `repo` repository. When the
+command is missing, fails or prints nothing, the Redeploy button is disabled
+and the redeploy API answers 409 with the reason. The token is never shown or
+logged.
 
 ## Browser check
 
 `npm run test:browser` drives the invite, join, permission and Secrets pages in
 Chrome against the real API and built pages, with a fake light, temporary env
-files and a fake GitHub API. It uses the installed
+files, a fake GitHub CLI and a fake GitHub API. It uses the installed
 Google Chrome (`channel: "chrome"`); CI runs it as a declared check.
 
 ## Register lights

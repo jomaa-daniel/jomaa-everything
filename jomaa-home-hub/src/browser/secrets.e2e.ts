@@ -1,7 +1,8 @@
 // Drives the Secrets page in Chrome against the real API and built pages,
 // with temporary env files linked into a release the way deployment links
-// them and a fake GitHub API: the owner views, reveals, edits and saves keys,
-// adds the deploy token, and follows a redeploy while the hub is briefly away.
+// them, a fake GitHub CLI and a fake GitHub API: the owner views, reveals,
+// edits and saves keys, and once the CLI is logged in follows a redeploy while
+// the hub is briefly away.
 import assert from "node:assert/strict";
 import {
   chmodSync,
@@ -23,8 +24,8 @@ import { Api } from "../api.js";
 import { Hub } from "../hub.js";
 import { silentLog } from "../log.js";
 import { MatterNotReadyError, type MatterAdmin } from "../matter/nodes.js";
-import { DeployWorkflow } from "../redeploy.js";
-import { EnvFiles, tokenKey } from "../secrets.js";
+import { DeployWorkflow, GitHubCli } from "../redeploy.js";
+import { EnvFiles } from "../secrets.js";
 import { deploySettings } from "../settings.js";
 import { serve } from "../testing.js";
 
@@ -32,7 +33,7 @@ const ownerPassword = "owner password for the secrets browser test";
 const guestPassword = "guest password for the secrets browser test";
 const hubSecret = "hub-secret-shown-only-on-reveal";
 const tailnetSecret = "tskey-api-browser-fixture";
-const deployToken = "fine_grained_browser_fixture";
+const deployToken = "gho_cli_browser_fixture";
 const runUrl = "https://example.test/runs/42";
 
 const base = mkdtempSync(join(tmpdir(), "hub-secrets-e2e-"));
@@ -51,11 +52,22 @@ for (const [file, text] of Object.entries(contents)) {
   symlinkSync(join(checkout, file), join(root, file));
 }
 
+/** A fake GitHub CLI that prints the token once the marker file exists, and fails before. */
+const loggedIn = join(base, "gh-logged-in");
+const ghCommand = join(base, "gh");
+writeFileSync(
+  ghCommand,
+  `#!/bin/sh\n[ -f "${loggedIn}" ] || { echo "not logged in" >&2; exit 1; }\necho "${deployToken}"\n`,
+);
+chmodSync(ghCommand, 0o755);
+
 /** One push run of the deploy workflow; a rerun completes successfully at once. */
 let attempt = 1;
 let reruns = 0;
+const authorizations: string[] = [];
 const fakeGitHub = await serve((req: IncomingMessage, res: ServerResponse) => {
   const path = new URL(req.url ?? "/", "http://fake").pathname;
+  authorizations.push(req.headers.authorization ?? "");
   const actions = `/repos/${deploySettings.repo}/actions`;
   const run = { id: 42, html_url: runUrl, run_attempt: attempt, status: "completed", conclusion: "success" };
   res.setHeader("Content-Type", "application/json");
@@ -89,13 +101,14 @@ const { token: invite } = accounts.createInvite();
 await accounts.join(invite, "guest", guestPassword);
 accounts.setScopes("guest", ["lights", "devices", "manage"]);
 const api = new Api(new Hub(), noMatter, ownerPassword, accounts, silentLog, undefined, undefined, undefined, {
-  files: new EnvFiles(root, Object.keys(contents), "app/.env", deploySettings.hubPasswordMinLength),
+  files: new EnvFiles(root, Object.keys(contents), deploySettings.hubPasswordMinLength),
   workflow: new DeployWorkflow({
     api: fakeGitHub,
     repo: deploySettings.repo,
     workflow: deploySettings.workflow,
     timeoutMs: 5000,
   }),
+  cli: new GitHubCli(ghCommand, deploySettings.githubTimeoutSeconds * 1000),
 });
 const origin = await serve(api.handle);
 const browser = await chromium.launch({ channel: "chrome", headless: true });
@@ -172,13 +185,15 @@ await test("the owner edits, adds and deletes keys and saves them with one passw
   assert.ok(!((await page.locator("#content").textContent()) ?? "").includes("rotated-in-the-browser"));
 });
 
-await test("redeploy waits for the token, then follows the run while the hub is away", async () => {
+await test("redeploy waits for the GitHub CLI login, then follows the run while the hub is away", async () => {
   await page.locator("#redeploy").waitFor();
-  assert.ok(await page.locator("#redeploy-button").isDisabled(), "no token, no redeploy");
-  await page.locator("#redeploy-help", { hasText: "app/.env" }).waitFor();
+  assert.ok(await page.locator("#redeploy-button").isDisabled(), "no CLI login, no redeploy");
+  await page.locator("#redeploy-help", { hasText: "GitHub CLI login on jerry" }).waitFor();
+  assert.match((await page.locator("#redeploy-help").textContent()) ?? "", /Actions: Read and write/);
 
-  await page.getByLabel("New key for app/.env", { exact: true }).fill(tokenKey);
-  await page.getByLabel("Value of the new key for app/.env").fill(deployToken);
+  writeFileSync(loggedIn, "");
+  await page.getByLabel("New key for app/.env", { exact: true }).fill("AFTER_LOGIN");
+  await page.getByLabel("Value of the new key for app/.env").fill("saved after the CLI login");
   await page.getByRole("button", { name: "Add a key to app/.env" }).click();
   await page.getByRole("button", { name: "Save changes to app/.env" }).click();
   await confirmWith(page, ownerPassword);
@@ -200,6 +215,8 @@ await test("redeploy waits for the token, then follows the run while the hub is 
   assert.equal(await page.locator("#run-link").getAttribute("href"), runUrl);
   await page.locator("#run-status.success", { hasText: "The deploy finished." }).waitFor();
   assert.equal(reruns, 1);
+  assert.ok(authorizations.length > 0 && authorizations.every((header) => header === `Bearer ${deployToken}`));
+  assert.ok(!(await page.content()).includes(deployToken), "the page never shows the token");
 });
 
 await test("an invited account can't open the page", async () => {

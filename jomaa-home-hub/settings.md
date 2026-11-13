@@ -25,10 +25,10 @@ Invited accounts, their sessions, and invite links.
 The owner-only Secrets page at `/secrets`, which edits environment files and
 reruns the deployment workflow.
 
-| Key                           | Type         | Meaning                                                                                                                                                                            |
-| ----------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `secrets`                     | object       | Settings for the Secrets page.                                                                                                                                                     |
-| `secrets.envFiles`            | list         | Environment files the page can read and write, as repository paths resolved from the release root the hub runs in. Any other file is refused.                                      |
-| `secrets.tokenFile`           | string       | The file of `secrets.envFiles` whose `GITHUB_DEPLOY_TOKEN` authorizes redeploys. It is read on each request, so a token saved on the page works before the hub restarts.           |
-| `secrets.deployConfig`        | string       | The deployment's settings file, resolved from the release root. The hub reads `repo`, `github.api`, `github.workflow`, `github.timeoutSeconds` and `hubPasswordMinLength` from it. |
-| `secrets.redeployPollSeconds` | whole number | How often the page asks for the status of a redeploy run.                                                                                                                          |
+| Key                           | Type         | Meaning                                                                                                                                                                             |
+| ----------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `secrets`                     | object       | Settings for the Secrets page.                                                                                                                                                      |
+| `secrets.envFiles`            | list         | Environment files the page can read and write, as repository paths resolved from the release root the hub runs in. Any other file is refused.                                       |
+| `secrets.ghCommand`           | string       | Absolute path of the GitHub CLI on the server. The hub runs `auth token` with it on each request for the token that reruns the deployment workflow, within `github.timeoutSeconds`. |
+| `secrets.deployConfig`        | string       | The deployment's settings file, resolved from the release root. The hub reads `repo`, `github.api`, `github.workflow`, `github.timeoutSeconds` and `hubPasswordMinLength` from it.  |
+| `secrets.redeployPollSeconds` | whole number | How often the page asks for the status of a redeploy run.                                                                                                                           |

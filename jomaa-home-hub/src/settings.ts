@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import { Fields, parseJson } from "./json.js";
 
 export interface AccountSettings {
@@ -12,8 +13,8 @@ export interface AccountSettings {
 export interface SecretSettings {
   /** Editable environment files, relative to the release root. */
   envFiles: string[];
-  /** The listed file that holds the GitHub token for redeploys. */
-  tokenFile: string;
+  /** Absolute path of the GitHub CLI whose login's token reruns the deploy workflow. */
+  ghCommand: string;
   /** The deployment settings file, relative to the release root. */
   deployConfig: string;
   redeployPollSeconds: number;
@@ -59,19 +60,19 @@ function releasePath(value: string | null, where: string): string {
 
 function parseSecrets(value: unknown): SecretSettings {
   const secrets = new Fields(value, "settings.json secrets")
-    .only("envFiles", "tokenFile", "deployConfig", "redeployPollSeconds")
-    .required("envFiles", "tokenFile", "deployConfig");
+    .only("envFiles", "ghCommand", "deployConfig", "redeployPollSeconds")
+    .required("envFiles", "ghCommand", "deployConfig");
   if (!Array.isArray(secrets.value("envFiles"))) throw new Error("secrets.envFiles must be a list");
   const envFiles = secrets
     .list("envFiles")
     .map((file) => releasePath(typeof file === "string" ? file : null, "each of secrets.envFiles"));
   if (envFiles.length === 0) throw new Error("secrets.envFiles must list at least one file");
   if (new Set(envFiles).size !== envFiles.length) throw new Error("secrets.envFiles must not repeat a file");
-  const tokenFile = releasePath(secrets.string("tokenFile"), "secrets.tokenFile");
-  if (!envFiles.includes(tokenFile)) throw new Error("secrets.tokenFile must be one of secrets.envFiles");
+  const ghCommand = secrets.string("ghCommand") ?? "";
+  if (!isAbsolute(ghCommand)) throw new Error("secrets.ghCommand must be an absolute path");
   return {
     envFiles,
-    tokenFile,
+    ghCommand,
     deployConfig: releasePath(secrets.string("deployConfig"), "secrets.deployConfig"),
     redeployPollSeconds: positive(secrets, "redeployPollSeconds", "secrets"),
   };

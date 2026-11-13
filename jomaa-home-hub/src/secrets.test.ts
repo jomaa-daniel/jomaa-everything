@@ -18,33 +18,45 @@ import { Accounts } from "./accounts.js";
 import { Api } from "./api.js";
 import { Hub } from "./hub.js";
 import { Fields, parseJson } from "./json.js";
-import { silentLog } from "./log.js";
+import { newLog } from "./log.js";
 import { MatterNotReadyError, type MatterAdmin } from "./matter/nodes.js";
-import { DeployWorkflow } from "./redeploy.js";
-import { EnvFiles, mask, SecretsError, tokenKey } from "./secrets.js";
+import { DeployWorkflow, GitHubCli } from "./redeploy.js";
+import { EnvFiles, mask, SecretsError } from "./secrets.js";
 import { deploySettings, settings } from "./settings.js";
 import { serve } from "./testing.js";
 
 const ownerPassword = "owner password for the secrets test";
 const hubSecret = "hub-secret-value-1234567890";
 const tailnetSecret = "tskey-api-secret-value";
-const deployToken = "fine_grained_fixture_token";
+const deployToken = "gho_cli_fixture_token";
 const files = ["app/.env", "net/.env"];
 
+/** Fake GitHub CLIs: one prints the token for `auth token`, one fails, one prints nothing, one is missing. */
+const gh = (() => {
+  const dir = mkdtempSync(join(tmpdir(), "hub-fake-gh-"));
+  const script = (name: string, body: string) => {
+    const path = join(dir, name);
+    writeFileSync(path, `#!/bin/sh\n${body}\n`);
+    chmodSync(path, 0o755);
+    return path;
+  };
+  return {
+    loggedIn: script("gh-logged-in", `[ "$*" = "auth token" ] || exit 2\necho "${deployToken}"`),
+    failing: script("gh-failing", `echo "no oauth token found for github.com" >&2\nexit 1`),
+    silent: script("gh-silent", "exit 0"),
+    missing: join(dir, "gh-not-installed"),
+  };
+})();
+
 /** A release whose env files link to 0600 files in a separate checkout, as deployment lays them out. */
-function release(token: string | null = null): { root: string; checkout: string } {
+function release(): { root: string; checkout: string } {
   const base = mkdtempSync(join(tmpdir(), "hub-secrets-"));
   const root = join(base, "release");
   const checkout = join(base, "checkout");
   const contents: Record<string, string> = {
-    "app/.env": [
-      "# The hub's secrets.",
-      `HUB_PASSWORD=${ownerPassword}`,
-      `HUB_SECRET=${hubSecret}`,
-      "EMPTY=",
-      ...(token === null ? [] : [`${tokenKey}=${token}`]),
-      "",
-    ].join("\n"),
+    "app/.env": ["# The hub's secrets.", `HUB_PASSWORD=${ownerPassword}`, `HUB_SECRET=${hubSecret}`, "EMPTY=", ""].join(
+      "\n",
+    ),
     "net/.env": `TAILSCALE_API_KEY=${tailnetSecret}\n`,
   };
   for (const file of files) {
@@ -61,7 +73,7 @@ function release(token: string | null = null): { root: string; checkout: string 
 }
 
 function envFiles(root: string): EnvFiles {
-  return new EnvFiles(root, files, "app/.env", deploySettings.hubPasswordMinLength);
+  return new EnvFiles(root, files, deploySettings.hubPasswordMinLength);
 }
 
 const noMatter: MatterAdmin = {
@@ -126,10 +138,13 @@ interface Env {
   root: string;
   checkout: string;
   fake: FakeGitHub;
+  /** Every line the hub logged. */
+  logs: string[];
 }
 
-async function setup(token: string | null = deployToken): Promise<Env> {
-  const { root, checkout } = release(token);
+async function setup(ghCommand: string = gh.loggedIn): Promise<Env> {
+  const { root, checkout } = release();
+  const logs: string[] = [];
   const fake = new FakeGitHub();
   const fakeUrl = await serve(fake.handle);
   const accounts = new Accounts(":memory:");
@@ -142,14 +157,16 @@ async function setup(token: string | null = deployToken): Promise<Env> {
     workflow: deploySettings.workflow,
     timeoutMs: 5000,
   });
-  const api = new Api(new Hub(), noMatter, ownerPassword, accounts, silentLog, undefined, undefined, undefined, {
+  const log = newLog({}, (line) => logs.push(line));
+  const api = new Api(new Hub(), noMatter, ownerPassword, accounts, log, undefined, undefined, undefined, {
     files: envFiles(root),
     workflow,
+    cli: new GitHubCli(ghCommand, deploySettings.githubTimeoutSeconds * 1000),
   });
   const url = await serve(api.handle);
   const login = await fetch(url + "/api/login", { method: "POST", body: JSON.stringify({ password: ownerPassword }) });
   const owner = new Fields(parseJson(await login.text()), "login").string("token") ?? "";
-  return { url, owner, account: accounts.createSession("guest"), root, checkout, fake };
+  return { url, owner, account: accounts.createSession("guest"), root, checkout, fake, logs };
 }
 
 async function call(
@@ -218,14 +235,13 @@ test("the listing masks every value and names keys in file order", async () => {
           { key: "HUB_PASSWORD", masked: mask, hasValue: true },
           { key: "HUB_SECRET", masked: mask, hasValue: true },
           { key: "EMPTY", masked: "", hasValue: false },
-          { key: tokenKey, masked: mask, hasValue: true },
         ],
       },
       { file: "net/.env", exists: true, keys: [{ key: "TAILSCALE_API_KEY", masked: mask, hasValue: true }] },
     ],
     redeploy: {
       available: true,
-      tokenFile: "app/.env",
+      unavailable: null,
       pollSeconds: settings.secrets.redeployPollSeconds,
     },
   });
@@ -310,7 +326,7 @@ test("the owner reveals a value and saves changes with the hub password", async 
   assert.ok(!saved.text.includes("rotated-value") && !saved.text.includes("added-value"), "the answer has no values");
   assert.equal(
     readFileSync(join(env.checkout, "app/.env"), "utf8"),
-    `# The hub's secrets.\nHUB_PASSWORD=${ownerPassword}\nHUB_SECRET=rotated-value\n${tokenKey}=${deployToken}\nADDED=added-value\n`,
+    `# The hub's secrets.\nHUB_PASSWORD=${ownerPassword}\nHUB_SECRET=rotated-value\nADDED=added-value\n`,
   );
   assert.ok(lstatSync(join(env.root, "app/.env")).isSymbolicLink());
 
@@ -354,29 +370,34 @@ test("redeploy reruns the latest push run on main and reports its status", async
   env.fake.runs = false;
   const none = await call(env, env.owner, "POST", "/api/secrets/redeploy", { password: ownerPassword });
   assert.equal(none.status, 404);
+  assert.ok(env.logs.some((line) => line.includes("redeploy requested")));
+  assert.ok(!env.logs.some((line) => line.includes(deployToken)), "the token is never logged");
+  for (const answer of [started, none]) assert.ok(!answer.text.includes(deployToken), "no answer has the token");
 });
 
-test("redeploy is unavailable until the token is saved on the page", async () => {
-  const env = await setup(null);
-  const available = async () =>
-    new Fields((await call(env, env.owner, "GET", "/api/secrets")).body.value("redeploy"), "redeploy").bool(
-      "available",
-    );
-  assert.equal(await available(), false);
-  const refused = await call(env, env.owner, "POST", "/api/secrets/redeploy", { password: ownerPassword });
-  assert.equal(refused.status, 409);
-  assert.match(refused.body.string("error") ?? "", new RegExp(tokenKey));
-  assert.equal((await call(env, env.owner, "GET", "/api/secrets/redeploy/42")).status, 409);
-  assert.equal(env.fake.reruns, 0);
-
-  const saved = await call(env, env.owner, "PUT", "/api/secrets", {
-    file: "app/.env",
-    changes: [{ key: tokenKey, value: deployToken }],
-    password: ownerPassword,
-  });
-  assert.equal(saved.status, 200);
-  assert.equal(await available(), true, "a saved token works without a restart");
-  assert.equal((await call(env, env.owner, "POST", "/api/secrets/redeploy", { password: ownerPassword })).status, 202);
+test("redeploy is unavailable when the GitHub CLI is missing, fails or prints nothing", async () => {
+  const cases = [
+    [gh.failing, /exit code 1/],
+    [gh.missing, /not installed/],
+    [gh.silent, /no token/],
+  ] as const;
+  for (const [command, reason] of cases) {
+    const env = await setup(command);
+    const listed = await call(env, env.owner, "GET", "/api/secrets");
+    const redeploy = new Fields(listed.body.value("redeploy"), "redeploy");
+    assert.equal(redeploy.bool("available"), false, command);
+    assert.match(redeploy.string("unavailable") ?? "", reason, command);
+    const refused = await call(env, env.owner, "POST", "/api/secrets/redeploy", { password: ownerPassword });
+    assert.equal(refused.status, 409, command);
+    const error = refused.body.string("error") ?? "";
+    assert.match(error, reason, command);
+    assert.doesNotMatch(error, /\n/, "the reason is one line");
+    assert.doesNotMatch(error, /no oauth token/, "the command's output is not passed on");
+    assert.equal((await call(env, env.owner, "GET", "/api/secrets/redeploy/42")).status, 409, command);
+    assert.equal(env.fake.reruns, 0, command);
+    assert.deepEqual(env.fake.authorizations, [], "GitHub is not called without a token");
+    assert.ok(env.logs.some((line) => line.includes("redeploy unavailable")));
+  }
 });
 
 test("the page is public and the jomaa.org route and its probes cover the page and the API", async () => {
