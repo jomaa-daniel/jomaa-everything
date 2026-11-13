@@ -108,10 +108,13 @@ jomaa-static-pages/new.jomaa.org/gallery/index.html
 
 Each hostname folder is its own module, named with the hostname. Activation
 points the site map at the folder in the new release, the static server
-re-reads the map, and the site must answer `/` with HTTP 200 for its Host
-header. A site that fails keeps its previous folder, or stays out of the map
-when it is new. Hostname folders need an `index.html` inside them and cannot
-be symlinks. Folders without a dot, such as `device-panel/`, are not sites.
+re-reads the map, and the site must answer `/` for its Host header with HTTP
+200 and exactly the bytes of the folder's `index.html`. A site that fails
+keeps its previous folder, or stays out of the map when it is new. Hostname
+folders need an `index.html` inside them and cannot be symlinks. Every
+relative asset that `index.html` references, through a `src` attribute or a
+`<link>` element's `href`, must exist inside the folder; absolute,
+root-relative and other hosts' references are not checked. Folders without a dot, such as `device-panel/`, are not sites.
 Sarah's site lives in `jomaa-static-pages/sarah.jomaa.org/`.
 
 ### Routes

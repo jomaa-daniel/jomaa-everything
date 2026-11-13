@@ -80,13 +80,14 @@ def cname(name: str, **values) -> dict:
 
 
 class FakeContext(Context):
-    """Records commands instead of running them; health answers come from the unhealthy set."""
+    """Records commands instead of running them; health answers come from the unhealthy and served sets."""
 
-    def __init__(self, *args, cloudflare: FakeCloudflare, failing=(), unhealthy=(), **kwargs):
+    def __init__(self, *args, cloudflare: FakeCloudflare, failing=(), unhealthy=(), served=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.calls: list[tuple[str, ...]] = []
         self.failing = set(failing)
         self.unhealthy = set(unhealthy)
+        self.served: dict[str, bytes] = served or {}
         self.cf = cloudflare
 
     def run(self, *args, cwd=None):
@@ -99,6 +100,16 @@ class FakeContext(Context):
 
     def wait_healthy(self, check):
         return self.healthy(check)
+
+    def fetch(self, check):
+        """The index.html of the host's directory in the site map, or the bytes given as served for it."""
+        host = check.get("host", check["url"])
+        if host in self.unhealthy:
+            return None
+        if host in self.served:
+            return self.served[host]
+        site = self.sites.load().get(host)
+        return (Path(site) / "index.html").read_bytes() if site is not None else None
 
     def cloudflare(self, token):
         return self.cf

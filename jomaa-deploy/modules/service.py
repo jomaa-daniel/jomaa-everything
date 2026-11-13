@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import re
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 import settings
 from modules.base import (Context, Module, commands, command, declared_routes, expand, git_object, hostname,
@@ -120,6 +122,32 @@ class Service(Module):
             Service.from_record(record).stop(ctx)
 
 
+class Assets(HTMLParser):
+    """The src attributes of a page, and href attributes of its <link> elements."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.references: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        for name, value in attrs:
+            if value is not None and (name == "src" or (name == "href" and tag == "link")):
+                self.references.append(value)
+
+
+def local_assets(page: str) -> list[str]:
+    """Relative paths a page references, without absolute, root-relative, scheme or host references."""
+    parser = Assets()
+    parser.feed(page)
+    parser.close()
+    paths = []
+    for reference in parser.references:
+        parts = urlsplit(reference.strip())
+        if not (parts.scheme or parts.netloc or parts.path.startswith("/") or not parts.path):
+            paths.append(unquote(parts.path))
+    return paths
+
+
 class StaticSite(Module):
     """One hostname directory served by the static-pages service through the site map."""
 
@@ -172,6 +200,11 @@ class StaticSite(Module):
         index = folder / "index.html"
         if not index.is_file() or not index.resolve().is_relative_to(folder.resolve()):
             raise ValueError(f"site needs an index.html inside its folder: {self.name}")
+        missing = [path for path in local_assets(index.read_text(encoding="utf-8", errors="replace"))
+                   if not (folder / path).exists() or not (folder / path).resolve().is_relative_to(folder.resolve())]
+        if missing:
+            raise ValueError(f"index.html of {self.name} references assets missing from its folder: "
+                             + ", ".join(missing))
 
     def snapshot(self, ctx: Context) -> dict:
         """The site's directory in the site map, or None."""
@@ -181,7 +214,9 @@ class StaticSite(Module):
         ctx.sites.set(self.name, self.folder(release))
 
     def verify(self, ctx: Context) -> bool:
-        return ctx.healthy({"url": self.declaration["origin"] + "/", "host": self.name})
+        """The static server answers / for the site's host with the bytes of the release's index.html."""
+        served = ctx.fetch({"url": self.declaration["origin"] + "/", "host": self.name})
+        return served is not None and served == (self.folder(ctx.release) / "index.html").read_bytes()
 
     def rollback(self, ctx: Context, snapshot: dict) -> str:
         ctx.sites.set(self.name, Path(snapshot["site"]) if snapshot["site"] is not None else None)

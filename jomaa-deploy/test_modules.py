@@ -7,14 +7,17 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
+import threading
 import types
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import engine
 import settings
 from fixtures import APP, BENCH, SHELL, TOOL, WEB, ModuleTestCase
-from modules import KINDS, VERIFY_JOB, Checks, Command, DeployError, External, Module, Service, StaticSite
+from modules import KINDS, VERIFY_JOB, Checks, Command, Context, DeployError, External, Module, Service, StaticSite
 from modules import ingress
 from modules.base import expand, switch_link, unit_text
 
@@ -300,6 +303,59 @@ class StaticSiteTest(ModuleTestCase):
         self.assertEqual(self.ctx.sites.load(), {"one.example.org": old})
         site.rollback(self.ctx, new)
         self.assertEqual(self.ctx.sites.load(), {})
+
+    def test_verify_compares_the_served_bytes_with_the_release_index(self):
+        site = StaticSite.discover(self.web)[0]
+        site.activate(self.ctx, self.ctx.release)
+        self.assertTrue(site.verify(self.ctx))
+        self.ctx.served = {"one.example.org": b"one, an older version"}
+        self.assertFalse(site.verify(self.ctx))
+
+    def test_build_requires_the_relative_assets_of_the_index_inside_the_folder(self):
+        release = self.ctx.release
+        folder = release / "web/one.example.org"
+        (folder / "img").mkdir()
+        (folder / "img/ok.png").write_text("png")
+        (folder / "style.css").write_text("css")
+        (release / "web/outside.css").write_text("outside")
+        page = ('<link rel="stylesheet" href="style.css"><link rel="icon" href="/root.ico">'
+                '<script src="https://cdn.example.org/x.js"></script><script src="//cdn.example.org/y.js"></script>'
+                '<img src="img/ok.png?v=1#top" /><img src="data:image/png;base64,AA"><img alt="">'
+                '<a href="page.html">not an asset</a>')
+        (folder / "index.html").write_text(page)
+        site = StaticSite.discover(self.web)[0]
+        site.build(self.ctx, release)
+        (folder / "index.html").write_text(page + '<script src="app.js"></script>'
+                                                  '<link rel="stylesheet" href="../outside.css">')
+        with self.assertRaisesRegex(ValueError, "missing from its folder: app.js, ../outside.css$"):
+            site.build(self.ctx, release)
+
+
+class ContextRequestTest(unittest.TestCase):
+    def test_fetch_returns_the_body_of_a_200_answer_to_a_request_with_the_host_header(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = self.headers["Host"].encode()
+                self.send_response(200 if self.path == "/" else 404)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.addCleanup(server.server_close)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        folder = Path(temp.name)
+        ctx = Context(folder, folder, folder, "", folder, unit_dir=folder)
+        origin = f"http://127.0.0.1:{server.server_port}"
+        self.assertEqual(ctx.fetch({"url": origin + "/", "host": "site.example.org"}), b"site.example.org")
+        self.assertIsNone(ctx.fetch({"url": origin + "/missing", "host": "site.example.org"}))
+        self.assertTrue(ctx.healthy({"url": origin + "/"}))
 
 
 class CommandExternalChecksTest(ModuleTestCase):

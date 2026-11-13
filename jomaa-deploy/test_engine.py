@@ -176,6 +176,27 @@ class EngineTest(ModuleTestCase):
         self.assertEqual(result["modules"]["web"], "unchanged")
         self.assertEqual(self.restarted(ctx), set())
 
+    def test_static_site_serving_other_bytes_fails_and_keeps_its_previous_directory(self):
+        first, _ = self.first_deployment()
+        self.write("web/one.example.org/index.html", "one, second version")
+        ctx = self.context(self.commit(), served={"one.example.org": b"one"})
+        result = engine.activate(ctx, ALL_JOBS)
+        self.assertEqual(result["modules"]["one.example.org"], "failed")
+        self.assertEqual(ctx.sites.load(), {"one.example.org": str(first.release / "web/one.example.org")})
+        self.assertTrue(json.loads((self.deploy_dir / "modules/one.example.org/record.json").read_text())["failed"])
+
+    def test_site_with_a_missing_asset_fails_alone(self):
+        self.add_all()
+        self.write("web/two.example.org/index.html", '<script src="app.js"></script>')
+        self.write("web/one.example.org/index.html", '<link rel="stylesheet" href="style.css">')
+        self.write("web/one.example.org/style.css", "body {}")
+        ctx = self.context(self.commit())
+        result = engine.activate(ctx, ALL_JOBS)
+        self.assertEqual(result["modules"]["two.example.org"], "failed")
+        self.assertEqual(result["modules"]["one.example.org"], "deployed")
+        self.assertEqual(result["modules"]["web"], "deployed")
+        self.assertEqual(ctx.sites.load(), {"one.example.org": str(ctx.release / "web/one.example.org")})
+
     def test_site_change_redeploys_only_that_site_and_server_change_the_server(self):
         self.first_deployment()
         self.write("web/one.example.org/index.html", "one, second version")
