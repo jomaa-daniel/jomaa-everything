@@ -68,12 +68,12 @@ state lives in `data/matter`.
 
 ## Home page
 
-`https://jomaa.org/home` links to lights, device health, device organization, accounts, hub status, the Pico imaging guide,
+`https://jomaa.org/home` links to lights, device health, device organization, accounts, Tailscale, hub status, the Pico imaging guide,
 and the project documentation. The hub serves the page at `/home` and its CSS under
 `/home/`; edit `web/home.html` to add another page. It needs no session.
 
 The locally managed Cloudflare tunnel also routes hostname `jomaa.org`, paths `/`,
-`/home`, `/devices`, `/manage`, `/lights`, `/invite`, `/join`, `/permissions` (including assets), and the pages' API requests to the hub on port 8080. Its proxied DNS record
+`/home`, `/devices`, `/manage`, `/lights`, `/invite`, `/join`, `/permissions`, `/tailscale` (including assets), and the pages' API requests to the hub on port 8080. Its proxied DNS record
 points to the same tunnel as `hub.jomaa.org`. The apex `/` redirects to `/home`;
 the hub subdomain's `/` continues to open device health.
 
@@ -160,10 +160,41 @@ in `accounts.databaseFile` beside the health database. Sessions last
 settings are in [`settings.json`](settings.json), described in
 [`settings.md`](settings.md). Owner and account sign-in failures
 are rate limited separately; sign-in and sign-out refuse cross-site requests.
+Each account row links to its setup on `/tailscale`.
+
+## Tailscale
+
+`https://jomaa.org/tailscale` is the owner's page for exit-node access through
+jerry (see [`jomaa-tailscale`](../jomaa-tailscale/README.md)). It uses the
+accounts above; there is no separate Tailscale sign-up. For each account the
+owner links the person's Tailscale user, picked from the users Tailscale
+reports for this tailnet, and gives or removes exit-node access. Linking
+grants nothing, an account has at most one linked Tailscale user, and a
+Tailscale user is linked to at most one account. Exit-node access, hub page
+scopes, and Tailscale admin roles are independent; the page never changes
+admin roles, devices, or jerry's own setup.
+
+Each account shows its setup steps (account, Tailscale user, exit-node
+access, device, exit node chosen), its access (not linked, no access, has
+access, giving access…, or removing access…), and the devices Tailscale lists
+for the linked user, with how old that information is. "Has access" means
+the tailnet policy, as last read back from Tailscale, lists the person;
+"giving" and "removing" mean what is saved and what Tailscale enforces don't
+match yet, with the last sync's error. Which exit node a device uses is not
+reported by Tailscale, so the page never claims it. jerry's connection,
+advertised routes, and approved routes are shown separately, with any missing
+root setup to fix by hand.
+
+The hub runs `jomaa-tailscale/tailnet.py` to sync the policy after every
+change, every `tailscale.syncIntervalSeconds`, and at startup; **Sync now**
+runs one at once. Deleting an account deletes its link, and the next sync
+removes its access. Nothing is written until the owner turns on managed
+access; the page first lists anyone Tailscale's policy gives access to who
+would lose it.
 
 ## Browser check
 
-`npm run test:browser` drives the invite, join, and permission pages in Chrome
+`npm run test:browser` drives the invite, join, permission and Tailscale pages in Chrome
 against the real API and built pages, with a fake light. It uses the installed
 Google Chrome (`channel: "chrome"`); CI runs it as a declared check.
 
@@ -319,33 +350,40 @@ Every request except `/healthz`, `/api/login`, `/api/logout`,
 `/api/invites/check`, and `/api/join` needs `Authorization: Bearer <token>` or
 the login cookie. The owner can use every route. Accounts need the route's
 scope (`lights` for targets, `devices` for Matter and `/api/devices`, `manage`
-for `/api/manage`) and get 403 without it. Invite and account routes are
-owner-only.
+for `/api/manage`) and get 403 without it. Invite, account and Tailscale routes
+are owner-only.
 
-| Method | Path                          | Body                                                                      | Does                                                                                    |
-| ------ | ----------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| POST   | `/api/login`                  | `{"password"}` or `{"username","password"}`                               | owner or account sign-in; returns `{"token"}` and sets a cookie                         |
-| POST   | `/api/logout`                 |                                                                           | clears the cookie and ends an account session                                           |
-| GET    | `/api/session`                |                                                                           | `{"owner","username","scopes"}` for the caller                                          |
-| POST   | `/api/invites/check`          | `{"token"}`                                                               | the invite's `expiresAt`, 404 when invalid, used, or expired                            |
-| POST   | `/api/join`                   | `{"token","username","password"}`                                         | creates an account with no scopes                                                       |
-| GET    | `/api/invites`                |                                                                           | unused invites                                                                          |
-| POST   | `/api/invites`                | `{}`                                                                      | creates an invite; returns `{"invite","token"}`                                         |
-| DELETE | `/api/invites/{id}`           |                                                                           | revokes an invite                                                                       |
-| GET    | `/api/accounts`               |                                                                           | accounts with their scopes, and the scope list                                          |
-| PUT    | `/api/accounts/{user}/scopes` | `{"scopes"}`                                                              | replaces an account's scopes                                                            |
-| DELETE | `/api/accounts/{user}`        |                                                                           | deletes an account and its sessions                                                     |
-| GET    | `/api/targets`                |                                                                           | every device and room, with what each can do                                            |
-| GET    | `/api/targets/{id}/state`     |                                                                           | room summary plus each device's state                                                   |
-| POST   | `/api/targets/{id}/command`   | `{"on","brightness","colorTemperaturePct","color","clientId","revision"}` | 200 with `failed`: each device that didn't take it, with the reason; empty when all did |
-| POST   | `/api/targets/{id}/sync`      | `{"on","brightness","colorTemperaturePct","clientId","revision"}`         | fixes devices that drifted, returns `synchronized`                                      |
-| GET    | `/api/matter/nodes`           |                                                                           | paired Matter devices                                                                   |
-| GET    | `/api/matter/discover`        |                                                                           | commissionable devices advertised over local-network mDNS                               |
-| POST   | `/api/matter/register`        | `{"code","instanceName"}`                                                 | Pair the selected network advertisement and persist its Matter node.                    |
-| POST   | `/api/matter/commission`      | `{"code","networkOnly"}`                                                  | pair a device                                                                           |
-| POST   | `/api/matter/wifi`            | `{"ssid","password"}`                                                     | Wi-Fi credentials for pairing                                                           |
-| POST   | `/api/matter/thread`          | `{"dataset"}`                                                             | Thread dataset for pairing                                                              |
-| DELETE | `/api/matter/nodes/{nodeId}`  |                                                                           | unpair                                                                                  |
+| Method | Path                                    | Body                                                                      | Does                                                                                    |
+| ------ | --------------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| POST   | `/api/login`                            | `{"password"}` or `{"username","password"}`                               | owner or account sign-in; returns `{"token"}` and sets a cookie                         |
+| POST   | `/api/logout`                           |                                                                           | clears the cookie and ends an account session                                           |
+| GET    | `/api/session`                          |                                                                           | `{"owner","username","scopes"}` for the caller                                          |
+| POST   | `/api/invites/check`                    | `{"token"}`                                                               | the invite's `expiresAt`, 404 when invalid, used, or expired                            |
+| POST   | `/api/join`                             | `{"token","username","password"}`                                         | creates an account with no scopes                                                       |
+| GET    | `/api/invites`                          |                                                                           | unused invites                                                                          |
+| POST   | `/api/invites`                          | `{}`                                                                      | creates an invite; returns `{"invite","token"}`                                         |
+| DELETE | `/api/invites/{id}`                     |                                                                           | revokes an invite                                                                       |
+| GET    | `/api/accounts`                         |                                                                           | accounts with their scopes, and the scope list                                          |
+| PUT    | `/api/accounts/{user}/scopes`           | `{"scopes"}`                                                              | replaces an account's scopes                                                            |
+| DELETE | `/api/accounts/{user}`                  |                                                                           | deletes an account, its sessions and its Tailscale link                                 |
+| GET    | `/api/tailscale`                        |                                                                           | sync state, jerry's status, Tailscale users, and each account's access and setup        |
+| POST   | `/api/tailscale/refresh`                | `{}`                                                                      | observes Tailscale and jerry again; returns the same view                               |
+| POST   | `/api/tailscale/sync`                   | `{}`                                                                      | syncs the policy now; 202 with the view                                                 |
+| POST   | `/api/tailscale/enable`                 | `{}`                                                                      | turns on managed access; syncs write the family group from then on                      |
+| PUT    | `/api/tailscale/profiles/{user}/link`   | `{"providerUserId"}`                                                      | links the account to a Tailscale user of this tailnet, without access                   |
+| DELETE | `/api/tailscale/profiles/{user}/link`   |                                                                           | unlinks it; the next sync removes its access                                            |
+| PUT    | `/api/tailscale/profiles/{user}/access` | `{"access"}`                                                              | saves exit-node access and syncs                                                        |
+| GET    | `/api/targets`                          |                                                                           | every device and room, with what each can do                                            |
+| GET    | `/api/targets/{id}/state`               |                                                                           | room summary plus each device's state                                                   |
+| POST   | `/api/targets/{id}/command`             | `{"on","brightness","colorTemperaturePct","color","clientId","revision"}` | 200 with `failed`: each device that didn't take it, with the reason; empty when all did |
+| POST   | `/api/targets/{id}/sync`                | `{"on","brightness","colorTemperaturePct","clientId","revision"}`         | fixes devices that drifted, returns `synchronized`                                      |
+| GET    | `/api/matter/nodes`                     |                                                                           | paired Matter devices                                                                   |
+| GET    | `/api/matter/discover`                  |                                                                           | commissionable devices advertised over local-network mDNS                               |
+| POST   | `/api/matter/register`                  | `{"code","instanceName"}`                                                 | Pair the selected network advertisement and persist its Matter node.                    |
+| POST   | `/api/matter/commission`                | `{"code","networkOnly"}`                                                  | pair a device                                                                           |
+| POST   | `/api/matter/wifi`                      | `{"ssid","password"}`                                                     | Wi-Fi credentials for pairing                                                           |
+| POST   | `/api/matter/thread`                    | `{"dataset"}`                                                             | Thread dataset for pairing                                                              |
+| DELETE | `/api/matter/nodes/{nodeId}`            |                                                                           | unpair                                                                                  |
 
 `/healthz` answers `{"ok", "matterConnected"}`; `matterConnected` is true once
 the Matter controller has started and loaded the paired devices. While it

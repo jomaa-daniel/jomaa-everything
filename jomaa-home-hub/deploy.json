@@ -1,6 +1,6 @@
 {
   "name": "hub",
-  "inputs": ["jomaa-deploy/boot.py", "jomaa-static-pages/device-panel"],
+  "inputs": ["jomaa-deploy/boot.py", "jomaa-deploy/settings.py", "jomaa-static-pages/device-panel", "jomaa-tailscale"],
   "checks": [
     ["{python}", "scripts/verify.py"],
     ["npm", "run", "test:browser"]
@@ -21,7 +21,7 @@
     { "hostname": "hub.jomaa.org" },
     {
       "hostname": "jomaa.org",
-      "path": "^/(home(/.*)?|devices(/.*)?|manage(/.*)?|lights(/.*)?|invite(/.*)?|join(/.*)?|permissions(/.*)?|api/(login|logout|session|join|invites(/.*)?|accounts(/.*)?|manage|targets(/.*)?|devices(/.*)?|matter/(discover|register|nodes/[1-9][0-9]*/(name|group))))?$",
+      "path": "^/(home(/.*)?|devices(/.*)?|manage(/.*)?|lights(/.*)?|invite(/.*)?|join(/.*)?|permissions(/.*)?|tailscale(/.*)?|api/(login|logout|session|join|invites(/.*)?|accounts(/.*)?|tailscale(/.*)?|manage|targets(/.*)?|devices(/.*)?|matter/(discover|register|nodes/[1-9][0-9]*/(name|group))))?$",
       "probes": [
         "/",
         "/home",
@@ -55,7 +55,16 @@
         "/api/invites",
         "/api/invites/check",
         "/api/accounts",
-        "/api/accounts/someone/scopes"
+        "/api/accounts/someone/scopes",
+        "/tailscale",
+        "/tailscale/app.js",
+        "/tailscale/style.css",
+        "/api/tailscale",
+        "/api/tailscale/refresh",
+        "/api/tailscale/sync",
+        "/api/tailscale/enable",
+        "/api/tailscale/profiles/someone/link",
+        "/api/tailscale/profiles/someone/access"
       ]
     }
   ]

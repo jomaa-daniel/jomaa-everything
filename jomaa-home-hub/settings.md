@@ -19,3 +19,22 @@ Invited accounts, their sessions, and invite links.
 | `accounts.passwordLength`      | object       | Allowed account password length.                                                                                          |
 | `accounts.passwordLength.min`  | whole number | Fewest characters in an account password.                                                                                 |
 | `accounts.passwordLength.max`  | whole number | Most characters in an account password.                                                                                   |
+| `accounts.busyTimeoutMs`       | whole number | How long a write to the account database waits while another process, such as the Tailscale sync, is writing it.          |
+
+## tailscale
+
+Exit-node access for accounts at `/tailscale`. The hub runs
+`jomaa-tailscale/tailnet.py` to read the tailnet and to sync its policy; that
+script holds the Tailscale API token, and its own settings are in
+`jomaa-tailscale/config.json`.
+
+| Key                                  | Type         | Meaning                                                                                                                                                                                                                                  |
+| ------------------------------------ | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tailscale`                          | object       | Settings for the Tailscale page and its sync.                                                                                                                                                                                            |
+| `tailscale.python`                   | command      | Python interpreter that runs `tailnet.py`.                                                                                                                                                                                               |
+| `tailscale.script`                   | path         | `tailnet.py`, relative to this directory. Its folder also holds `access.sql`, the tables the hub creates in the account database.                                                                                                        |
+| `tailscale.commandTimeoutSeconds`    | whole number | Deadline for one `tailnet.py sync` or `observe` run. A test fails when it is shorter than the slowest run allowed by `jomaa-tailscale/config.json`: the lock wait plus four API requests, or three API requests plus two local commands. |
+| `tailscale.syncIntervalSeconds`      | whole number | Time between syncs. The hub also syncs at startup and after every change.                                                                                                                                                                |
+| `tailscale.observationMaxAgeSeconds` | whole number | Age after which observed users, devices and jerry's status are shown as out of date, and opening the page checks again.                                                                                                                  |
+| `tailscale.downloadUrl`              | https URL    | Where the setup steps send people to install Tailscale.                                                                                                                                                                                  |
+| `tailscale.adminUsersUrl`            | https URL    | The Tailscale admin console's users page, where the owner invites people.                                                                                                                                                                |

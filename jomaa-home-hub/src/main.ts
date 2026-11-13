@@ -4,6 +4,7 @@ import { cliOptions } from "./cli.js";
 import { createServer } from "node:http";
 import { createServer as createTLSServer } from "node:https";
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { Api } from "./api.js";
 import { loadConfig, parseListen, usesDriver } from "./config.js";
 import { GoveeClient, defaultBaseURL } from "./govee.js";
@@ -12,6 +13,9 @@ import { HealthStore } from "./health/store.js";
 import { Organization } from "./organization.js";
 import { Accounts } from "./accounts.js";
 import { settings } from "./settings.js";
+import { TailscaleService } from "./tailscale.js";
+import { TailscaleStore } from "./tailscale-store.js";
+import { CommandGateway, schemaText, scriptPath } from "./tailscale-gateway.js";
 import { dirname, join } from "node:path";
 import { stderrLog, type Log } from "./log.js";
 import { MatterNotReadyError, type MatterAdmin, type MatterNodes } from "./matter/nodes.js";
@@ -69,6 +73,7 @@ async function run(log: Log): Promise<void> {
   let health: HealthStore | undefined;
   let organization: Organization | undefined;
   let accounts: Accounts | undefined;
+  let tailscale: TailscaleService | undefined;
   let cleanup: ReturnType<typeof setInterval> | undefined;
   try {
     const govee = new GoveeClient(goveeKey, process.env["GOVEE_BASE_URL"] || defaultBaseURL);
@@ -82,8 +87,28 @@ async function run(log: Log): Promise<void> {
         ? ":memory:"
         : join(dirname(process.env["HEALTH_DB_PATH"] ?? "data/health.sqlite"), name);
     organization = new Organization(besideHealth("organization.sqlite"));
-    const people = new Accounts(besideHealth(settings.accounts.databaseFile));
+    const accountsFile = besideHealth(settings.accounts.databaseFile);
+    const people = new Accounts(accountsFile);
     accounts = people;
+    if (accountsFile !== ":memory:") {
+      const env: Record<string, string> = {};
+      for (const key of ["PATH", "HOME", "LANG", "JOMAA_DEPLOY_HOME"]) {
+        const value = process.env[key];
+        if (value !== undefined) env[key] = value;
+      }
+      tailscale = new TailscaleService(
+        new TailscaleStore(people.database, schemaText(), Date.now),
+        new CommandGateway(
+          [settings.tailscale.python, scriptPath()],
+          resolve(accountsFile),
+          settings.tailscale.commandTimeoutSeconds * 1000,
+          env,
+        ),
+        people,
+        settings.tailscale,
+        log.with({ component: "tailscale" }),
+      );
+    }
     const api = new Api(
       Hub.build(cfg, govee, matter),
       matter,
@@ -93,6 +118,7 @@ async function run(log: Log): Promise<void> {
       store,
       cliOptions.config,
       organization,
+      tailscale,
     );
     const cert = process.env["HUB_TLS_CERT"];
     const key = process.env["HUB_TLS_KEY"];
@@ -110,6 +136,7 @@ async function run(log: Log): Promise<void> {
       server.listen(host === null ? { port } : { host, port }, resolve);
     });
     log.info("hub listening", { addr: cfg.listen, devices: cfg.devices.length, rooms: cfg.rooms.length });
+    tailscale?.start();
     cleanup = setInterval(() => {
       try {
         store.prune();
@@ -138,6 +165,7 @@ async function run(log: Log): Promise<void> {
   } finally {
     if (cleanup) clearInterval(cleanup);
     try {
+      await tailscale?.close();
       health?.close();
       organization?.close();
       accounts?.close();

@@ -73,8 +73,10 @@ class DeclarationTest(unittest.TestCase):
         route = next(r for r in hub["routes"] if r["hostname"] == "jomaa.org")
         for path in route["probes"]:
             self.assertIsNotNone(re.search(route["path"], path), path)
+        for path in ("/tailscale", "/tailscale/app.js", "/api/tailscale", "/api/tailscale/profiles/someone/access"):
+            self.assertIn(path, route["probes"])
         for path in ("/deploy", "/api/matter/nodes", "/api/matter/commission", "/unknown", "/lights-other",
-                     "/devices-other"):
+                     "/devices-other", "/tailscale-other", "/api/tailscale-other"):
             self.assertIsNone(re.search(route["path"], path), path)
 
 

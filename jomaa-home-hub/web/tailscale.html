@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tailscale · Jomaa Home</title>
+    <link rel="stylesheet" href="/home/base.css" />
+    <link rel="stylesheet" href="/home/accounts.css" />
+    <link rel="stylesheet" href="/tailscale/style.css" />
+    <script type="module" src="/tailscale/app.js"></script>
+  </head>
+  <body>
+    <header><a href="/home">Jomaa Home</a><button id="logout" hidden>Sign out</button></header>
+    <main>
+      <h1>Tailscale</h1>
+      <p class="muted">
+        Link accounts to their Tailscale users and choose who can use jerry as an exit node. Accounts come from
+        <a href="/invite">invite links</a>; page access is on <a href="/permissions">Permissions</a>.
+      </p>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <section id="login-section" hidden>
+        <form id="login-form" class="login">
+          <label for="password">Hub password</label
+          ><input id="password" type="password" autocomplete="current-password" required /><button class="primary">
+            Sign in
+          </button>
+        </form>
+      </section>
+      <p id="not-owner" hidden>Only the hub owner can manage Tailscale access.</p>
+      <div id="content" hidden>
+        <section aria-labelledby="status-title" class="ts-section">
+          <div class="heading">
+            <h2 id="status-title">Status</h2>
+            <div class="actions"><button id="refresh">Refresh</button><button id="sync">Sync now</button></div>
+          </div>
+          <dl id="status" class="ts-facts"></dl>
+          <div id="enable-panel" class="ts-switch" hidden>
+            <h3>Turn on managed access</h3>
+            <p class="muted">
+              Once on, Tailscale's family group lists exactly the accounts here that have exit-node access.
+            </p>
+            <p id="enable-loss"></p>
+            <button class="primary" id="enable">Turn on</button>
+          </div>
+        </section>
+        <section aria-labelledby="server-title" class="ts-section">
+          <h2 id="server-title">jerry</h2>
+          <dl id="server" class="ts-facts"></dl>
+          <ul id="server-problems" class="ts-problems"></ul>
+        </section>
+        <section aria-labelledby="people-title" class="ts-section">
+          <h2 id="people-title">People</h2>
+          <p class="muted">
+            New people: invite them from the <a id="admin-users" rel="noreferrer">Tailscale admin console</a>. They
+            install Tailscale from <a id="download" rel="noreferrer">tailscale.com</a> and sign in with their own
+            account, then you link their Tailscale user here.
+          </p>
+          <div id="profiles" class="ts-profiles"></div>
+          <p id="profiles-empty" class="muted" hidden>No accounts yet. <a href="/invite">Invite someone</a>.</p>
+        </section>
+        <section aria-labelledby="removing-title" class="ts-section" id="removing-section" hidden>
+          <h2 id="removing-title">Still has access</h2>
+          <p class="muted">
+            Tailscale still lists these people without an account here that has access. The next sync removes them.
+          </p>
+          <ul id="removing" class="management-list"></ul>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>
