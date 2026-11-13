@@ -8,9 +8,7 @@ component's `deploy.json` is missing from this document.
 Secrets are not configuration. The Cloudflare API token is
 `CLOUDFLARE_API_TOKEN` in the environment file named by `cloudflare.env`,
 the webhook secret is `webhook-secret` in the deployment directory, and the
-GitHub Actions secret `JOMAA_DEPLOY_SECRET` holds the same value. The key of
-state input digests is the file named by `stateInputKeyFile` in the
-deployment directory.
+GitHub Actions secret `JOMAA_DEPLOY_SECRET` holds the same value.
 
 ## config.json
 
@@ -22,7 +20,7 @@ deployment directory.
 | `webhook.hostname` | hostname | Public hostname of the receiver. Its `/deploy` path is the first tunnel rule, and `notify.py` sends requests there unless the `JOMAA_DEPLOY_URL` repository variable names another URL. |
 | `webhook.port` | port | Loopback port the receiver listens on. |
 | `receiverUnit` | unit name | systemd user unit of the receiver. Services cannot use it. |
-| `deployDirectory` | path | Releases, module records, the webhook secret, the state input key and the site map, unless `JOMAA_DEPLOY_HOME` names another directory. `~/` is the home directory. |
+| `deployDirectory` | path | Releases, module records, the webhook secret and the site map, unless `JOMAA_DEPLOY_HOME` names another directory. `~/` is the home directory. |
 | `unitDirectory` | path | Directory of the systemd user units that deployment writes. |
 | `siteMap` | file name | Site map in the deployment directory: each static site's hostname and the release directory the static server serves for it. |
 | `releasesKept` | count | Newest releases kept besides the current release and every module's current and previous release. |
@@ -32,8 +30,6 @@ deployment directory.
 | `healthWaitSeconds` | seconds | How long a restarted service may take to pass its health check. |
 | `healthRequestTimeoutSeconds` | seconds | Deadline of each health check request. |
 | `selfCheckTimeoutSeconds` | seconds | Deadline of the new release's `deploy.py self-check`, run before the `current` pointer moves to it. |
-| `stateInputKeyFile` | file name | Private key file in the deployment directory that keys the HMAC-SHA256 digests of each module's `stateInputs`. Activation creates it with mode 0600 when it is missing and refuses it when group or others can read it. |
-| `stateInputKeyBytes` | bytes | Length of a new state input key, and the least length an existing one must have. |
 | `hubPasswordMinLength` | characters | Minimum length of the hub's `HUB_PASSWORD`, checked by the installer. |
 | `tunnel` | object | The locally managed Cloudflare tunnel. |
 | `tunnel.name` | string | Tunnel created or selected by the installer, unless `--tunnel-name` names another. |
@@ -70,7 +66,6 @@ it, and a declaration may not contain other keys.
 | `inputs` | all | Repository paths outside the folder that the module depends on. A change to them or to the folder redeploys the module. |
 | `checks` | all | Commands that verify the module, run from its folder by `verify.py` and in its workflow job. Modules with checks deploy only when that job succeeded. |
 | `state` | all | Untracked paths of the checkout, inside the module's folder, linked into every release. Each must exist on jerry before deployment. |
-| `stateInputs` | all | Untracked files of the checkout, as repository paths, whose content is part of the fingerprint: a change to one, or its creation or deletion, redeploys the module. Only a keyed digest of each enters the fingerprint, never the content. Leave out files the module writes while it runs. |
 | `unit` | Service | systemd user unit name, `jomaa-` followed by lowercase letters, digits and hyphens. |
 | `origin` | Service, External | Loopback URL with a port that the module's routes reach: HTTP, HTTPS, SSH or TCP. |
 | `command` | Service, Command | The service's process, or the command run on every activation. |

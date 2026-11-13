@@ -6,7 +6,6 @@
     ["npm", "run", "test:browser"]
   ],
   "state": ["jomaa-home-hub/.env", "jomaa-home-hub/config.json", "jomaa-home-hub/data"],
-  "stateInputs": ["jomaa-home-hub/.env"],
   "unit": "jomaa-hub",
   "origin": "http://127.0.0.1:8080",
   "command": ["{python}", "{release}/jomaa-deploy/boot.py", "hub"],

@@ -3,7 +3,6 @@
   "inputs": [],
   "checks": [["{python}", "-m", "unittest", "discover", "-s", ".", "-q"]],
   "state": ["jomaa-tailscale/.env"],
-  "stateInputs": [],
   "build": [],
   "command": ["{python}", "{release}/jomaa-tailscale/tailnet.py", "deploy"],
   "inventory": null

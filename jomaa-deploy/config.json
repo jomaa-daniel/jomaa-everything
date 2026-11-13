@@ -16,8 +16,6 @@
   "healthWaitSeconds": 90,
   "healthRequestTimeoutSeconds": 2,
   "selfCheckTimeoutSeconds": 60,
-  "stateInputKeyFile": "state-input-key",
-  "stateInputKeyBytes": 32,
   "hubPasswordMinLength": 12,
   "tunnel": {
     "name": "jomaa-home-hub",

@@ -2,6 +2,5 @@
   "name": "deploy",
   "inputs": [],
   "checks": [["{python}", "-m", "unittest", "discover", "-s", ".", "-q"]],
-  "state": [],
-  "stateInputs": []
+  "state": []
 }

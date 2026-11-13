@@ -389,13 +389,36 @@ class EngineTest(ModuleTestCase):
         retry = self.context(sha)
         self.assertEqual(engine.activate(retry, ALL_JOBS)["modules"]["app"], "deployed")
 
-    def test_record_written_by_c187fc0_loads_unchanged(self):
+    def test_record_written_by_c187fc0_restores_its_version_when_a_change_fails(self):
         first, _ = self.first_deployment()
-        declaration = {key: value for key, value in APP.items() if key != "stateInputs"}
+        old_unit = (self.unit_dir / "jomaa-app.service").read_text()
+        record_file = self.deploy_dir / "modules/app/record.json"
+        # The record as c187fc0's engine.deploy writes it after a successful deployment.
         record = {"name": "app", "kind": "Service", "directory": "app", "revision": first.sha,
-                  "fingerprint": "f" * 64, "declaration": declaration, "failed": False}
-        (self.deploy_dir / "modules/app/record.json").write_text(json.dumps(record, indent=2) + "\n")
+                  "fingerprint": "f" * 64, "declaration": APP, "failed": False}
+        record_file.write_text(json.dumps(record, indent=2) + "\n")
         self.assertEqual(engine.records(self.deploy_dir)["app"], record)
+        self.write("app/server.py", "# broken app\n")
+        ctx = self.context(self.commit())
+        checks = []
+
+        def healthy(check):
+            checks.append(check["url"])
+            # The new version is unhealthy; the restored one answers again.
+            return check["url"] != "http://127.0.0.1:9001/healthz" or checks.count(check["url"]) > 1
+        ctx.healthy = healthy
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            result = engine.activate(ctx, ALL_JOBS)
+        self.assertNotIn("does not load", errors.getvalue())
+        self.assertIn("build-app", self.built(ctx))
+        self.assertEqual(result["modules"]["app"], "failed")
+        self.assertEqual((self.deploy_dir / "modules/app/current").resolve(), first.release)
+        self.assertEqual((self.unit_dir / "jomaa-app.service").read_text(), old_unit)
+        self.assertEqual(checks.count("http://127.0.0.1:9001/healthz"), 2)
+        self.assertIn("app.example.org", self.tunnel.read_text())
+        self.assertEqual(result["ingress"]["dns"]["app.example.org"], "unchanged")
+        self.assertEqual(json.loads(record_file.read_text()), {**record, "failed": True})
+        self.assertFalse((self.deploy_dir / "modules/app/pending.json").exists())
 
     def test_route_claimed_by_two_modules_is_kept_by_the_first(self):
         self.add_all()

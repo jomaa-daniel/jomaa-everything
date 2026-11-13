@@ -18,19 +18,19 @@ TUNNEL_ID = "4b03940e-11ab-48c6-b288-4c9deb2cc905"
 TUNNEL_HEADER = f'tunnel: "{TUNNEL_ID}"\ncredentials-file: "/home/jerry/.cloudflared/private.json"\n'
 TARGET = f"{TUNNEL_ID}.cfargotunnel.com"
 
-APP = {"name": "app", "inputs": [], "checks": [["true"]], "state": ["app/.env"], "stateInputs": [],
-       "unit": "jomaa-app", "origin": "http://127.0.0.1:9001", "command": ["{python}", "{release}/app/server.py"],
+APP = {"name": "app", "inputs": [], "checks": [["true"]], "state": ["app/.env"], "unit": "jomaa-app",
+       "origin": "http://127.0.0.1:9001", "command": ["{python}", "{release}/app/server.py"],
        "build": [["build-app"]], "health": {"path": "/healthz", "json": {"ok": True}},
        "routes": [{"hostname": "app.example.org"},
                   {"hostname": "example.org", "path": "^/app(/.*)?$", "probes": ["/app"]}]}
-WEB = {"name": "web", "inputs": [], "checks": [], "state": [], "stateInputs": [], "unit": "jomaa-web",
+WEB = {"name": "web", "inputs": [], "checks": [], "state": [], "unit": "jomaa-web",
        "origin": "http://127.0.0.1:9002", "command": ["{python}", "{release}/web/serve.py"], "build": [],
        "health": {"path": "/healthz", "json": {"ok": True}}, "routes": []}
-SHELL = {"name": "shell", "inputs": [], "checks": [], "state": [], "stateInputs": [],
-         "origin": "ssh://127.0.0.1:2222", "routes": [{"hostname": "shell.example.org"}]}
-TOOL = {"name": "tool", "inputs": [], "checks": [], "state": [], "stateInputs": [], "build": [["tool-build"]],
+SHELL = {"name": "shell", "inputs": [], "checks": [], "state": [], "origin": "ssh://127.0.0.1:2222",
+         "routes": [{"hostname": "shell.example.org"}]}
+TOOL = {"name": "tool", "inputs": [], "checks": [], "state": [], "build": [["tool-build"]],
         "command": ["tool-run"], "inventory": "inventory.json"}
-BENCH = {"name": "bench", "inputs": [], "checks": [["true"]], "state": [], "stateInputs": []}
+BENCH = {"name": "bench", "inputs": [], "checks": [["true"]], "state": []}
 CLASSES = {"app": ("Service", "class App(Service):\n    pass\n"),
            "web": ("Service, StaticSite",
                    "class Web(Service):\n    def children(self):\n        return StaticSite.discover(self)\n"),

@@ -17,7 +17,7 @@ from pathlib import Path
 import engine
 import settings
 from fixtures import APP, BENCH, SHELL, TOOL, WEB, ModuleTestCase
-from modules import KINDS, VERIFY_JOB, Checks, Command, Context, DeployError, External, Module, Service, StaticSite
+from modules import KINDS, VERIFY_JOB, Checks, Command, Context, External, Module, Service, StaticSite
 from modules import ingress
 from modules.base import expand, switch_link, unit_text
 
@@ -136,47 +136,6 @@ class FingerprintTest(ModuleTestCase):
         entry.write_text(entry.read_text() + "# app, second version\n")
         self.assertNotEqual(app.fingerprint(ctx), changed_shared)
         self.assertEqual(Service("app", APP).code(ctx.release), {})
-
-    def test_changes_with_state_inputs_whose_content_stays_out_of_the_record(self):
-        self.add_all()
-        secret = "SECRET=state-input-fixture-value\n"
-        (self.source / "app/.env").write_text(secret)
-        self.add_module("app", {**APP, "stateInputs": ["app/.env", "app/absent.json"]})
-        ctx = self.context(self.commit())
-        app = Service("app", {**APP, "stateInputs": ["app/.env", "app/absent.json"]})
-        base = app.fingerprint(ctx)
-        self.assertEqual(app.fingerprint(ctx), base)
-        (self.source / "app/.env").write_text("SECRET=other\n")
-        changed = app.fingerprint(ctx)
-        self.assertNotEqual(changed, base)
-        (self.source / "app/absent.json").write_text("{}")
-        self.assertNotEqual(app.fingerprint(ctx), changed)
-        (self.source / "app/absent.json").unlink()
-        self.assertEqual(app.fingerprint(ctx), changed)
-        (self.source / "app/.env").write_text(secret)
-        self.assertEqual(engine.activate(ctx, {"check (app)": "success", "check (bench)": "success"})
-                         ["modules"]["app"], "deployed")
-        record = (self.deploy_dir / "modules/app/record.json").read_text()
-        self.assertRegex(json.loads(record)["fingerprint"], r"^[0-9a-f]{64}$")
-        self.assertNotIn("state-input-fixture-value", record)
-        self.assertNotIn(app.state_digests(ctx)["app/.env"], record)
-        with self.assertRaises(ValueError):
-            Service("app", {**APP, "stateInputs": ["/etc/passwd"]})
-        with self.assertRaises(ValueError):
-            Service("app", {**APP, "stateInputs": ["app/.env", "app/.env"]})
-
-    def test_state_key_is_created_private_and_refused_when_group_readable(self):
-        self.add_all()
-        ctx = self.context(self.commit())
-        key_file = self.deploy_dir / settings.CONFIG["stateInputKeyFile"]
-        self.assertFalse(key_file.exists())
-        key = ctx.state_key()
-        self.assertEqual(key_file.stat().st_mode & 0o777, 0o600)
-        self.assertEqual(len(key), settings.CONFIG["stateInputKeyBytes"])
-        self.assertEqual(self.context(ctx.sha).state_key(), key)
-        key_file.chmod(0o640)
-        with self.assertRaisesRegex(DeployError, "readable by group or others"):
-            self.context(ctx.sha).state_key()
 
 
 class ServiceTest(ModuleTestCase):
