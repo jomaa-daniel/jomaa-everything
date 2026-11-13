@@ -1,16 +1,23 @@
 """Unit checks of each module class: declarations, fingerprints, activation, rollback and removal."""
 import copy
+import hashlib
+import importlib.util
 import json
 import re
 import shutil
 import subprocess
+import sys
+import tempfile
+import threading
+import types
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import engine
 import settings
 from fixtures import APP, BENCH, SHELL, TOOL, WEB, ModuleTestCase
-from modules import KINDS, VERIFY_JOB, Checks, Command, External, Module, Service, StaticSite
+from modules import KINDS, VERIFY_JOB, Checks, Command, Context, External, Module, Service, StaticSite
 from modules import ingress
 from modules.base import expand, switch_link, unit_text
 
@@ -84,21 +91,51 @@ class FingerprintTest(ModuleTestCase):
         self.write("shared/lib.txt", "one")
         self.write("unrelated.txt", "one")
         declaration = {**APP, "inputs": ["shared"]}
-        first = self.commit()
+        first = self.context(self.commit())
         module = Service("app", declaration)
-        base = module.fingerprint(self.repo, first)
+        base = module.fingerprint(first)
         self.write("unrelated.txt", "two")
-        self.assertEqual(module.fingerprint(self.repo, self.commit()), base)
+        self.assertEqual(module.fingerprint(self.context(self.commit())), base)
         self.write("shared/lib.txt", "two")
-        changed_input = module.fingerprint(self.repo, self.commit())
+        changed_input = module.fingerprint(self.context(self.commit()))
         self.assertNotEqual(changed_input, base)
         self.write("app/server.py", "changed")
-        self.assertNotEqual(module.fingerprint(self.repo, self.commit()), changed_input)
-        head = self.git("rev-parse", "HEAD")
-        self.assertNotEqual(Service("app", {**declaration, "build": []}).fingerprint(self.repo, head),
-                            module.fingerprint(self.repo, head))
+        self.assertNotEqual(module.fingerprint(self.context(self.commit())), changed_input)
+        head = self.context(self.git("rev-parse", "HEAD"))
+        self.assertNotEqual(Service("app", {**declaration, "build": []}).fingerprint(head),
+                            module.fingerprint(head))
         with self.assertRaisesRegex(ValueError, "does not exist"):
-            Service("app", {**APP, "inputs": ["missing"]}).fingerprint(self.repo, head)
+            Service("app", {**APP, "inputs": ["missing"]}).fingerprint(head)
+
+    def load(self, path: Path, content: str, **names: object) -> types.ModuleType:
+        """Import a file of the release as deploy_module.py files are imported, with the given globals."""
+        path.write_text(content)
+        name = "fingerprint_fixture_" + hashlib.sha256(str(path).encode()).hexdigest()[:16]
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        module.__dict__.update(names)
+        sys.modules[name] = module
+        self.addCleanup(sys.modules.pop, name, None)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_changes_with_the_module_and_shared_class_files_in_the_release(self):
+        self.add_all()
+        ctx = self.context(self.commit())
+        shared_file = ctx.release / "jomaa-deploy/modules/shared.py"
+        shared_file.parent.mkdir(parents=True)
+        shared = self.load(shared_file, "from modules import Service\n\n\nclass Shared(Service):\n    pass\n")
+        entry = ctx.release / "app/deploy_module.py"
+        app = self.load(entry, "class App(Shared):\n    pass\n", Shared=shared.Shared).App("app", APP)
+        self.assertEqual(set(app.code(ctx.release)), {"app/deploy_module.py", "jomaa-deploy/modules/shared.py"})
+        base = app.fingerprint(ctx)
+        self.assertEqual(app.fingerprint(ctx), base)
+        shared_file.write_text(shared_file.read_text() + "# shared, second version\n")
+        changed_shared = app.fingerprint(ctx)
+        self.assertNotEqual(changed_shared, base)
+        entry.write_text(entry.read_text() + "# app, second version\n")
+        self.assertNotEqual(app.fingerprint(ctx), changed_shared)
+        self.assertEqual(Service("app", APP).code(ctx.release), {})
 
 
 class ServiceTest(ModuleTestCase):
@@ -146,16 +183,19 @@ class ServiceTest(ModuleTestCase):
         recorded = {**APP, "command": ["{python}", "{release}/app/old.py"]}
         self.service.record = {"name": "app", "kind": "Service", "directory": "app", "revision": "old",
                                "fingerprint": "f", "declaration": recorded, "failed": False}
+        snapshot = self.service.snapshot(self.ctx)
         self.service.activate(self.ctx, self.ctx.release)
-        self.assertEqual(self.service.rollback(self.ctx), "failed")
+        self.assertEqual(self.service.rollback(self.ctx, snapshot), "failed")
         self.assertEqual((self.deploy_dir / "modules/app/current").resolve(), old.resolve())
         self.assertIn("app/old.py", (self.unit_dir / "jomaa-app.service").read_text())
         self.ctx.unhealthy = {"http://127.0.0.1:9001/healthz"}
-        self.assertEqual(self.service.rollback(self.ctx), "failed-unrestored")
+        self.assertEqual(self.service.rollback(self.ctx, snapshot), "failed-unrestored")
 
     def test_rollback_of_a_new_service_stops_it(self):
+        snapshot = self.service.snapshot(self.ctx)
+        self.assertEqual(snapshot, {"pointer": None, "unit": None})
         self.service.activate(self.ctx, self.ctx.release)
-        self.assertEqual(self.service.rollback(self.ctx), "failed")
+        self.assertEqual(self.service.rollback(self.ctx, snapshot), "failed")
         self.assertFalse((self.unit_dir / "jomaa-app.service").exists())
         self.assertFalse((self.deploy_dir / "modules/app/current").exists())
         self.assertIn(("systemctl", "--user", "disable", "--now", "jomaa-app.service"), self.ctx.calls)
@@ -208,16 +248,72 @@ class StaticSiteTest(ModuleTestCase):
 
     def test_activate_writes_the_site_map_and_rollback_restores_it(self):
         site = StaticSite.discover(self.web)[0]
+        new = site.snapshot(self.ctx)
+        self.assertEqual(new, {"site": None})
+        old = str(self.deploy_dir / "releases/old/web/one.example.org")
+        self.ctx.sites.set("one.example.org", Path(old))
+        snapshot = site.snapshot(self.ctx)
+        self.assertEqual(snapshot, {"site": old})
         site.activate(self.ctx, self.ctx.release)
         self.assertEqual(self.ctx.sites.load(), {"one.example.org": str(self.ctx.release / "web/one.example.org")})
         self.assertTrue(site.verify(self.ctx))
-        site.record = {"revision": "old"}
-        self.assertEqual(site.rollback(self.ctx), "failed")
-        self.assertEqual(self.ctx.sites.load(),
-                         {"one.example.org": str(self.deploy_dir / "releases/old/web/one.example.org")})
-        site.record = None
-        site.rollback(self.ctx)
+        self.assertEqual(site.rollback(self.ctx, snapshot), "failed")
+        self.assertEqual(self.ctx.sites.load(), {"one.example.org": old})
+        site.rollback(self.ctx, new)
         self.assertEqual(self.ctx.sites.load(), {})
+
+    def test_verify_compares_the_served_bytes_with_the_release_index(self):
+        site = StaticSite.discover(self.web)[0]
+        site.activate(self.ctx, self.ctx.release)
+        self.assertTrue(site.verify(self.ctx))
+        self.ctx.served = {"one.example.org": b"one, an older version"}
+        self.assertFalse(site.verify(self.ctx))
+
+    def test_build_requires_the_relative_assets_of_the_index_inside_the_folder(self):
+        release = self.ctx.release
+        folder = release / "web/one.example.org"
+        (folder / "img").mkdir()
+        (folder / "img/ok.png").write_text("png")
+        (folder / "style.css").write_text("css")
+        (release / "web/outside.css").write_text("outside")
+        page = ('<link rel="stylesheet" href="style.css"><link rel="icon" href="/root.ico">'
+                '<script src="https://cdn.example.org/x.js"></script><script src="//cdn.example.org/y.js"></script>'
+                '<img src="img/ok.png?v=1#top" /><img src="data:image/png;base64,AA"><img alt="">'
+                '<a href="page.html">not an asset</a>')
+        (folder / "index.html").write_text(page)
+        site = StaticSite.discover(self.web)[0]
+        site.build(self.ctx, release)
+        (folder / "index.html").write_text(page + '<script src="app.js"></script>'
+                                                  '<link rel="stylesheet" href="../outside.css">')
+        with self.assertRaisesRegex(ValueError, "missing from its folder: app.js, ../outside.css$"):
+            site.build(self.ctx, release)
+
+
+class ContextRequestTest(unittest.TestCase):
+    def test_fetch_returns_the_body_of_a_200_answer_to_a_request_with_the_host_header(self):
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = self.headers["Host"].encode()
+                self.send_response(200 if self.path == "/" else 404)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.addCleanup(server.server_close)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        folder = Path(temp.name)
+        ctx = Context(folder, folder, folder, "", folder, unit_dir=folder)
+        origin = f"http://127.0.0.1:{server.server_port}"
+        self.assertEqual(ctx.fetch({"url": origin + "/", "host": "site.example.org"}), b"site.example.org")
+        self.assertIsNone(ctx.fetch({"url": origin + "/missing", "host": "site.example.org"}))
+        self.assertTrue(ctx.healthy({"url": origin + "/"}))
 
 
 class CommandExternalChecksTest(ModuleTestCase):
@@ -234,7 +330,8 @@ class CommandExternalChecksTest(ModuleTestCase):
         command.activate(self.ctx, self.ctx.release)
         self.assertEqual(self.ctx.calls, [("tool-build",), ("tool-run",)])
         self.assertEqual(json.loads((self.ctx.release / "tool/inventory.json").read_text()), self.ctx.inventory)
-        self.assertEqual(command.rollback(self.ctx), "failed")
+        self.assertEqual(command.snapshot(self.ctx), {})
+        self.assertEqual(command.rollback(self.ctx, {}), "failed")
 
     def test_command_without_inventory_writes_none(self):
         Command("tool", {**TOOL, "inventory": None}).activate(self.ctx, self.ctx.release)

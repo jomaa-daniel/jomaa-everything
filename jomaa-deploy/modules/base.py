@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -193,15 +194,30 @@ class Context:
     def cloudflare(self, token: str) -> Cloudflare:
         return Cloudflare(token, self.config["cloudflare"]["api"], self.config["cloudflare"]["timeoutSeconds"])
 
+    def request(self, check: dict):
+        """Open check["url"] without a proxy, with the deployment's User-Agent and check["host"] as Host if given."""
+        headers = {"User-Agent": self.config["userAgent"]}
+        if "host" in check:
+            headers["Host"] = check["host"]
+        request = urllib.request.Request(check["url"], headers=headers)
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        return opener.open(request, timeout=self.config["healthRequestTimeoutSeconds"])
+
+    def fetch(self, check: dict) -> bytes | None:
+        """The body of one HTTP request answered with status 200, or None."""
+        try:
+            with self.request(check) as response:
+                return response.read() if response.status == 200 else None
+        except urllib.error.HTTPError as error:
+            error.close()
+            return None
+        except (OSError, ValueError):
+            return None
+
     def healthy(self, check: dict) -> bool:
         """One HTTP request: status 200 and, when given, matching JSON fields."""
         try:
-            headers = {"User-Agent": self.config["userAgent"]}
-            if "host" in check:
-                headers["Host"] = check["host"]
-            request = urllib.request.Request(check["url"], headers=headers)
-            opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-            with opener.open(request, timeout=self.config["healthRequestTimeoutSeconds"]) as response:
+            with self.request(check) as response:
                 if response.status != 200:
                     return False
                 if check.get("json"):
@@ -327,9 +343,23 @@ class Module(abc.ABC):
         ids.update({path: git_object(repo, sha, path) for path in self.inputs})
         return ids
 
-    def fingerprint(self, repo: Path, sha: str) -> str:
-        content = json.dumps({"kind": self.kind, "objects": self.objects(repo, sha),
-                              "declaration": self.declaration}, sort_keys=True)
+    def code(self, release: Path) -> dict[str, str]:
+        """SHA-256 of each source file inside the release that defines a class of this module, by path."""
+        root = release.resolve()
+        found = {}
+        for cls in type(self).__mro__:
+            try:
+                source = inspect.getsourcefile(cls)
+            except TypeError:
+                continue
+            path = Path(source).resolve() if source is not None else None
+            if path is not None and path.is_relative_to(root):
+                found[path.relative_to(root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+        return found
+
+    def fingerprint(self, ctx: Context) -> str:
+        content = json.dumps({"kind": self.kind, "objects": self.objects(ctx.repo, ctx.sha),
+                              "code": self.code(ctx.release), "declaration": self.declaration}, sort_keys=True)
         return hashlib.sha256(content.encode()).hexdigest()
 
     def check_job(self) -> str | None:
@@ -348,14 +378,18 @@ class Module(abc.ABC):
     def build(self, ctx: Context, release: Path) -> None:
         pass
 
+    def snapshot(self, ctx: Context) -> dict:
+        """What activate() will replace, as JSON, saved before it runs and given to rollback()."""
+        return {}
+
     def activate(self, ctx: Context, release: Path) -> None:
         pass
 
     def verify(self, ctx: Context) -> bool:
         return True
 
-    def rollback(self, ctx: Context) -> str:
-        """Restore self.record's version after a failed activation and return the module status."""
+    def rollback(self, ctx: Context, snapshot: dict) -> str:
+        """Restore self.record's version, or what the snapshot describes, and return the module status."""
         return "failed"
 
     def remove(self, ctx: Context, record: dict) -> None:

@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import re
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import unquote, urlsplit
 
 import settings
 from modules.base import (Context, Module, commands, command, declared_routes, expand, git_object, hostname,
@@ -15,8 +17,6 @@ class Service(Module):
     kind = "Service"
     phase = 1
     keys = (*Module.keys, "unit", "origin", "command", "build", "health", "routes")
-    replaced_pointer: Path | None = None
-    replaced_unit: bytes | None = None
 
     def validate(self) -> None:
         super().validate()
@@ -70,12 +70,15 @@ class Service(Module):
         self.unit_file(ctx).unlink(missing_ok=True)
         ctx.systemctl("daemon-reload")
 
-    def activate(self, ctx: Context, release: Path) -> None:
+    def snapshot(self, ctx: Context) -> dict:
+        """The release the module pointer leads to and the unit file's text, each None when absent."""
         pointer = ctx.pointer(self.name)
         unit = self.unit_file(ctx)
-        self.replaced_pointer = pointer.resolve() if pointer.exists() else None
-        self.replaced_unit = unit.read_bytes() if unit.exists() else None
-        switch_link(pointer, release)
+        return {"pointer": str(pointer.resolve()) if pointer.exists() else None,
+                "unit": unit.read_text() if unit.exists() else None}
+
+    def activate(self, ctx: Context, release: Path) -> None:
+        switch_link(ctx.pointer(self.name), release)
         self.start(ctx)
         previous = self.previous()
         if previous is not None and previous.unit != self.unit:
@@ -89,27 +92,27 @@ class Service(Module):
             return None
         return Service.from_record(self.record)
 
-    def rollback(self, ctx: Context) -> str:
+    def rollback(self, ctx: Context, snapshot: dict) -> str:
         previous = self.previous()
         if previous is None:
-            return self.restore_replaced(ctx)
+            return self.restore_replaced(ctx, snapshot)
         if previous.unit != self.unit:
             self.stop(ctx)
         switch_link(ctx.pointer(self.name), ctx.release_of(self.record["revision"]))
         previous.start(ctx)
         return "failed" if previous.verify(ctx) else "failed-unrestored"
 
-    def restore_replaced(self, ctx: Context) -> str:
-        """Without a recorded version, put back the unit file and pointer that activate() replaced."""
+    def restore_replaced(self, ctx: Context, snapshot: dict) -> str:
+        """Without a recorded version, put back the unit file and pointer of the snapshot."""
         pointer = ctx.pointer(self.name)
-        if self.replaced_pointer is None:
+        if snapshot["pointer"] is None:
             pointer.unlink(missing_ok=True)
         else:
-            switch_link(pointer, self.replaced_pointer)
-        if self.replaced_unit is None:
+            switch_link(pointer, Path(snapshot["pointer"]))
+        if snapshot["unit"] is None:
             self.stop(ctx)
             return "failed"
-        self.unit_file(ctx).write_bytes(self.replaced_unit)
+        self.unit_file(ctx).write_text(snapshot["unit"])
         ctx.systemctl("daemon-reload")
         ctx.systemctl("restart", f"{self.unit}.service")
         return "failed" if self.verify(ctx) else "failed-unrestored"
@@ -117,6 +120,32 @@ class Service(Module):
     def remove(self, ctx: Context, record: dict) -> None:
         if record["declaration"] is not None:
             Service.from_record(record).stop(ctx)
+
+
+class Assets(HTMLParser):
+    """The src attributes of a page, and href attributes of its <link> elements."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.references: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        for name, value in attrs:
+            if value is not None and (name == "src" or (name == "href" and tag == "link")):
+                self.references.append(value)
+
+
+def local_assets(page: str) -> list[str]:
+    """Relative paths a page references, without absolute, root-relative, scheme or host references."""
+    parser = Assets()
+    parser.feed(page)
+    parser.close()
+    paths = []
+    for reference in parser.references:
+        parts = urlsplit(reference.strip())
+        if not (parts.scheme or parts.netloc or parts.path.startswith("/") or not parts.path):
+            paths.append(unquote(parts.path))
+    return paths
 
 
 class StaticSite(Module):
@@ -171,16 +200,26 @@ class StaticSite(Module):
         index = folder / "index.html"
         if not index.is_file() or not index.resolve().is_relative_to(folder.resolve()):
             raise ValueError(f"site needs an index.html inside its folder: {self.name}")
+        missing = [path for path in local_assets(index.read_text(encoding="utf-8", errors="replace"))
+                   if not (folder / path).exists() or not (folder / path).resolve().is_relative_to(folder.resolve())]
+        if missing:
+            raise ValueError(f"index.html of {self.name} references assets missing from its folder: "
+                             + ", ".join(missing))
+
+    def snapshot(self, ctx: Context) -> dict:
+        """The site's directory in the site map, or None."""
+        return {"site": ctx.sites.load().get(self.name)}
 
     def activate(self, ctx: Context, release: Path) -> None:
         ctx.sites.set(self.name, self.folder(release))
 
     def verify(self, ctx: Context) -> bool:
-        return ctx.healthy({"url": self.declaration["origin"] + "/", "host": self.name})
+        """The static server answers / for the site's host with the bytes of the release's index.html."""
+        served = ctx.fetch({"url": self.declaration["origin"] + "/", "host": self.name})
+        return served is not None and served == (self.folder(ctx.release) / "index.html").read_bytes()
 
-    def rollback(self, ctx: Context) -> str:
-        revision = self.record["revision"] if self.record is not None else None
-        ctx.sites.set(self.name, self.folder(ctx.release_of(revision)) if revision else None)
+    def rollback(self, ctx: Context, snapshot: dict) -> str:
+        ctx.sites.set(self.name, Path(snapshot["site"]) if snapshot["site"] is not None else None)
         return "failed"
 
     def remove(self, ctx: Context, record: dict) -> None:

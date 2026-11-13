@@ -68,7 +68,7 @@ class SenderTest(unittest.TestCase):
                "GITHUB_REPOSITORY": "example/hub", "GITHUB_SHA": sha,
                "GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1"}
         result = {"status": "partial", "sha": sha, "modules": {"hub": "failed", "ssh": "unchanged"},
-                  "ingress": {"tunnel": "unchanged", "conflicts": [], "dns": {}}}
+                  "ingress": {"tunnel": "unchanged", "conflicts": [], "dns": {}}, "engine": "failed"}
         opener = mock.Mock()
         opener.open.return_value = io.BytesIO(json.dumps(result).encode())
         output = io.StringIO()
@@ -78,6 +78,7 @@ class SenderTest(unittest.TestCase):
             self.assertEqual(notify.main(), 1)
         self.assertIn("hub: failed", output.getvalue())
         self.assertIn("ssh: unchanged", output.getvalue())
+        self.assertIn("  engine: failed\n", output.getvalue())
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@
   "moduleTimeoutSeconds": 600,
   "healthWaitSeconds": 90,
   "healthRequestTimeoutSeconds": 2,
+  "selfCheckTimeoutSeconds": 60,
   "hubPasswordMinLength": 12,
   "tunnel": {
     "name": "jomaa-home-hub",
