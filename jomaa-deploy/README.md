@@ -71,6 +71,7 @@ and a `deploy.json`:
   "inputs": [],
   "checks": [["{python}", "-m", "unittest", "discover", "-s", ".", "-q"]],
   "state": [],
+  "stateInputs": [],
   "unit": "jomaa-app",
   "origin": "http://127.0.0.1:9000",
   "command": ["{python}", "{release}/jomaa-app/server.py"],
@@ -87,7 +88,7 @@ and in the workflow's check job. Create its `state` paths in the checkout on
 jerry first; state paths are untracked and cannot overlap.
 
 A class may override the `Module` methods: `routes()`, `children()`,
-`fingerprint(repo, sha)`, `build`, `activate`, `verify`, `rollback` and
+`fingerprint(ctx)`, `build`, `activate`, `verify`, `rollback` and
 `remove(record)`. The static server's `deploy_module.py` overrides
 `children()` to return a `StaticSite` for each hostname folder.
 
@@ -164,10 +165,14 @@ succeeded; a failed, skipped, cancelled or missing job makes it ineligible,
 and it keeps its deployed version.
 
 Each module's fingerprint is a hash of the git objects of its folder's
-top-level entries and of its `inputs` at the revision, together with its
-declaration. Entries that the module's children own are left out: a static
+top-level entries and of its `inputs` at the revision, the path and content of
+every source file in the release that defines one of the module's classes
+(its `deploy_module.py` and the `modules/*.py` it inherits from), an
+HMAC-SHA256 of each of its `stateInputs` files in the checkout, together with
+its declaration. Entries that the module's children own are left out: a static
 site's folder counts for that site alone, so a site change does not restart
-the static server. A module is built and activated only when its fingerprint
+the static server. The HMAC key is the private file `stateInputKeyFile` in the
+deployment directory, and records hold only the final fingerprint. A module is built and activated only when its fingerprint
 differs from its record or its last attempt failed; an unchanged module is
 not built or restarted. Commands run on every activation.
 

@@ -3,6 +3,7 @@
   "inputs": ["jomaa-deploy/settings.py", "jomaa-deploy/config.json"],
   "checks": [["{python}", "-m", "unittest", "discover", "-s", ".", "-q"]],
   "state": [],
+  "stateInputs": [],
   "unit": "jomaa-static-pages",
   "origin": "http://127.0.0.1:8090",
   "command": ["{python}", "{release}/jomaa-static-pages/serve.py"],

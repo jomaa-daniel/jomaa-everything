@@ -130,7 +130,7 @@ def deploy(ctx: Context, module: Module, record: dict | None, jobs: dict[str, st
     activated = False
     try:
         ctx.begin()
-        fingerprint = module.fingerprint(ctx.repo, ctx.sha)
+        fingerprint = module.fingerprint(ctx)
         if not module.always and record is not None and not record["failed"] and record["fingerprint"] == fingerprint:
             return "unchanged"
         print(f"Deploying {module.name}", flush=True)

@@ -6,6 +6,7 @@
     ["npm", "run", "check"]
   ],
   "state": [],
+  "stateInputs": [],
   "build": [["npm", "ci", "--no-audit", "--no-fund"]],
   "command": ["node", "{release}/jomaa-health/scripts/deploy.mjs"],
   "inventory": "inventory.json"

@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import abc
 import hashlib
+import hmac
 import inspect
 import json
 import math
 import os
 import re
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -134,6 +136,28 @@ def unit_text(arguments: list[str], working_directory: Path, environment: dict[s
             "[Install]\nWantedBy=default.target\n")
 
 
+def state_key(path: Path, length: int) -> bytes:
+    """The private key of state input digests, created with mode 0600 when it is missing."""
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp = tempfile.mkstemp(dir=path.parent, prefix=".deploy-")
+        try:
+            with os.fdopen(fd, "wb") as file:
+                file.write(secrets.token_bytes(length))
+            try:
+                os.link(temp, path)
+            except FileExistsError:
+                pass
+        finally:
+            os.unlink(temp)
+    if path.stat().st_mode & 0o044:
+        raise DeployError(f"{path} is readable by group or others")
+    key = path.read_bytes()
+    if len(key) < length:
+        raise DeployError(f"{path} holds fewer than {length} bytes")
+    return key
+
+
 class SiteMap:
     """The host to directory map that the static server re-reads when it changes."""
 
@@ -167,6 +191,7 @@ class Context:
         self.sites = SiteMap(settings.site_map(deploy_dir))
         self.inventory: dict | None = None
         self.deadline = math.inf
+        self.key: bytes | None = None
 
     def begin(self) -> None:
         """Start the per-module time budget."""
@@ -183,6 +208,12 @@ class Context:
 
     def systemctl(self, *args: str) -> None:
         self.run("systemctl", "--user", *args)
+
+    def state_key(self) -> bytes:
+        if self.key is None:
+            self.key = state_key(self.deploy_dir / self.config["stateInputKeyFile"],
+                                 self.config["stateInputKeyBytes"])
+        return self.key
 
     def release_of(self, revision: str) -> Path:
         return self.deploy_dir / "releases" / revision
@@ -251,7 +282,7 @@ class Module(abc.ABC):
     phase = 0
     always = False
     job: str | None = None
-    keys: tuple[str, ...] = ("name", "inputs", "checks", "state")
+    keys: tuple[str, ...] = ("name", "inputs", "checks", "state", "stateInputs")
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
@@ -291,6 +322,10 @@ class Module(abc.ABC):
     def state(self) -> list[str]:
         return self.declaration.get("state", [])
 
+    @property
+    def state_inputs(self) -> list[str]:
+        return self.declaration.get("stateInputs", [])
+
     name_pattern = NAME
 
     def validate(self) -> None:
@@ -315,6 +350,14 @@ class Module(abc.ABC):
                     raise ValueError(f"state paths must be inside {self.directory}: {entry!r}")
                 if any(other != entry and other.startswith(entry + "/") for other in state):
                     raise ValueError("state paths cannot contain one another")
+        if "stateInputs" in self.keys:
+            files = self.state_inputs
+            if not isinstance(files, list) or len(set(map(str, files))) != len(files):
+                raise ValueError("stateInputs must be a list of unique paths")
+            for entry in files:
+                if (not isinstance(entry, str) or Path(entry).is_absolute()
+                        or any(x in ("", ".", "..") for x in entry.split("/"))):
+                    raise ValueError(f"stateInputs must be repository-relative paths: {entry!r}")
 
     def paths(self) -> list[str]:
         """Repository paths whose content the module deploys."""
@@ -327,8 +370,32 @@ class Module(abc.ABC):
         ids.update({path: git_object(repo, sha, path) for path in self.inputs})
         return ids
 
-    def fingerprint(self, repo: Path, sha: str) -> str:
-        content = json.dumps({"kind": self.kind, "objects": self.objects(repo, sha),
+    def code(self, release: Path) -> dict[str, str]:
+        """SHA-256 of each source file inside the release that defines a class of this module, by path."""
+        root = release.resolve()
+        found = {}
+        for cls in type(self).__mro__:
+            try:
+                source = inspect.getsourcefile(cls)
+            except TypeError:
+                continue
+            path = Path(source).resolve() if source is not None else None
+            if path is not None and path.is_relative_to(root):
+                found[path.relative_to(root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+        return found
+
+    def state_digests(self, ctx: Context) -> dict[str, str]:
+        """HMAC-SHA256 of each stateInputs file of the checkout, or of b"missing" when it is absent."""
+        digests = {}
+        for name in self.state_inputs:
+            path = ctx.source / name
+            content = path.read_bytes() if path.exists() else b"missing"
+            digests[name] = hmac.new(ctx.state_key(), content, hashlib.sha256).hexdigest()
+        return digests
+
+    def fingerprint(self, ctx: Context) -> str:
+        content = json.dumps({"kind": self.kind, "objects": self.objects(ctx.repo, ctx.sha),
+                              "code": self.code(ctx.release), "stateInputs": self.state_digests(ctx),
                               "declaration": self.declaration}, sort_keys=True)
         return hashlib.sha256(content.encode()).hexdigest()
 

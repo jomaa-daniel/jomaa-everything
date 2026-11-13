@@ -1,16 +1,20 @@
 """Unit checks of each module class: declarations, fingerprints, activation, rollback and removal."""
 import copy
+import hashlib
+import importlib.util
 import json
 import re
 import shutil
 import subprocess
+import sys
+import types
 import unittest
 from pathlib import Path
 
 import engine
 import settings
 from fixtures import APP, BENCH, SHELL, TOOL, WEB, ModuleTestCase
-from modules import KINDS, VERIFY_JOB, Checks, Command, External, Module, Service, StaticSite
+from modules import KINDS, VERIFY_JOB, Checks, Command, DeployError, External, Module, Service, StaticSite
 from modules import ingress
 from modules.base import expand, switch_link, unit_text
 
@@ -84,21 +88,92 @@ class FingerprintTest(ModuleTestCase):
         self.write("shared/lib.txt", "one")
         self.write("unrelated.txt", "one")
         declaration = {**APP, "inputs": ["shared"]}
-        first = self.commit()
+        first = self.context(self.commit())
         module = Service("app", declaration)
-        base = module.fingerprint(self.repo, first)
+        base = module.fingerprint(first)
         self.write("unrelated.txt", "two")
-        self.assertEqual(module.fingerprint(self.repo, self.commit()), base)
+        self.assertEqual(module.fingerprint(self.context(self.commit())), base)
         self.write("shared/lib.txt", "two")
-        changed_input = module.fingerprint(self.repo, self.commit())
+        changed_input = module.fingerprint(self.context(self.commit()))
         self.assertNotEqual(changed_input, base)
         self.write("app/server.py", "changed")
-        self.assertNotEqual(module.fingerprint(self.repo, self.commit()), changed_input)
-        head = self.git("rev-parse", "HEAD")
-        self.assertNotEqual(Service("app", {**declaration, "build": []}).fingerprint(self.repo, head),
-                            module.fingerprint(self.repo, head))
+        self.assertNotEqual(module.fingerprint(self.context(self.commit())), changed_input)
+        head = self.context(self.git("rev-parse", "HEAD"))
+        self.assertNotEqual(Service("app", {**declaration, "build": []}).fingerprint(head),
+                            module.fingerprint(head))
         with self.assertRaisesRegex(ValueError, "does not exist"):
-            Service("app", {**APP, "inputs": ["missing"]}).fingerprint(self.repo, head)
+            Service("app", {**APP, "inputs": ["missing"]}).fingerprint(head)
+
+    def load(self, path: Path, content: str, **names: object) -> types.ModuleType:
+        """Import a file of the release as deploy_module.py files are imported, with the given globals."""
+        path.write_text(content)
+        name = "fingerprint_fixture_" + hashlib.sha256(str(path).encode()).hexdigest()[:16]
+        spec = importlib.util.spec_from_file_location(name, path)
+        module = importlib.util.module_from_spec(spec)
+        module.__dict__.update(names)
+        sys.modules[name] = module
+        self.addCleanup(sys.modules.pop, name, None)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_changes_with_the_module_and_shared_class_files_in_the_release(self):
+        self.add_all()
+        ctx = self.context(self.commit())
+        shared_file = ctx.release / "jomaa-deploy/modules/shared.py"
+        shared_file.parent.mkdir(parents=True)
+        shared = self.load(shared_file, "from modules import Service\n\n\nclass Shared(Service):\n    pass\n")
+        entry = ctx.release / "app/deploy_module.py"
+        app = self.load(entry, "class App(Shared):\n    pass\n", Shared=shared.Shared).App("app", APP)
+        self.assertEqual(set(app.code(ctx.release)), {"app/deploy_module.py", "jomaa-deploy/modules/shared.py"})
+        base = app.fingerprint(ctx)
+        self.assertEqual(app.fingerprint(ctx), base)
+        shared_file.write_text(shared_file.read_text() + "# shared, second version\n")
+        changed_shared = app.fingerprint(ctx)
+        self.assertNotEqual(changed_shared, base)
+        entry.write_text(entry.read_text() + "# app, second version\n")
+        self.assertNotEqual(app.fingerprint(ctx), changed_shared)
+        self.assertEqual(Service("app", APP).code(ctx.release), {})
+
+    def test_changes_with_state_inputs_whose_content_stays_out_of_the_record(self):
+        self.add_all()
+        secret = "SECRET=state-input-fixture-value\n"
+        (self.source / "app/.env").write_text(secret)
+        self.add_module("app", {**APP, "stateInputs": ["app/.env", "app/absent.json"]})
+        ctx = self.context(self.commit())
+        app = Service("app", {**APP, "stateInputs": ["app/.env", "app/absent.json"]})
+        base = app.fingerprint(ctx)
+        self.assertEqual(app.fingerprint(ctx), base)
+        (self.source / "app/.env").write_text("SECRET=other\n")
+        changed = app.fingerprint(ctx)
+        self.assertNotEqual(changed, base)
+        (self.source / "app/absent.json").write_text("{}")
+        self.assertNotEqual(app.fingerprint(ctx), changed)
+        (self.source / "app/absent.json").unlink()
+        self.assertEqual(app.fingerprint(ctx), changed)
+        (self.source / "app/.env").write_text(secret)
+        self.assertEqual(engine.activate(ctx, {"check (app)": "success", "check (bench)": "success"})
+                         ["modules"]["app"], "deployed")
+        record = (self.deploy_dir / "modules/app/record.json").read_text()
+        self.assertRegex(json.loads(record)["fingerprint"], r"^[0-9a-f]{64}$")
+        self.assertNotIn("state-input-fixture-value", record)
+        self.assertNotIn(app.state_digests(ctx)["app/.env"], record)
+        with self.assertRaises(ValueError):
+            Service("app", {**APP, "stateInputs": ["/etc/passwd"]})
+        with self.assertRaises(ValueError):
+            Service("app", {**APP, "stateInputs": ["app/.env", "app/.env"]})
+
+    def test_state_key_is_created_private_and_refused_when_group_readable(self):
+        self.add_all()
+        ctx = self.context(self.commit())
+        key_file = self.deploy_dir / settings.CONFIG["stateInputKeyFile"]
+        self.assertFalse(key_file.exists())
+        key = ctx.state_key()
+        self.assertEqual(key_file.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(len(key), settings.CONFIG["stateInputKeyBytes"])
+        self.assertEqual(self.context(ctx.sha).state_key(), key)
+        key_file.chmod(0o640)
+        with self.assertRaisesRegex(DeployError, "readable by group or others"):
+            self.context(ctx.sha).state_key()
 
 
 class ServiceTest(ModuleTestCase):
