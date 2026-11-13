@@ -107,6 +107,20 @@ class FingerprintTest(ModuleTestCase):
         with self.assertRaisesRegex(ValueError, "does not exist"):
             Service("app", {**APP, "inputs": ["missing"]}).fingerprint(head)
 
+    def test_changes_with_state_files_but_not_state_folders(self):
+        self.add_all()
+        ctx = self.context(self.commit())
+        module = Service("app", {**APP, "state": ["app/.env", "app/data"]})
+        (self.source / "app/.env").write_text("SECRET=one\n")
+        (self.source / "app/data").mkdir(parents=True, exist_ok=True)
+        base = module.fingerprint(ctx)
+        (self.source / "app/data/runtime.db").write_text("written by the service")
+        self.assertEqual(module.fingerprint(ctx), base)
+        (self.source / "app/.env").write_text("SECRET=two\n")
+        changed = module.fingerprint(ctx)
+        self.assertNotEqual(changed, base)
+        self.assertNotIn("SECRET", json.dumps(module.state_files(self.source)))
+
     def load(self, path: Path, content: str, **names: object) -> types.ModuleType:
         """Import a file of the release as deploy_module.py files are imported, with the given globals."""
         path.write_text(content)

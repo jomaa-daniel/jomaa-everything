@@ -170,8 +170,11 @@ and it keeps its deployed version.
 Each module's fingerprint is a hash of the git objects of its folder's
 top-level entries and of its `inputs` at the revision, the path and content of
 every source file in the release that defines one of the module's classes
-(its `deploy_module.py` and the `modules/*.py` it inherits from), together
-with its declaration. Entries that the module's children own are left out: a
+(its `deploy_module.py` and the `modules/*.py` it inherits from), the SHA-256
+of each `state` path that is a file in the local checkout (such as the hub's
+`.env` and `config.json`; folders such as `data` are left out), together
+with its declaration. Editing a state file therefore redeploys and restarts
+its module on the next activation. Entries that the module's children own are left out: a
 static site's folder counts for that site alone, so a site change does not
 restart the static server. A module is built and activated only when its fingerprint
 differs from its record or its last attempt failed; an unchanged module is
