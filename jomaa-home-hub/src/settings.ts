@@ -8,6 +8,19 @@ export interface AccountSettings {
   sessionsPerAccount: number;
   inviteLifetimeDays: number;
   passwordLength: { min: number; max: number };
+  busyTimeoutMs: number;
+}
+
+export interface TailscaleSettings {
+  /** Python interpreter that runs tailnet.py. */
+  python: string;
+  /** tailnet.py, resolved against the hub directory. */
+  script: string;
+  commandTimeoutSeconds: number;
+  syncIntervalSeconds: number;
+  observationMaxAgeSeconds: number;
+  downloadUrl: string;
+  adminUsersUrl: string;
 }
 
 export interface SecretSettings {
@@ -22,6 +35,7 @@ export interface SecretSettings {
 
 export interface Settings {
   accounts: AccountSettings;
+  tailscale: TailscaleSettings;
   secrets: SecretSettings;
 }
 
@@ -44,6 +58,47 @@ function positive(fields: Fields, key: string, where: string): number {
   const value = fields.required(key).int(key);
   if (value === null || value < 1) throw new Error(`${where}.${key} must be a whole number of at least 1`);
   return value;
+}
+
+function text(fields: Fields, key: string, where: string): string {
+  const value = fields.required(key).string(key) ?? "";
+  if (value.trim() === "") throw new Error(`${where}.${key} must be a non-empty string`);
+  return value;
+}
+
+function httpsUrl(fields: Fields, key: string, where: string): string {
+  const value = text(fields, key, where);
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${where}.${key} must be an https URL`);
+  }
+  if (url.protocol !== "https:") throw new Error(`${where}.${key} must be an https URL`);
+  return value;
+}
+
+function parseTailscale(value: unknown): TailscaleSettings {
+  const where = "tailscale";
+  const fields = new Fields(value, "settings.json tailscale").only(
+    "python",
+    "script",
+    "commandTimeoutSeconds",
+    "syncIntervalSeconds",
+    "observationMaxAgeSeconds",
+    "downloadUrl",
+    "adminUsersUrl",
+  );
+  const result: TailscaleSettings = {
+    python: text(fields, "python", where),
+    script: text(fields, "script", where),
+    commandTimeoutSeconds: positive(fields, "commandTimeoutSeconds", where),
+    syncIntervalSeconds: positive(fields, "syncIntervalSeconds", where),
+    observationMaxAgeSeconds: positive(fields, "observationMaxAgeSeconds", where),
+    downloadUrl: httpsUrl(fields, "downloadUrl", where),
+    adminUsersUrl: httpsUrl(fields, "adminUsersUrl", where),
+  };
+  return result;
 }
 
 /** A path relative to the release root that stays inside it. */
@@ -108,9 +163,18 @@ export function parseDeploySettings(text: string): DeploySettings {
 
 /** Parses settings.json; throws naming the first missing or invalid setting. */
 export function parseSettings(text: string): Settings {
-  const root = new Fields(parseJson(text), "settings.json").only("accounts", "secrets").required("accounts", "secrets");
+  const root = new Fields(parseJson(text), "settings.json")
+    .only("accounts", "tailscale", "secrets")
+    .required("accounts", "tailscale", "secrets");
   const accounts = new Fields(root.value("accounts"), "settings.json accounts")
-    .only("databaseFile", "sessionLifetimeDays", "sessionsPerAccount", "inviteLifetimeDays", "passwordLength")
+    .only(
+      "databaseFile",
+      "sessionLifetimeDays",
+      "sessionsPerAccount",
+      "inviteLifetimeDays",
+      "passwordLength",
+      "busyTimeoutMs",
+    )
     .required("databaseFile", "passwordLength");
   const length = new Fields(accounts.value("passwordLength"), "settings.json accounts.passwordLength").only(
     "min",
@@ -128,7 +192,9 @@ export function parseSettings(text: string): Settings {
       sessionsPerAccount: positive(accounts, "sessionsPerAccount", "accounts"),
       inviteLifetimeDays: positive(accounts, "inviteLifetimeDays", "accounts"),
       passwordLength: { min, max },
+      busyTimeoutMs: positive(accounts, "busyTimeoutMs", "accounts"),
     },
+    tailscale: parseTailscale(root.value("tailscale")),
     secrets: parseSecrets(root.value("secrets")),
   };
 }

@@ -7,7 +7,17 @@
     "passwordLength": {
       "min": 12,
       "max": 256
-    }
+    },
+    "busyTimeoutMs": 5000
+  },
+  "tailscale": {
+    "python": "python3",
+    "script": "../jomaa-tailscale/tailnet.py",
+    "commandTimeoutSeconds": 180,
+    "syncIntervalSeconds": 300,
+    "observationMaxAgeSeconds": 300,
+    "downloadUrl": "https://tailscale.com/download",
+    "adminUsersUrl": "https://login.tailscale.com/admin/users"
   },
   "secrets": {
     "envFiles": ["jomaa-home-hub/.env", "jomaa-tailscale/.env"],

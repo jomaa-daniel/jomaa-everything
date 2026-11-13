@@ -27,5 +27,22 @@ at home, because Matter only works on the local network.
   doesn't add it to a room.
 - **Login.** One shared password is exchanged for a token derived from it. The
   cookie and the phone apps store the token, not the password.
+- **Callers.** `UserService` resolves each request to a `Principal`: the owner
+  (`OwnerPrincipal`, no account row) or an invited account (`MemberPrincipal`,
+  with the scopes stored when the request arrives). Device health credentials
+  never become a principal.
+- **Feature modules.** Users, Lights, Devices, Organization and Tailscale each
+  list their routes with what they require: a scope, the owner, or a session.
+  `Api` resolves the caller once and `AuthorizationService` checks every
+  route before its handler runs. `HealthHttp` serves device health and its
+  credentialed reports itself, with the same access decision.
+- **Onboarding.** `AccountOnboarding` and `TailscaleOnboarding` report a
+  subject's setup steps and refuse an action the current state doesn't allow
+  before anything changes.
+- **Tailscale.** `TailscaleService` keeps account links and their exit-node
+  access in the account database (deleted with the account) and runs
+  `jomaa-tailscale/tailnet.py` (through `TailscaleGateway`) to observe the
+  tailnet and to sync its policy after changes, periodically, and at startup.
+  The token stays with that script.
 - **Updates.** Clients poll state; the hub doesn't push.
 - **Govee.** The hub uses Govee's cloud API.

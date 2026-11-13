@@ -1,0 +1,89 @@
+.ts-section {
+  margin-top: 36px;
+}
+.ts-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 20px;
+  margin: 0;
+}
+.ts-facts dt {
+  color: var(--muted);
+}
+.ts-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.ts-problems li,
+.ts-steps li {
+  overflow-wrap: anywhere;
+}
+.ts-switch,
+.ts-profile {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-top: 16px;
+}
+.ts-switch fieldset {
+  border: 0;
+  margin: 0 0 12px;
+  padding: 0;
+}
+.ts-member {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 6px 0;
+}
+.ts-member > span {
+  flex: 1 1 200px;
+  overflow-wrap: anywhere;
+}
+.ts-member label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.ts-profiles {
+  display: grid;
+  gap: 16px;
+}
+.ts-profile:target,
+.ts-profile.focused {
+  border-color: var(--accent);
+}
+.ts-profile h3 {
+  margin: 0;
+}
+.ts-profile h3:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.ts-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 12px;
+}
+.ts-row select {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.ts-steps {
+  margin: 12px 0 0;
+  padding-left: 20px;
+}
+.ts-steps .state {
+  font-weight: 600;
+}
+.ts-devices {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+.ts-note {
+  color: var(--muted);
+}

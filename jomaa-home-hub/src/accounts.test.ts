@@ -47,3 +47,18 @@ test("scopes are stored in a fixed order without duplicates", async () => {
   assert.deepEqual(accounts.setScopes("sam", ["manage", "lights", "manage"]).scopes, ["lights", "manage"]);
   assert.throws(() => accounts.setScopes("nobody", []), AccountError);
 });
+
+test("two concurrent joins with one invite create one account", async () => {
+  const accounts = new Accounts(":memory:");
+  const { token } = accounts.createInvite();
+  const results = await Promise.allSettled([
+    accounts.join(token, "first", "a long enough password"),
+    accounts.join(token, "second", "a long enough password"),
+  ]);
+  assert.deepEqual(results.map((result) => result.status).sort(), ["fulfilled", "rejected"]);
+  const refused = results.find((result) => result.status === "rejected");
+  assert.ok(refused?.reason instanceof AccountError);
+  assert.equal(accounts.accounts().length, 1);
+  assert.deepEqual(accounts.invites(), []);
+  assert.throws(() => accounts.checkInvite(token), AccountError);
+});

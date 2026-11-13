@@ -104,11 +104,17 @@ export class Accounts {
       process.umask(mask);
     }
     if (path !== ":memory:") chmodSync(path, 0o600);
-    this.#db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;
+    this.#db
+      .exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=${settings.accounts.busyTimeoutMs};
       CREATE TABLE IF NOT EXISTS accounts (username TEXT PRIMARY KEY, password_hash TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS account_scopes (username TEXT NOT NULL REFERENCES accounts(username) ON DELETE CASCADE, scope TEXT NOT NULL, PRIMARY KEY(username, scope));
       CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, username TEXT NOT NULL REFERENCES accounts(username) ON DELETE CASCADE, expires_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS invites (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);`);
+  }
+
+  /** The open database, for module tables that reference accounts. */
+  get database(): DatabaseSync {
+    return this.#db;
   }
 
   /** Creates a single-use invite. The token is returned once and only its hash is stored. */

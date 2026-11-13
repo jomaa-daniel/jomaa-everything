@@ -5,7 +5,7 @@ a setting in any of them is missing from this document.
 
 ## config.json
 
-Read by `setup_server.py` and `tailnet.py`.
+Read by `setup_server.py`, `tailnet.py` and `access.py`.
 
 | Key | Type | Meaning |
 | --- | --- | --- |
@@ -20,6 +20,10 @@ Read by `setup_server.py` and `tailnet.py`.
 | `queryTimeoutSeconds` | seconds | Deadline for quick commands: `tailscale status`, `tailscale debug prefs`, `tailscale set`, `ip route`, and root file writes. |
 | `commandTimeoutSeconds` | seconds | Deadline for setup commands such as package installation. |
 | `routeProbeAddress` | address | Internet address whose route names jerry's default-route interface, the interface that gets UDP GRO forwarding at setup. |
+| `policyLockFile` | file name | Lock in the deployment directory (`deployDirectory` in `jomaa-deploy/config.json`, or `JOMAA_DEPLOY_HOME`) held by every sync, from deployments and from the hub. |
+| `lockTimeoutSeconds` | seconds | How long a sync waits for another to finish before reporting a failure. |
+| `lockPollSeconds` | seconds | How often a waiting sync tries the lock again. |
+| `databaseTimeoutSeconds` | seconds | How long a sync waits for the hub's account database when another process is writing it. |
 | `apt` | object | Tailscale's Ubuntu package repository. |
 | `apt.repository` | URL | Repository base; the release codename selects the suite and signing key. |
 | `apt.keyring` | path | Where the repository's signing key is stored. |
@@ -32,12 +36,12 @@ Read by `setup_server.py` and `tailnet.py`.
 
 ## policy.json
 
-The tailnet policy, sent by `tailnet.py deploy` after filling placeholders and
-`group:family`. Tailscale's policy syntax applies.
+The tailnet policy template. `access.py` fills the placeholders and
+`group:family`, and deployments and the hub send it. Tailscale's policy syntax applies.
 
 | Key | Meaning |
 | --- | --- |
-| `groups` | `group:family`, always empty here; deployment fills it from `TAILSCALE_FAMILY`. |
+| `groups` | `group:family`, always empty here; each sync fills it with the logins of the linked accounts that have exit-node access. |
 | `tagOwners` | Admins own `{tag}`, so jerry can join with it. |
 | `autoApprovers` | `{lan}` and the exit node advertised by `{tag}` are approved without the admin console. |
 | `grants` | Admins reach everything; `group:family` reaches only `autogroup:internet`, the internet through an exit node. |
@@ -51,10 +55,10 @@ The tailnet policy, sent by `tailnet.py deploy` after filling placeholders and
 
 ## .env
 
-Secrets and private values on jerry, in the deployment's state checkout,
-mode 600. Not committed; `.env.example` shows the shape.
+Secrets on jerry, in the deployment's state checkout, mode 600. Not
+committed; `.env.example` shows the shape. Deployment fails when the file has
+any other key.
 
 | Key | Meaning |
 | --- | --- |
-| `TAILSCALE_API_KEY` | Tailscale API access token (`tskey-api-`). Used to read and replace the policy and to mint jerry's auth key. Expires; replace it when the API answers 401. |
-| `TAILSCALE_FAMILY` | Comma-separated emails of people who may use jerry as an exit node and reach nothing else. |
+| `TAILSCALE_API_KEY` | Tailscale API access token (`tskey-api-`). Used to read users, devices and the policy, to replace the policy, and to mint jerry's auth key. Expires; replace it when the API answers 401. |
