@@ -1,0 +1,42 @@
+{
+  "name": "fx-alpha",
+  "inputs": [],
+  "checks": [
+    [
+      "{python}",
+      "app.py",
+      "check"
+    ]
+  ],
+  "state": [
+    "fx-alpha/state"
+  ],
+  "unit": "jomaa-fx-alpha",
+  "origin": "http://127.0.0.1:9101",
+  "command": [
+    "{python}",
+    "{release}/fx-alpha/app.py",
+    "serve"
+  ],
+  "build": [
+    [
+      "{python}",
+      "app.py",
+      "build"
+    ]
+  ],
+  "health": {
+    "path": "/healthz",
+    "json": {
+      "ok": true
+    }
+  },
+  "routes": [
+    {
+      "hostname": "alpha.e2e.test"
+    },
+    {
+      "hostname": "e2e.test"
+    }
+  ]
+}

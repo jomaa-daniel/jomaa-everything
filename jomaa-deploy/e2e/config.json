@@ -1,0 +1,72 @@
+{
+  "project": "jomaa-e2e",
+  "artifactDirectory": "jomaa-deploy/e2e/artifacts",
+  "image": {
+    "tag": "jomaa-e2e-jerry",
+    "base": "ubuntu:26.04",
+    "nodeVersion": "22.20.0",
+    "nodeDist": "https://nodejs.org/dist",
+    "python": "python:3.12-slim"
+  },
+  "jerry": {
+    "user": "jerry",
+    "uid": 1000,
+    "home": "/home/jerry",
+    "checkout": "/home/jerry/jomaa-everything",
+    "gitRoot": "/srv/git",
+    "cloudflared": "/opt/cloudflared/cloudflared",
+    "edgeDirectory": "/etc/jomaa-e2e"
+  },
+  "edge": {
+    "port": 443,
+    "originTimeoutSeconds": 100,
+    "certificateDays": 2
+  },
+  "actions": {
+    "caFile": "/etc/jomaa-e2e/ca.pem",
+    "checkouts": "/checkouts"
+  },
+  "fakes": {
+    "port": 8080,
+    "githubHost": "api.github.test",
+    "cloudflareHost": "api.cloudflare.test",
+    "cloudflarePath": "/client/v4",
+    "hangSeconds": 300
+  },
+  "fixture": {
+    "repo": "e2e-owner/e2e-repo",
+    "webhookHostname": "deploy.e2e.test",
+    "copy": ["jomaa-deploy", "jomaa-static-pages"],
+    "settings": {
+      "commandTimeoutSeconds": 30,
+      "gitTimeoutSeconds": 30,
+      "moduleTimeoutSeconds": 40,
+      "healthWaitSeconds": 12,
+      "healthRequestTimeoutSeconds": 2,
+      "tunnel": {
+        "downloadTimeoutSeconds": 30,
+        "validateTimeoutSeconds": 15
+      },
+      "cloudflare": {
+        "timeoutSeconds": 4
+      },
+      "github": {
+        "timeoutSeconds": 5,
+        "jobsPerPage": 3
+      },
+      "notify": {
+        "deadlineSeconds": 150,
+        "requestTimeoutSeconds": 120,
+        "retryDelaySeconds": 1
+      }
+    }
+  },
+  "timeouts": {
+    "buildSeconds": 1800,
+    "bootSeconds": 120,
+    "execSeconds": 300,
+    "notifyMarginSeconds": 30,
+    "httpSeconds": 10,
+    "pollSeconds": 0.5
+  }
+}

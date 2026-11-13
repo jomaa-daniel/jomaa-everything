@@ -1,0 +1,51 @@
+# One scenario file's world: jerry, the fake GitHub and Cloudflare APIs, and the Actions runner.
+# harness.py sets every variable from config.json and jomaa-deploy/config.json.
+services:
+  jerry:
+    image: ${E2E_JERRY_IMAGE}
+    privileged: true
+    cgroup: host
+    tmpfs:
+      - /run
+      - /run/lock
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "0"
+    stop_signal: SIGRTMIN+3
+    environment:
+      NO_PROXY: "*"
+      no_proxy: "*"
+    networks:
+      default:
+        aliases:
+          - ${E2E_WEBHOOK_HOST}
+
+  fakes:
+    image: ${E2E_PYTHON_IMAGE}
+    command: ["python3", "-u", "/e2e/fakes.py"]
+    environment:
+      NO_PROXY: "*"
+      no_proxy: "*"
+      FAKES_PORT: ${E2E_FAKES_PORT}
+      FAKES_HANG_SECONDS: ${E2E_FAKES_HANG_SECONDS}
+      FAKES_ASSET: /e2e/cloudflared
+      FAKES_CLOUDFLARE_PATH: ${E2E_FAKES_CLOUDFLARE_PATH}
+    volumes:
+      - ./:/e2e:ro
+    ports:
+      - "127.0.0.1::${E2E_FAKES_PORT}"
+    networks:
+      default:
+        aliases:
+          - ${E2E_GITHUB_HOST}
+          - ${E2E_CLOUDFLARE_HOST}
+
+  actions:
+    image: ${E2E_PYTHON_IMAGE}
+    command: ["sleep", "infinity"]
+    init: true
+    environment:
+      NO_PROXY: "*"
+      no_proxy: "*"
+      SSL_CERT_FILE: ${E2E_ACTIONS_CA}

@@ -1,0 +1,47 @@
+{
+  "name": "fx-beta",
+  "inputs": [],
+  "checks": [
+    [
+      "{python}",
+      "app.py",
+      "check"
+    ]
+  ],
+  "state": [
+    "fx-beta/state"
+  ],
+  "unit": "jomaa-fx-beta",
+  "origin": "http://127.0.0.1:9102",
+  "command": [
+    "{python}",
+    "{release}/fx-beta/app.py",
+    "serve"
+  ],
+  "build": [
+    [
+      "{python}",
+      "app.py",
+      "build"
+    ]
+  ],
+  "health": {
+    "path": "/healthz",
+    "json": {
+      "ok": true
+    }
+  },
+  "routes": [
+    {
+      "hostname": "beta.e2e.test"
+    },
+    {
+      "hostname": "e2e.test",
+      "path": "^/beta(/.*)?$",
+      "probes": [
+        "/beta",
+        "/beta/status"
+      ]
+    }
+  ]
+}

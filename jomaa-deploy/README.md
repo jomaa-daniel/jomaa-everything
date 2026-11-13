@@ -24,6 +24,7 @@ others. The Python tools use the standard library.
 | `settings.py` | Reads `config.json`. |
 | `notify.py` | GitHub Actions signed deployment request and reconnect retries. |
 | `verify.py` | Runs module checks locally and in GitHub Actions. |
+| `e2e/` | Container fault-injection suite on a systemd jerry with fake GitHub and Cloudflare APIs; see [`e2e/README.md`](e2e/README.md). |
 
 ## Modules
 
