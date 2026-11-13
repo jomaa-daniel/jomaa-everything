@@ -88,8 +88,9 @@ and in the workflow's check job. Create its `state` paths in the checkout on
 jerry first; state paths are untracked and cannot overlap.
 
 A class may override the `Module` methods: `routes()`, `children()`,
-`fingerprint(ctx)`, `build`, `activate`, `verify`, `rollback` and
-`remove(record)`. The static server's `deploy_module.py` overrides
+`fingerprint(ctx)`, `build`, `snapshot`, `activate`, `verify`,
+`rollback(snapshot)` and `remove(record)`. `snapshot` returns, as JSON, what
+`activate` will replace, and `rollback` receives it. The static server's `deploy_module.py` overrides
 `children()` to return a `StaticSite` for each hostname folder.
 
 Removing a module's folder, or renaming the module, removes it at the next
@@ -251,13 +252,25 @@ job retries the failed modules.
   releases/<sha>/                    one per revision
   modules/<name>/current -> releases/<sha>
   modules/<name>/previous -> releases/<sha>
-  modules/<name>/record.json         revision, fingerprint, live declaration, failed
+  modules/<name>/record.json         revision, fingerprint, live declaration, failed, pending
   results/<sha>-<run id>-<attempt>.json  result of each run attempt
   sites.json                         static site map
   ingress.json                       hostnames under DNS management
 ```
 
 Result files are deleted with their release.
+
+Before a module activates, its record keeps its revision, fingerprint and
+declaration and sets `pending` to the new revision and the module's snapshot:
+a service's previous pointer target and unit file text, a static site's
+previous site map entry. A finished deployment, successful or rolled back,
+writes the record with `pending` set to `null`. When an activation finds a
+pending record, the previous one stopped mid-module: it rolls the module back
+with the snapshot, using the recorded declaration or, without one, the new
+release's module, then marks the record failed so the module deploys again. A
+module whose rollback fails reports `failed-unrestored`. A record that is not
+in this format is discarded with a journal line, and its module deploys as if
+it had no record.
 
 A service's unit runs from its module pointer, so it keeps its release when
 other modules deploy. `previous` is the release the module replaced. Local

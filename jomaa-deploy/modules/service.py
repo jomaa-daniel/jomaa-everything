@@ -15,8 +15,6 @@ class Service(Module):
     kind = "Service"
     phase = 1
     keys = (*Module.keys, "unit", "origin", "command", "build", "health", "routes")
-    replaced_pointer: Path | None = None
-    replaced_unit: bytes | None = None
 
     def validate(self) -> None:
         super().validate()
@@ -70,12 +68,15 @@ class Service(Module):
         self.unit_file(ctx).unlink(missing_ok=True)
         ctx.systemctl("daemon-reload")
 
-    def activate(self, ctx: Context, release: Path) -> None:
+    def snapshot(self, ctx: Context) -> dict:
+        """The release the module pointer leads to and the unit file's text, each None when absent."""
         pointer = ctx.pointer(self.name)
         unit = self.unit_file(ctx)
-        self.replaced_pointer = pointer.resolve() if pointer.exists() else None
-        self.replaced_unit = unit.read_bytes() if unit.exists() else None
-        switch_link(pointer, release)
+        return {"pointer": str(pointer.resolve()) if pointer.exists() else None,
+                "unit": unit.read_text() if unit.exists() else None}
+
+    def activate(self, ctx: Context, release: Path) -> None:
+        switch_link(ctx.pointer(self.name), release)
         self.start(ctx)
         previous = self.previous()
         if previous is not None and previous.unit != self.unit:
@@ -89,27 +90,27 @@ class Service(Module):
             return None
         return Service.from_record(self.record)
 
-    def rollback(self, ctx: Context) -> str:
+    def rollback(self, ctx: Context, snapshot: dict) -> str:
         previous = self.previous()
         if previous is None:
-            return self.restore_replaced(ctx)
+            return self.restore_replaced(ctx, snapshot)
         if previous.unit != self.unit:
             self.stop(ctx)
         switch_link(ctx.pointer(self.name), ctx.release_of(self.record["revision"]))
         previous.start(ctx)
         return "failed" if previous.verify(ctx) else "failed-unrestored"
 
-    def restore_replaced(self, ctx: Context) -> str:
-        """Without a recorded version, put back the unit file and pointer that activate() replaced."""
+    def restore_replaced(self, ctx: Context, snapshot: dict) -> str:
+        """Without a recorded version, put back the unit file and pointer of the snapshot."""
         pointer = ctx.pointer(self.name)
-        if self.replaced_pointer is None:
+        if snapshot["pointer"] is None:
             pointer.unlink(missing_ok=True)
         else:
-            switch_link(pointer, self.replaced_pointer)
-        if self.replaced_unit is None:
+            switch_link(pointer, Path(snapshot["pointer"]))
+        if snapshot["unit"] is None:
             self.stop(ctx)
             return "failed"
-        self.unit_file(ctx).write_bytes(self.replaced_unit)
+        self.unit_file(ctx).write_text(snapshot["unit"])
         ctx.systemctl("daemon-reload")
         ctx.systemctl("restart", f"{self.unit}.service")
         return "failed" if self.verify(ctx) else "failed-unrestored"
@@ -172,15 +173,18 @@ class StaticSite(Module):
         if not index.is_file() or not index.resolve().is_relative_to(folder.resolve()):
             raise ValueError(f"site needs an index.html inside its folder: {self.name}")
 
+    def snapshot(self, ctx: Context) -> dict:
+        """The site's directory in the site map, or None."""
+        return {"site": ctx.sites.load().get(self.name)}
+
     def activate(self, ctx: Context, release: Path) -> None:
         ctx.sites.set(self.name, self.folder(release))
 
     def verify(self, ctx: Context) -> bool:
         return ctx.healthy({"url": self.declaration["origin"] + "/", "host": self.name})
 
-    def rollback(self, ctx: Context) -> str:
-        revision = self.record["revision"] if self.record is not None else None
-        ctx.sites.set(self.name, self.folder(ctx.release_of(revision)) if revision else None)
+    def rollback(self, ctx: Context, snapshot: dict) -> str:
+        ctx.sites.set(self.name, Path(snapshot["site"]) if snapshot["site"] is not None else None)
         return "failed"
 
     def remove(self, ctx: Context, record: dict) -> None:

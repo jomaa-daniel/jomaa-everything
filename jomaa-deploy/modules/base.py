@@ -415,14 +415,18 @@ class Module(abc.ABC):
     def build(self, ctx: Context, release: Path) -> None:
         pass
 
+    def snapshot(self, ctx: Context) -> dict:
+        """What activate() will replace, as JSON, saved before it runs and given to rollback()."""
+        return {}
+
     def activate(self, ctx: Context, release: Path) -> None:
         pass
 
     def verify(self, ctx: Context) -> bool:
         return True
 
-    def rollback(self, ctx: Context) -> str:
-        """Restore self.record's version after a failed activation and return the module status."""
+    def rollback(self, ctx: Context, snapshot: dict) -> str:
+        """Restore self.record's version, or what the snapshot describes, and return the module status."""
         return "failed"
 
     def remove(self, ctx: Context, record: dict) -> None:

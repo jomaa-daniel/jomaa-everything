@@ -17,6 +17,10 @@ ALL_JOBS = {"check (app)": "success", "check (bench)": "success"}
 APP_WITHOUT_UNIT = {k: v for k, v in APP.items() if k != "unit"}
 
 
+class Crash(BaseException):
+    """Stops an activation the way a killed process does: no handler catches it."""
+
+
 class EngineTest(ModuleTestCase):
     def first_deployment(self, **kwargs):
         self.add_all()
@@ -284,6 +288,88 @@ class EngineTest(ModuleTestCase):
         self.assertEqual((self.deploy_dir / "current").resolve(), first.release)
         self.assertEqual((self.deploy_dir / "modules/app/current").resolve(), ctx.release)
         self.assertIn("self-check", errors.getvalue())
+
+    def crash_on_app_health(self, ctx):
+        """Make the app's health check stop the activation with an exception that nothing catches."""
+        def healthy(check):
+            if check["url"] == "http://127.0.0.1:9001/healthz":
+                raise Crash()
+            return True
+        ctx.healthy = healthy
+        with self.assertRaises(Crash):
+            engine.activate(ctx, ALL_JOBS)
+
+    def watch_build(self, ctx, seen):
+        """Record the app pointer and unit text when the app's build starts."""
+        original = ctx.run
+
+        def run(*args, cwd=None):
+            if args == ("build-app",):
+                pointer = self.deploy_dir / "modules/app/current"
+                seen.append((pointer.resolve() if pointer.exists() else None,
+                             (self.unit_dir / "jomaa-app.service").read_text()))
+            original(*args, cwd=cwd)
+        ctx.run = run
+
+    def test_deployment_that_stopped_mid_way_is_restored_then_redeployed(self):
+        first, _ = self.first_deployment()
+        old_unit = (self.unit_dir / "jomaa-app.service").read_text()
+        pointer = self.deploy_dir / "modules/app/current"
+        self.write("app/server.py", "# app, second version\n")
+        sha = self.commit()
+        crashed = self.context(sha)
+        self.crash_on_app_health(crashed)
+        record = json.loads((self.deploy_dir / "modules/app/record.json").read_text())
+        self.assertEqual(record["pending"], {"revision": sha, "snapshot": {"pointer": str(first.release),
+                                                                           "unit": old_unit}})
+        self.assertEqual((record["revision"], record["declaration"], record["failed"]), (first.sha, APP, False))
+        self.assertEqual(pointer.resolve(), crashed.release)
+        ctx = self.context(sha)
+        seen = []
+        self.watch_build(ctx, seen)
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            result = engine.activate(ctx, ALL_JOBS)
+        self.assertIn("app stopped while deploying", errors.getvalue())
+        self.assertEqual(seen, [(first.release, old_unit)])
+        self.assertEqual(result["modules"]["app"], "deployed")
+        self.assertEqual(pointer.resolve(), ctx.release)
+        record = json.loads((self.deploy_dir / "modules/app/record.json").read_text())
+        self.assertEqual((record["revision"], record["pending"], record["failed"]), (sha, None, False))
+
+    def test_stopped_first_run_service_restores_the_unit_text_it_replaced(self):
+        old_unit = "[Service]\nExecStart=/previous/deployer/hub\n"
+        (self.unit_dir / "jomaa-app.service").write_text(old_unit)
+        self.add_all()
+        sha = self.commit()
+        self.crash_on_app_health(self.context(sha))
+        record = json.loads((self.deploy_dir / "modules/app/record.json").read_text())
+        self.assertIsNone(record["declaration"])
+        self.assertEqual(record["pending"]["snapshot"], {"pointer": None, "unit": old_unit})
+        self.assertNotEqual((self.unit_dir / "jomaa-app.service").read_text(), old_unit)
+        ctx = self.context(sha)
+        seen = []
+        self.watch_build(ctx, seen)
+        with contextlib.redirect_stderr(io.StringIO()):
+            result = engine.activate(ctx, ALL_JOBS)
+        self.assertEqual(seen, [(None, old_unit)])
+        self.assertLess(ctx.calls.index(("systemctl", "--user", "restart", "jomaa-app.service")),
+                        ctx.calls.index(("build-app",)))
+        self.assertEqual(result["modules"]["app"], "deployed")
+        self.assertIsNone(json.loads((self.deploy_dir / "modules/app/record.json").read_text())["pending"])
+
+    def test_record_in_another_format_is_discarded(self):
+        self.first_deployment()
+        path = self.deploy_dir / "modules/app/record.json"
+        record = json.loads(path.read_text())
+        del record["pending"]
+        path.write_text(json.dumps(record))
+        ctx = self.context(self.git("rev-parse", "HEAD"))
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            result = engine.activate(ctx, ALL_JOBS)
+        self.assertIn(f"discarding {path}", errors.getvalue())
+        self.assertEqual(result["modules"]["app"], "deployed")
+        self.assertEqual(result["modules"]["web"], "unchanged")
+        self.assertIsNone(json.loads(path.read_text())["pending"])
 
     def test_route_claimed_by_two_modules_is_kept_by_the_first(self):
         self.add_all()

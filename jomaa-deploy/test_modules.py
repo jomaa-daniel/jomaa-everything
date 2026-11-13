@@ -220,24 +220,28 @@ class ServiceTest(ModuleTestCase):
         switch_link(self.deploy_dir / "releases/old", old)
         recorded = {**APP, "command": ["{python}", "{release}/app/old.py"]}
         self.service.record = {"name": "app", "kind": "Service", "directory": "app", "revision": "old",
-                               "fingerprint": "f", "declaration": recorded, "failed": False}
+                               "fingerprint": "f", "declaration": recorded, "failed": False, "pending": None}
+        snapshot = self.service.snapshot(self.ctx)
         self.service.activate(self.ctx, self.ctx.release)
-        self.assertEqual(self.service.rollback(self.ctx), "failed")
+        self.assertEqual(self.service.rollback(self.ctx, snapshot), "failed")
         self.assertEqual((self.deploy_dir / "modules/app/current").resolve(), old.resolve())
         self.assertIn("app/old.py", (self.unit_dir / "jomaa-app.service").read_text())
         self.ctx.unhealthy = {"http://127.0.0.1:9001/healthz"}
-        self.assertEqual(self.service.rollback(self.ctx), "failed-unrestored")
+        self.assertEqual(self.service.rollback(self.ctx, snapshot), "failed-unrestored")
 
     def test_rollback_of_a_new_service_stops_it(self):
+        snapshot = self.service.snapshot(self.ctx)
+        self.assertEqual(snapshot, {"pointer": None, "unit": None})
         self.service.activate(self.ctx, self.ctx.release)
-        self.assertEqual(self.service.rollback(self.ctx), "failed")
+        self.assertEqual(self.service.rollback(self.ctx, snapshot), "failed")
         self.assertFalse((self.unit_dir / "jomaa-app.service").exists())
         self.assertFalse((self.deploy_dir / "modules/app/current").exists())
         self.assertIn(("systemctl", "--user", "disable", "--now", "jomaa-app.service"), self.ctx.calls)
 
     def test_renamed_unit_replaces_the_old_one(self):
         self.service.record = {"name": "app", "kind": "Service", "directory": "app", "revision": self.sha,
-                               "fingerprint": "f", "declaration": {**APP, "unit": "jomaa-old"}, "failed": False}
+                               "fingerprint": "f", "declaration": {**APP, "unit": "jomaa-old"}, "failed": False,
+                               "pending": None}
         (self.unit_dir / "jomaa-old.service").write_text("old")
         self.service.activate(self.ctx, self.ctx.release)
         self.assertFalse((self.unit_dir / "jomaa-old.service").exists())
@@ -246,7 +250,7 @@ class ServiceTest(ModuleTestCase):
     def test_remove_stops_the_recorded_unit(self):
         (self.unit_dir / "jomaa-app.service").write_text("unit")
         record = {"name": "app", "kind": "Service", "directory": "app", "revision": self.sha,
-                  "fingerprint": "f", "declaration": APP, "failed": False}
+                  "fingerprint": "f", "declaration": APP, "failed": False, "pending": None}
         Service.from_record(record).remove(self.ctx, record)
         self.assertFalse((self.unit_dir / "jomaa-app.service").exists())
         self.assertIn(("systemctl", "--user", "disable", "--now", "jomaa-app.service"), self.ctx.calls)
@@ -283,15 +287,18 @@ class StaticSiteTest(ModuleTestCase):
 
     def test_activate_writes_the_site_map_and_rollback_restores_it(self):
         site = StaticSite.discover(self.web)[0]
+        new = site.snapshot(self.ctx)
+        self.assertEqual(new, {"site": None})
+        old = str(self.deploy_dir / "releases/old/web/one.example.org")
+        self.ctx.sites.set("one.example.org", Path(old))
+        snapshot = site.snapshot(self.ctx)
+        self.assertEqual(snapshot, {"site": old})
         site.activate(self.ctx, self.ctx.release)
         self.assertEqual(self.ctx.sites.load(), {"one.example.org": str(self.ctx.release / "web/one.example.org")})
         self.assertTrue(site.verify(self.ctx))
-        site.record = {"revision": "old"}
-        self.assertEqual(site.rollback(self.ctx), "failed")
-        self.assertEqual(self.ctx.sites.load(),
-                         {"one.example.org": str(self.deploy_dir / "releases/old/web/one.example.org")})
-        site.record = None
-        site.rollback(self.ctx)
+        self.assertEqual(site.rollback(self.ctx, snapshot), "failed")
+        self.assertEqual(self.ctx.sites.load(), {"one.example.org": old})
+        site.rollback(self.ctx, new)
         self.assertEqual(self.ctx.sites.load(), {})
 
 
@@ -309,7 +316,8 @@ class CommandExternalChecksTest(ModuleTestCase):
         command.activate(self.ctx, self.ctx.release)
         self.assertEqual(self.ctx.calls, [("tool-build",), ("tool-run",)])
         self.assertEqual(json.loads((self.ctx.release / "tool/inventory.json").read_text()), self.ctx.inventory)
-        self.assertEqual(command.rollback(self.ctx), "failed")
+        self.assertEqual(command.snapshot(self.ctx), {})
+        self.assertEqual(command.rollback(self.ctx, {}), "failed")
 
     def test_command_without_inventory_writes_none(self):
         Command("tool", {**TOOL, "inventory": None}).activate(self.ctx, self.ctx.release)
