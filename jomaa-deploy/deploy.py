@@ -76,7 +76,7 @@ def verify_run(repo: str, sha: str, run_id: int, attempt: int) -> None:
     """Check the requested push and the completed verify job on GitHub."""
     info = github_json(run_api(repo, run_id))
     if (info.get("event") != "push" or info.get("head_branch") != "main" or info.get("head_sha") != sha
-            or info.get("path") != ".github/workflows/deploy.yml"
+            or info.get("path") != CONFIG["github"]["workflow"]
             or info.get("run_attempt") != attempt or info.get("repository", {}).get("full_name") != repo
             or info.get("status") not in ("in_progress", "completed")
             or info.get("conclusion") not in (None, "success")):

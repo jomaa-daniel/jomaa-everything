@@ -1,6 +1,6 @@
 {
   "name": "hub",
-  "inputs": ["jomaa-deploy/boot.py", "jomaa-static-pages/device-panel"],
+  "inputs": ["jomaa-deploy/boot.py", "jomaa-deploy/config.json", "jomaa-static-pages/device-panel"],
   "checks": [
     ["{python}", "scripts/verify.py"],
     ["npm", "run", "test:browser"]

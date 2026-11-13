@@ -8,5 +8,11 @@
       "min": 12,
       "max": 256
     }
+  },
+  "secrets": {
+    "envFiles": ["jomaa-home-hub/.env", "jomaa-tailscale/.env"],
+    "tokenFile": "jomaa-home-hub/.env",
+    "deployConfig": "jomaa-deploy/config.json",
+    "redeployPollSeconds": 5
   }
 }

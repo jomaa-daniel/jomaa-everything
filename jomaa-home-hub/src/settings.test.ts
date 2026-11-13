@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { parseJson } from "./json.js";
-import { parseSettings, settingsFile } from "./settings.js";
+import { Fields, parseJson } from "./json.js";
+import { deploySettings, parseDeploySettings, parseSettings, releaseRoot, settings, settingsFile } from "./settings.js";
 
 test("settings.md documents every setting in settings.json", () => {
   const doc = readFileSync(new URL("../settings.md", import.meta.url), "utf8");
@@ -23,9 +23,37 @@ test("invalid settings name the setting", () => {
     inviteLifetimeDays: 1,
     passwordLength: { min: 1, max: 2 },
   };
-  assert.equal(parseSettings(JSON.stringify({ accounts: valid })).accounts.sessionsPerAccount, 1);
-  const broken = (change: Record<string, unknown>) => JSON.stringify({ accounts: { ...valid, ...change } });
+  const secrets = {
+    envFiles: ["app/.env", "other/.env"],
+    tokenFile: "app/.env",
+    deployConfig: "deploy/config.json",
+    redeployPollSeconds: 1,
+  };
+  assert.equal(parseSettings(JSON.stringify({ accounts: valid, secrets })).accounts.sessionsPerAccount, 1);
+  const broken = (change: Record<string, unknown>) => JSON.stringify({ accounts: { ...valid, ...change }, secrets });
   assert.throws(() => parseSettings(broken({ sessionLifetimeDays: 0 })), /accounts\.sessionLifetimeDays/);
   assert.throws(() => parseSettings(broken({ passwordLength: { min: 20, max: 10 } })), /passwordLength\.max/);
   assert.throws(() => parseSettings(broken({ extra: 1 })), /unknown field "extra"/);
+  const badSecrets = (change: Record<string, unknown>) =>
+    JSON.stringify({ accounts: valid, secrets: { ...secrets, ...change } });
+  assert.throws(() => parseSettings(badSecrets({ envFiles: ["../outside/.env"] })), /secrets\.envFiles/);
+  assert.throws(() => parseSettings(badSecrets({ envFiles: ["/etc/.env"] })), /secrets\.envFiles/);
+  assert.throws(() => parseSettings(badSecrets({ envFiles: [] })), /secrets\.envFiles/);
+  assert.throws(() => parseSettings(badSecrets({ tokenFile: "missing/.env" })), /secrets\.tokenFile/);
+  assert.throws(() => parseSettings(badSecrets({ redeployPollSeconds: 0 })), /secrets\.redeployPollSeconds/);
+});
+
+test("the hub reads its deployment settings from the deployment's config.json", () => {
+  const text = readFileSync(new URL(settings.secrets.deployConfig, releaseRoot), "utf8");
+  const deploy = new Fields(parseJson(text), "config.json");
+  const github = new Fields(deploy.value("github"), "github");
+  assert.deepEqual(deploySettings, {
+    repo: deploy.string("repo"),
+    workflow: github.string("workflow"),
+    githubApi: github.string("api"),
+    githubTimeoutSeconds: github.int("timeoutSeconds"),
+    hubPasswordMinLength: deploy.int("hubPasswordMinLength"),
+  });
+  assert.throws(() => parseDeploySettings(text.replace(/"workflow": "[^"]*"/, '"workflow": ""')), /github\.workflow/);
+  assert.throws(() => parseDeploySettings(text.replace(/"repo": "[^"]*"/, '"repo": "no-owner"')), /repo/);
 });

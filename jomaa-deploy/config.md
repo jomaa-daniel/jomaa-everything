@@ -46,6 +46,7 @@ GitHub Actions secret `JOMAA_DEPLOY_SECRET` holds the same value.
 | `github` | object | GitHub access. |
 | `github.api` | URL | GitHub API base URL, for workflow runs, their jobs and cloudflared releases. |
 | `github.remote` | URL | Base URL the receiver fetches `main` from, followed by `/OWNER/REPOSITORY.git`. |
+| `github.workflow` | path | Repository path of the deployment workflow. The receiver accepts only runs of it, and the hub's Secrets page reruns its latest push run on `main`. |
 | `github.timeoutSeconds` | seconds | Deadline of each GitHub API request. |
 | `github.jobsPerPage` | count | Page size when reading a workflow run's jobs. |
 | `notify` | object | Retries of `notify.py` in GitHub Actions. |

@@ -34,6 +34,7 @@
   "github": {
     "api": "https://api.github.com",
     "remote": "https://github.com",
+    "workflow": ".github/workflows/deploy.yml",
     "timeoutSeconds": 20,
     "jobsPerPage": 100
   },

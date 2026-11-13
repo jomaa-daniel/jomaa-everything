@@ -46,7 +46,7 @@ class DeploymentTest(ModuleTestCase):
     def test_verifies_main_push_and_successful_job_across_pages(self):
         info = {"head_sha": self.first, "event": "push", "head_branch": "main", "run_attempt": 1,
                 "status": "in_progress", "conclusion": None,
-                "repository": {"full_name": "example/hub"}, "path": ".github/workflows/deploy.yml"}
+                "repository": {"full_name": "example/hub"}, "path": deploy.CONFIG["github"]["workflow"]}
         per_page = deploy.CONFIG["github"]["jobsPerPage"]
         full = {"jobs": [{"name": f"check ({i})", "conclusion": "success"} for i in range(per_page)]}
         with mock.patch.object(deploy, "github_json",
@@ -56,6 +56,9 @@ class DeploymentTest(ModuleTestCase):
         with mock.patch.object(deploy, "github_json",
                                side_effect=[info, {"jobs": [{"name": "verify", "conclusion": "failure"}]}]):
             with self.assertRaisesRegex(deploy.DeployError, "successful verification"):
+                deploy.verify_run("example/hub", self.first, 12, 1)
+        with mock.patch.object(deploy, "github_json", return_value={**info, "path": ".github/workflows/other.yml"}):
+            with self.assertRaisesRegex(deploy.DeployError, "does not match"):
                 deploy.verify_run("example/hub", self.first, 12, 1)
 
     def test_rejects_bad_signature_and_expired_requests(self):
