@@ -357,9 +357,15 @@ class Module(abc.ABC):
                 found[path.relative_to(root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
         return found
 
+    def state_files(self, source: Path) -> dict[str, str]:
+        """SHA-256 of each runtime state path that is a file in the checkout, by path; folders are left out."""
+        return {name: hashlib.sha256((source / name).read_bytes()).hexdigest()
+                for name in self.state if (source / name).is_file()}
+
     def fingerprint(self, ctx: Context) -> str:
         content = json.dumps({"kind": self.kind, "objects": self.objects(ctx.repo, ctx.sha),
-                              "code": self.code(ctx.release), "declaration": self.declaration}, sort_keys=True)
+                              "code": self.code(ctx.release), "state": self.state_files(ctx.source),
+                              "declaration": self.declaration}, sort_keys=True)
         return hashlib.sha256(content.encode()).hexdigest()
 
     def check_job(self) -> str | None:
