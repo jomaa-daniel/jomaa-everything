@@ -56,7 +56,7 @@ export class EnvFiles {
   constructor(
     private readonly root: string,
     readonly files: readonly string[],
-    private readonly tokenFile: string,
+    readonly tokenFile: string,
     private readonly hubPasswordMinLength: number,
   ) {}
 

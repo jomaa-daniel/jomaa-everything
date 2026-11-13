@@ -225,7 +225,7 @@ test("the listing masks every value and names keys in file order", async () => {
     ],
     redeploy: {
       available: true,
-      tokenFile: settings.secrets.tokenFile,
+      tokenFile: "app/.env",
       pollSeconds: settings.secrets.redeployPollSeconds,
     },
   });
@@ -377,4 +377,37 @@ test("redeploy is unavailable until the token is saved on the page", async () =>
   assert.equal(saved.status, 200);
   assert.equal(await available(), true, "a saved token works without a restart");
   assert.equal((await call(env, env.owner, "POST", "/api/secrets/redeploy", { password: ownerPassword })).status, 202);
+});
+
+test("the page is public and the jomaa.org route and its probes cover the page and the API", async () => {
+  const env = await setup();
+  const declaration = readFileSync(new URL("../deploy.json", import.meta.url), "utf8");
+  const apex = new Fields(parseJson(declaration), "deploy.json")
+    .list("routes")
+    .map((route) => new Fields(route, "route"))
+    .find((route) => route.string("hostname") === "jomaa.org");
+  assert.ok(apex);
+  const pattern = new RegExp(apex.string("path") ?? "");
+  const probes = apex.list("probes");
+  const paths = [
+    ["GET", "/secrets"],
+    ["GET", "/secrets/app.js"],
+    ["GET", "/secrets/style.css"],
+    ["GET", "/api/secrets"],
+    ["POST", "/api/secrets/reveal"],
+    ["POST", "/api/secrets/redeploy"],
+    ["GET", "/api/secrets/redeploy/1"],
+  ] as const;
+  for (const [method, path] of paths) {
+    assert.match(path, pattern, `the route regex covers ${path}`);
+    assert.ok(probes.includes(path), `the probes include ${path}`);
+    const api = path.startsWith("/api/");
+    const response = await fetch(env.url + path, {
+      method,
+      headers: api ? { Authorization: `Bearer ${env.account}` } : {},
+    });
+    assert.equal(response.status, api ? 403 : 200, `${method} ${path}: pages are public, the API is owner-only`);
+  }
+  assert.doesNotMatch("/secrets-other", pattern);
+  assert.doesNotMatch("/api/secrets-other", pattern);
 });

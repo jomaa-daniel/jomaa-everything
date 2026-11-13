@@ -426,7 +426,7 @@ export class Api {
       files: await files.list(),
       redeploy: {
         available: (await files.token()) !== null,
-        tokenFile: settings.secrets.tokenFile,
+        tokenFile: files.tokenFile,
         pollSeconds: settings.secrets.redeployPollSeconds,
       },
     });
@@ -471,7 +471,7 @@ export class Api {
   async #redeployToken(): Promise<{ token: string; workflow: DeployWorkflow }> {
     const { files, workflow } = this.#secretsAdmin();
     const token = await files.token();
-    if (token === null) throw new HttpError(409, `${tokenKey} is not set in ${settings.secrets.tokenFile}`);
+    if (token === null) throw new HttpError(409, `${tokenKey} is not set in ${files.tokenFile}`);
     return { token, workflow };
   }
 
