@@ -68,6 +68,7 @@ GIT_IDENTITY = {"GIT_AUTHOR_NAME": "e2e", "GIT_AUTHOR_EMAIL": "e2e@example.test"
 STATUS = re.compile(r"^Deployment result: (\S+) \(([0-9a-f]{12})\)$", re.MULTILINE)
 MODULE_LINE = re.compile(r"^  (\S+): (\S+)$")
 INGRESS_LINE = re.compile(r"^  ingress: (.*)$", re.MULTILINE)
+ENGINE = "engine"
 REPORTED = ("deployed", "partial")
 HTTPS_PORT = 443
 
@@ -186,6 +187,7 @@ class NotifyResult:
     status: str | None = None
     modules: dict[str, str] = field(default_factory=dict)
     ingress: dict | None = None
+    engine: str | None = None
 
     @classmethod
     def parse(cls, result: Result, sha: str, run_id: int, attempt: int) -> NotifyResult:
@@ -195,7 +197,9 @@ class NotifyResult:
             parsed.status = found[1]
             for line in result.out[found.end():].splitlines():
                 module = MODULE_LINE.match(line)
-                if module and module[1] != "ingress":
+                if module and module[1] == ENGINE:
+                    parsed.engine = module[2]
+                elif module and module[1] != "ingress":
                     parsed.modules[module[1]] = module[2]
             ingress_line = INGRESS_LINE.search(result.out)
             if ingress_line:
@@ -891,7 +895,7 @@ except OSError as error:
         return None if text is None else json.loads(text)["version"]
 
     def invariants(self) -> None:
-        """Check the section 4 oracle of the design; raise AssertionError listing every violation."""
+        """Check every deployment invariant; raise AssertionError listing every violation."""
         facts = self.probe()
         problems: list[str] = []
         live: list[dict] = []
@@ -980,8 +984,10 @@ except OSError as error:
                 problems.append(f"notify.py printed {notified.status} but results/"
                                 f"{result_name(notified.sha, notified.run_id, notified.attempt)} does not exist")
             elif stored.get("status") != notified.status or (notified.status == "partial" and (
-                    stored.get("modules") != notified.modules or stored.get("ingress") != notified.ingress)):
-                problems.append(f"notify.py printed {notified.status} {notified.modules} {notified.ingress}, "
+                    stored.get("modules") != notified.modules or stored.get("ingress") != notified.ingress
+                    or stored.get(ENGINE) != notified.engine)):
+                problems.append(f"notify.py printed {notified.status} {notified.modules} {notified.ingress} "
+                                f"engine {notified.engine}, "
                                 f"the stored result is {stored}")
         if problems:
             raise AssertionError("invariants violated:\n  " + "\n  ".join(problems))

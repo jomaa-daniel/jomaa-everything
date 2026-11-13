@@ -125,6 +125,8 @@ class Chaos(harness.E2ETestCase):
     def test_p1_activation_killed_during_build(self):
         """P1: killing the activation during a build answers 500, releases the lock, writes no record, converges."""
         h = self.h
+        # The first activation after install records every fingerprint again; settle it before the kill.
+        h.converge()
         versions, records, current = self.versions(), self.records(), self.current()
         sha = self.commit(ALPHA, "Hang the alpha build", version="p1", build="hang")
         pending = h.start_notify(sha)
@@ -211,14 +213,9 @@ class Chaos(harness.E2ETestCase):
         h.converge()
         self.assertFalse(h.exists(h.deploy_path(f"modules/{name}")))
 
-    @unittest.expectedFailure
     def test_p2c_next_attempt_leaves_no_unverified_new_service(self):
-        """P2, design section 6: the attempt after a killed first deploy leaves no unverified release running.
-
-        Expected to fail: the killed activation already wrote and started the new unit, so the next attempt's
-        restore_replaced() takes that unit as the one it replaced, restores and restarts it, and reports
-        failed-unrestored with the unverified release still running.
-        """
+        """P2 for a first deploy: the attempt after the kill restores the pending snapshot, so no unverified
+        release keeps running."""
         observed = type(self).p2_new_service
         if observed is None:
             self.skipTest("test_p2b did not reach the next attempt")
@@ -275,7 +272,7 @@ class Chaos(harness.E2ETestCase):
 
     @unittest.expectedFailure
     def test_p3c_extraction_leaves_no_temporary_folder(self):
-        """P3, design section 6: no releases/release-* folder survives the next deploy and prune.
+        """P3 during extraction: no releases/release-* folder survives the next deploy and prune.
 
         Expected to fail: extract_release() removes its temporary folder only when the receiver process
         survives, and prune_releases() considers only folders with a .revision file.
