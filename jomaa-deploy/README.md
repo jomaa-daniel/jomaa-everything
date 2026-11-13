@@ -151,7 +151,8 @@ new release while holding `deploy.lock`, with its output in the receiver's
 journal. The activation writes its result to the file, and the receiver
 answers the request with the result and the revision. The receiver restarts
 after answering when the `current` pointer moved, which it does at the end of
-every activation, so the next request runs the new receiver.
+every activation whose new receiver passes its self-check, so the next
+request runs the new receiver.
 
 Pull requests and manual workflow runs check without deploying.
 
@@ -202,14 +203,21 @@ tunnel are deleted. Hostnames under management are listed in `ingress.json`.
 Before the commands run, the live services and routes are written to the
 file a command declares as `inventory`. The health Worker bundles that file.
 
-At the end the `current` pointer moves to the new release, and releases
-beyond `releasesKept` are pruned unless a pointer still uses them.
+At the end the new release's `deploy.py self-check` runs, within
+`selfCheckTimeoutSeconds`. It loads the receiver's code, settings and request
+handler without binding its port, reading the webhook secret or contacting the
+network. When it passes, the `current` pointer moves to the new release and
+the result reports `"engine": "deployed"`. When it fails, `current` stays on
+the running receiver, the result reports `"engine": "failed"` and the status
+is `partial`; the modules keep what this activation deployed. Releases beyond
+`releasesKept` are pruned unless a pointer still uses them.
 
 ### Result
 
 ```json
 {"status": "partial", "modules": {"hub": "deployed", "static": "unchanged", "ssh": "ineligible"},
- "ingress": {"tunnel": "unchanged", "conflicts": [], "dns": {"hub.jomaa.org": "unchanged"}}}
+ "ingress": {"tunnel": "unchanged", "conflicts": [], "dns": {"hub.jomaa.org": "unchanged"}},
+ "engine": "deployed"}
 ```
 
 | Module status | Meaning |
@@ -224,7 +232,8 @@ beyond `releasesKept` are pruned unless a pointer still uses them.
 DNS hosts report `created`, `updated`, `unchanged`, `deleted`, `unmanaged`
 (an unwanted record that deployment does not own), `conflict` or `failed`.
 The status is `deployed` when every module is deployed, unchanged or
-removed and ingress has no failure, and `partial` otherwise. `notify.py`
+removed, ingress has no failure and the engine is `deployed`, and `partial`
+otherwise. `notify.py`
 succeeds for `deployed` and an ignored older revision, and for `partial`
 prints each module's status and fails the workflow. Rerunning the `deploy`
 job retries the failed modules.
@@ -303,6 +312,7 @@ is missing or outdated.
 ```bash
 python3 jomaa-deploy/deploy.py modules
 python3 jomaa-deploy/deploy.py plan
+python3 jomaa-deploy/deploy.py self-check
 python3 jomaa-deploy/verify.py
 python3 jomaa-deploy/verify.py hub
 python3 -m unittest discover -s jomaa-deploy -v
@@ -310,6 +320,8 @@ python3 -m unittest discover -s jomaa-deploy -v
 
 `modules` lists every module, its class, folder and check job. `plan`
 validates the declarations and prints the modules, the tunnel rules and the
-state paths without contacting Cloudflare or changing services. `verify.py`
+state paths without contacting Cloudflare or changing services.
+`self-check` loads the receiver as activation does before moving `current`.
+`verify.py`
 runs every module's checks, or the named modules'. Tests use temporary
 repositories, a simulated Cloudflare and recorded service commands.

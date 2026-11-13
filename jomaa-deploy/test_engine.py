@@ -1,4 +1,6 @@
 """Engine checks: modules deploy, fail, stay unchanged and disappear independently of each other."""
+import contextlib
+import io
 import json
 import shutil
 import unittest
@@ -265,6 +267,23 @@ class EngineTest(ModuleTestCase):
         result = engine.activate(ctx, ALL_JOBS)
         self.assertEqual(result["modules"]["tool"], "deployed")
         self.assertEqual(self.built(ctx), {"tool-build", "tool-run"})
+
+    def test_failing_self_check_keeps_current_and_reports_partial(self):
+        first, result = self.first_deployment()
+        self.assertEqual(result["engine"], "deployed")
+        self.assertEqual((self.deploy_dir / "current").resolve(), first.release)
+        self.write("jomaa-deploy/deploy.py", "raise SystemExit(1)\n")
+        self.write("app/server.py", "# app, second version\n")
+        ctx = self.context(self.commit("broken receiver"))
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            result = engine.activate(ctx, ALL_JOBS)
+        self.assertEqual(result["engine"], "failed")
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["modules"]["app"], "deployed")
+        self.assertTrue(all(status in engine.SUCCESS for status in result["modules"].values()), result)
+        self.assertEqual((self.deploy_dir / "current").resolve(), first.release)
+        self.assertEqual((self.deploy_dir / "modules/app/current").resolve(), ctx.release)
+        self.assertIn("self-check", errors.getvalue())
 
     def test_route_claimed_by_two_modules_is_kept_by_the_first(self):
         self.add_all()

@@ -264,10 +264,8 @@ def authenticate(body: bytes, signature: str, key: bytes, repo: str, now: float)
     return payload
 
 
-def serve(source: Path, deploy_dir: Path, repo: str) -> None:
-    secret = (deploy_dir / "webhook-secret").read_bytes().strip()
-    if len(secret) < 32:
-        raise DeployError("deployment webhook secret is missing or too short")
+def receiver(source: Path, deploy_dir: Path, repo: str, secret: bytes) -> type[BaseHTTPRequestHandler]:
+    """The request handler of the deployment receiver."""
 
     class Handler(BaseHTTPRequestHandler):
         def respond(self, status: int, value: dict) -> None:
@@ -318,8 +316,16 @@ def serve(source: Path, deploy_dir: Path, repo: str) -> None:
             # Do not log signatures, request bodies, or credentials.
             print("deployment request handled", flush=True)
 
+    return Handler
+
+
+def serve(source: Path, deploy_dir: Path, repo: str) -> None:
+    secret = (deploy_dir / "webhook-secret").read_bytes().strip()
+    if len(secret) < 32:
+        raise DeployError("deployment webhook secret is missing or too short")
+    handler = receiver(source, deploy_dir, repo, secret)
     port = CONFIG["webhook"]["port"]
-    server = HTTPServer(("127.0.0.1", port), Handler)
+    server = HTTPServer(("127.0.0.1", port), handler)
     server.reload_after_response = False
     print(f"Deployment receiver listening on 127.0.0.1:{port}", flush=True)
     try:
@@ -330,6 +336,15 @@ def serve(source: Path, deploy_dir: Path, repo: str) -> None:
     # The systemd service uses Restart=always, loading the new release on exit.
 
 
+def self_check(source: Path, deploy_dir: Path, repo: str) -> None:
+    """Load everything serve needs up to binding its socket, without the secret or the network."""
+    receiver(source, deploy_dir, repo, b"")
+    port = CONFIG["webhook"]["port"]
+    if type(port) is not int or not 0 < port < 65536:
+        raise DeployError(f"invalid receiver port: {port!r}")
+    print("self-check passed", flush=True)
+
+
 def matrix(modules: list) -> list[str]:
     """Modules whose checks run in their own check (<name>) job."""
     return sorted(m.name for m in modules if m.check_job() == f"check ({m.name})")
@@ -337,7 +352,7 @@ def matrix(modules: list) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("install", "serve", "plan", "modules", "activate"))
+    parser.add_argument("command", choices=("install", "serve", "plan", "modules", "activate", "self-check"))
     parser.add_argument("--tunnel-name", default=CONFIG["tunnel"]["name"],
                         help="locally managed Cloudflare tunnel for installation")
     parser.add_argument("--repo", default=os.environ.get("JOMAA_DEPLOY_REPO", CONFIG["repo"]))
@@ -372,6 +387,9 @@ def main(argv: list[str] | None = None) -> int:
                 "ingress": ingress.rules(routes, CONFIG)[0], "conflicts": conflicts,
                 "state": sorted(p for m in modules for p in m.state)}, indent=2))
             return 1 if failures or conflicts else 0
+        if args.command == "self-check":
+            self_check(source, deploy_dir, args.repo)
+            return 0
         deploy_dir.mkdir(parents=True, exist_ok=True)
         if args.command == "activate":
             # The receiver holds deploy.lock while this runs.

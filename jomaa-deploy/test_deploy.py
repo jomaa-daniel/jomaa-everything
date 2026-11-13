@@ -116,6 +116,19 @@ class DeploymentTest(ModuleTestCase):
         verified.assert_called_once_with("example/hub", self.second, 12, 1)
         applied.assert_called_once_with(self.source, self.deploy_dir, "example/hub", self.second, 12, 1)
 
+    def test_self_check_loads_the_receiver_without_its_secret_or_a_socket(self):
+        self.assertFalse((self.deploy_dir / "webhook-secret").exists())
+        with mock.patch.dict(os.environ, {"JOMAA_DEPLOY_HOME": str(self.deploy_dir)}), \
+                mock.patch.object(deploy, "HTTPServer") as server, \
+                mock.patch.object(deploy, "receiver", wraps=deploy.receiver) as built, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(deploy.main(["self-check"]), 0)
+        server.assert_not_called()
+        built.assert_called_once()
+        with mock.patch.object(deploy, "CONFIG", {**deploy.CONFIG, "webhook": {"hostname": "x", "port": "8091"}}), \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(deploy.main(["self-check"]), 1)
+
     def test_old_verified_run_cannot_roll_back_newer_deployment(self):
         new = deploy.extract_release(self.repo, self.second, self.deploy_dir)
         switch_link(self.deploy_dir / "current", new)

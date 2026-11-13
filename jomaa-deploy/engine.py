@@ -3,7 +3,9 @@
 Phases run in a fixed order: checks and external origins, services, static
 sites, ingress, then commands. A module is built and activated only when its
 fingerprint changed or its last attempt failed; commands run every time. A
-failure is contained in its module, which keeps its previous version.
+failure is contained in its module, which keeps its previous version. The
+current pointer moves to the release only when its receiver passes its
+self-check.
 """
 from __future__ import annotations
 
@@ -11,6 +13,7 @@ import hashlib
 import importlib.util
 import json
 import shutil
+import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -170,7 +173,7 @@ def remove(ctx: Context, record: dict) -> str:
 
 
 def activate(ctx: Context, jobs: dict[str, str | None] | None) -> dict:
-    """Deploy every module of ctx.release, switch the current pointer to it and report each module."""
+    """Deploy every module of ctx.release, switch the current pointer to it if its receiver loads, and report."""
     known = records(ctx.deploy_dir)
     modules, failures = discover(ctx.release)
     results: dict[str, str] = {}
@@ -218,7 +221,24 @@ def activate(ctx: Context, jobs: dict[str, str | None] | None) -> dict:
         for record in removed:
             if KINDS[record["kind"]].phase == phase:
                 results[record["name"]] = remove(ctx, record)
-    switch_link(ctx.deploy_dir / "current", ctx.release)
-    ok = all(status in SUCCESS for status in results.values()) and not ingress.failed(ingress_result)
+    engine_status = "failed"
+    if self_check(ctx):
+        switch_link(ctx.deploy_dir / "current", ctx.release)
+        engine_status = "deployed"
+    ok = (all(status in SUCCESS for status in results.values()) and not ingress.failed(ingress_result)
+          and engine_status == "deployed")
     return {"status": "deployed" if ok else "partial", "modules": dict(sorted(results.items())),
-            "ingress": ingress_result}
+            "ingress": ingress_result, "engine": engine_status}
+
+
+def self_check(ctx: Context) -> bool:
+    """Whether the release's own receiver loads, checked before the current pointer moves to it."""
+    folder = ctx.release / "jomaa-deploy"
+    try:
+        subprocess.run([sys.executable, str(folder / "deploy.py"), "self-check"], cwd=folder, check=True,
+                       timeout=ctx.config["selfCheckTimeoutSeconds"])
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"the receiver of {ctx.sha[:12]} failed its self-check; current stays where it was: {error}",
+              file=sys.stderr, flush=True)
+        return False
+    return True
