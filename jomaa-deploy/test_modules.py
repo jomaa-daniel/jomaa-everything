@@ -223,7 +223,7 @@ class ServiceTest(ModuleTestCase):
         switch_link(self.deploy_dir / "releases/old", old)
         recorded = {**APP, "command": ["{python}", "{release}/app/old.py"]}
         self.service.record = {"name": "app", "kind": "Service", "directory": "app", "revision": "old",
-                               "fingerprint": "f", "declaration": recorded, "failed": False, "pending": None}
+                               "fingerprint": "f", "declaration": recorded, "failed": False}
         snapshot = self.service.snapshot(self.ctx)
         self.service.activate(self.ctx, self.ctx.release)
         self.assertEqual(self.service.rollback(self.ctx, snapshot), "failed")
@@ -243,8 +243,7 @@ class ServiceTest(ModuleTestCase):
 
     def test_renamed_unit_replaces_the_old_one(self):
         self.service.record = {"name": "app", "kind": "Service", "directory": "app", "revision": self.sha,
-                               "fingerprint": "f", "declaration": {**APP, "unit": "jomaa-old"}, "failed": False,
-                               "pending": None}
+                               "fingerprint": "f", "declaration": {**APP, "unit": "jomaa-old"}, "failed": False}
         (self.unit_dir / "jomaa-old.service").write_text("old")
         self.service.activate(self.ctx, self.ctx.release)
         self.assertFalse((self.unit_dir / "jomaa-old.service").exists())
@@ -253,7 +252,7 @@ class ServiceTest(ModuleTestCase):
     def test_remove_stops_the_recorded_unit(self):
         (self.unit_dir / "jomaa-app.service").write_text("unit")
         record = {"name": "app", "kind": "Service", "directory": "app", "revision": self.sha,
-                  "fingerprint": "f", "declaration": APP, "failed": False, "pending": None}
+                  "fingerprint": "f", "declaration": APP, "failed": False}
         Service.from_record(record).remove(self.ctx, record)
         self.assertFalse((self.unit_dir / "jomaa-app.service").exists())
         self.assertIn(("systemctl", "--user", "disable", "--now", "jomaa-app.service"), self.ctx.calls)

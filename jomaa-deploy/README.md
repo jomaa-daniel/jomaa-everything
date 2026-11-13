@@ -255,7 +255,8 @@ job retries the failed modules.
   releases/<sha>/                    one per revision
   modules/<name>/current -> releases/<sha>
   modules/<name>/previous -> releases/<sha>
-  modules/<name>/record.json         revision, fingerprint, live declaration, failed, pending
+  modules/<name>/record.json         revision, fingerprint, live declaration, failed
+  modules/<name>/pending.json        revision and snapshot of a deployment in progress
   results/<sha>-<run id>-<attempt>.json  result of each run attempt
   sites.json                         static site map
   ingress.json                       hostnames under DNS management
@@ -263,17 +264,16 @@ job retries the failed modules.
 
 Result files are deleted with their release.
 
-Before a module activates, its record keeps its revision, fingerprint and
-declaration and sets `pending` to the new revision and the module's snapshot:
-a service's previous pointer target and unit file text, a static site's
-previous site map entry. A finished deployment, successful or rolled back,
-writes the record with `pending` set to `null`. When an activation finds a
-pending record, the previous one stopped mid-module: it rolls the module back
-with the snapshot, using the recorded declaration or, without one, the new
-release's module, then marks the record failed so the module deploys again. A
-module whose rollback fails reports `failed-unrestored`. A record that is not
-in this format is discarded with a journal line, and its module deploys as if
-it had no record.
+Before a module activates, `pending.json` receives the new revision and the
+module's snapshot: a service's previous pointer target and unit file text, a
+static site's previous site map entry. The record is not changed. A finished
+deployment, successful or rolled back, writes the record and then deletes
+`pending.json`. When an activation finds a `pending.json`, the previous one
+stopped mid-module: it rolls the module back with the snapshot, using the
+recorded declaration or, without one, the new release's module, then marks the
+record failed, or writes a failed record without a declaration when there is
+none, and deletes `pending.json`, so the module deploys again. A module whose
+rollback fails reports `failed-unrestored`.
 
 A service's unit runs from its module pointer, so it keeps its release when
 other modules deploy. `previous` is the release the module replaced. Local

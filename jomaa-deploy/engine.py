@@ -4,7 +4,7 @@ Phases run in a fixed order: checks and external origins, services, static
 sites, ingress, then commands. A module is built and activated only when its
 fingerprint changed or its last attempt failed; commands run every time. A
 failure is contained in its module, which keeps its previous version. Before
-a module activates, its record holds the pending revision and a snapshot of
+a module activates, its pending.json holds the new revision and a snapshot of
 what activation replaces, so the next activation can roll back a module whose
 deployment stopped mid-way. The current pointer moves to the release only
 when its receiver passes its self-check.
@@ -26,7 +26,7 @@ from modules.base import Context, DeployError, atomic_write, switch_link
 
 ENTRY = "deploy_module.py"
 RECORD = "record.json"
-RECORD_KEYS = {"name", "kind", "directory", "revision", "fingerprint", "declaration", "failed", "pending"}
+PENDING = "pending.json"
 SUCCESS = ("deployed", "unchanged", "removed")
 PHASES = (0, 1, 2, "ingress", 4)
 
@@ -97,13 +97,9 @@ def link_state(release: Path, source: Path, paths: list[str]) -> None:
 
 
 def records(deploy_dir: Path) -> dict[str, dict]:
-    """Every module record; a record in another format is left out, as if the module had none."""
     found = {}
     for path in sorted((deploy_dir / "modules").glob(f"*/{RECORD}")):
         record = json.loads(path.read_text())
-        if not isinstance(record, dict) or set(record) != RECORD_KEYS:
-            print(f"discarding {path}: it is not in the record format", file=sys.stderr, flush=True)
-            continue
         found[record["name"]] = record
     return found
 
@@ -130,9 +126,9 @@ def deploy(ctx: Context, module: Module, record: dict | None, jobs: dict[str, st
     if jobs is not None and job is not None and jobs.get(job) != "success":
         print(f"{module.name}: {job} did not succeed; keeping the deployed version", flush=True)
         return "ineligible"
-    kept = {"name": module.name, "kind": module.kind, "directory": module.directory, "revision": None,
-            "fingerprint": None, "declaration": None, "failed": True, "pending": None, **(record or {})}
-    failed = {**kept, "failed": True, "pending": None}
+    failed = {"name": module.name, "kind": module.kind, "directory": module.directory, "revision": None,
+              "fingerprint": None, "declaration": None, **(record or {}), "failed": True}
+    pending = ctx.deploy_dir / "modules" / module.name / PENDING
     pointer = ctx.pointer(module.name)
     before = pointer.resolve() if pointer.exists() else None
     activated = False
@@ -144,7 +140,7 @@ def deploy(ctx: Context, module: Module, record: dict | None, jobs: dict[str, st
         print(f"Deploying {module.name}", flush=True)
         module.build(ctx, ctx.release)
         snapshot = module.snapshot(ctx)
-        save(ctx, {**kept, "pending": {"revision": ctx.sha, "snapshot": snapshot}})
+        atomic_write(pending, json.dumps({"revision": ctx.sha, "snapshot": snapshot}, indent=2) + "\n")
         activated = True
         module.activate(ctx, ctx.release)
         if not module.verify(ctx):
@@ -160,12 +156,14 @@ def deploy(ctx: Context, module: Module, record: dict | None, jobs: dict[str, st
                 print(f"{module.name} could not be restored: {problem}", file=sys.stderr, flush=True)
                 status = "failed-unrestored"
         save(ctx, failed)
+        pending.unlink(missing_ok=True)
         return status
     if before is not None and before != ctx.release:
         switch_link(pointer.with_name("previous"), before)
     switch_link(pointer, ctx.release)
     save(ctx, {"name": module.name, "kind": module.kind, "directory": module.directory, "revision": ctx.sha,
-               "fingerprint": fingerprint, "declaration": module.declaration, "failed": False, "pending": None})
+               "fingerprint": fingerprint, "declaration": module.declaration, "failed": False})
+    pending.unlink(missing_ok=True)
     return "deployed"
 
 
@@ -173,15 +171,16 @@ def recover(ctx: Context, known: dict[str, dict], modules: list[Module]) -> dict
     """Roll back each module whose last deployment stopped mid-way, and mark its record failed to redeploy it."""
     statuses = {}
     candidates = {module.name: module for module in modules}
-    for name, record in known.items():
-        pending = record["pending"]
-        if pending is None:
-            continue
+    for path in sorted((ctx.deploy_dir / "modules").glob(f"*/{PENDING}")):
+        name = path.parent.name
+        pending = json.loads(path.read_text())
+        record = known.get(name)
+        candidate = candidates.get(name)
         print(f"{name} stopped while deploying {pending['revision'][:12]}; restoring what it replaced",
               file=sys.stderr, flush=True)
         try:
             ctx.begin()
-            module = instance(record) if record["declaration"] is not None else candidates.get(name)
+            module = instance(record) if record is not None and record["declaration"] is not None else candidate
             if module is None:
                 raise DeployError("neither its record nor this release declares a module to restore")
             module.record = record
@@ -189,8 +188,13 @@ def recover(ctx: Context, known: dict[str, dict], modules: list[Module]) -> dict
         except Exception as error:
             print(f"{name} could not be restored: {type(error).__name__}: {error}", file=sys.stderr, flush=True)
             statuses[name] = "failed-unrestored"
-        known[name] = {**record, "failed": True, "pending": None}
-        save(ctx, known[name])
+        if record is None and candidate is not None:
+            record = {"name": name, "kind": candidate.kind, "directory": candidate.directory, "revision": None,
+                      "fingerprint": None, "declaration": None}
+        if record is not None:
+            known[name] = {**record, "failed": True}
+            save(ctx, known[name])
+        path.unlink()
     return statuses
 
 

@@ -17,6 +17,9 @@ ALL_JOBS = {"check (app)": "success", "check (bench)": "success"}
 APP_WITHOUT_UNIT = {k: v for k, v in APP.items() if k != "unit"}
 
 
+RECORD_FIELDS = {"name", "kind", "directory", "revision", "fingerprint", "declaration", "failed"}
+
+
 class Crash(BaseException):
     """Stops an activation the way a killed process does: no handler catches it."""
 
@@ -336,14 +339,16 @@ class EngineTest(ModuleTestCase):
         first, _ = self.first_deployment()
         old_unit = (self.unit_dir / "jomaa-app.service").read_text()
         pointer = self.deploy_dir / "modules/app/current"
+        record_file = self.deploy_dir / "modules/app/record.json"
+        pending_file = self.deploy_dir / "modules/app/pending.json"
+        recorded = record_file.read_text()
         self.write("app/server.py", "# app, second version\n")
         sha = self.commit()
         crashed = self.context(sha)
         self.crash_on_app_health(crashed)
-        record = json.loads((self.deploy_dir / "modules/app/record.json").read_text())
-        self.assertEqual(record["pending"], {"revision": sha, "snapshot": {"pointer": str(first.release),
-                                                                           "unit": old_unit}})
-        self.assertEqual((record["revision"], record["declaration"], record["failed"]), (first.sha, APP, False))
+        self.assertEqual(json.loads(pending_file.read_text()),
+                         {"revision": sha, "snapshot": {"pointer": str(first.release), "unit": old_unit}})
+        self.assertEqual(record_file.read_text(), recorded)
         self.assertEqual(pointer.resolve(), crashed.release)
         ctx = self.context(sha)
         seen = []
@@ -354,43 +359,43 @@ class EngineTest(ModuleTestCase):
         self.assertEqual(seen, [(first.release, old_unit)])
         self.assertEqual(result["modules"]["app"], "deployed")
         self.assertEqual(pointer.resolve(), ctx.release)
-        record = json.loads((self.deploy_dir / "modules/app/record.json").read_text())
-        self.assertEqual((record["revision"], record["pending"], record["failed"]), (sha, None, False))
+        self.assertFalse(pending_file.exists())
+        record = json.loads(record_file.read_text())
+        self.assertEqual((record["revision"], record["failed"]), (sha, False))
+        self.assertEqual(set(record), RECORD_FIELDS)
 
     def test_stopped_first_run_service_restores_the_unit_text_it_replaced(self):
         old_unit = "[Service]\nExecStart=/previous/deployer/hub\n"
         (self.unit_dir / "jomaa-app.service").write_text(old_unit)
+        record_file = self.deploy_dir / "modules/app/record.json"
+        pending_file = self.deploy_dir / "modules/app/pending.json"
         self.add_all()
         sha = self.commit()
         self.crash_on_app_health(self.context(sha))
-        record = json.loads((self.deploy_dir / "modules/app/record.json").read_text())
-        self.assertIsNone(record["declaration"])
-        self.assertEqual(record["pending"]["snapshot"], {"pointer": None, "unit": old_unit})
+        self.assertFalse(record_file.exists())
+        self.assertEqual(json.loads(pending_file.read_text())["snapshot"], {"pointer": None, "unit": old_unit})
         self.assertNotEqual((self.unit_dir / "jomaa-app.service").read_text(), old_unit)
         ctx = self.context(sha)
-        seen = []
-        self.watch_build(ctx, seen)
         with contextlib.redirect_stderr(io.StringIO()):
-            result = engine.activate(ctx, ALL_JOBS)
-        self.assertEqual(seen, [(None, old_unit)])
-        self.assertLess(ctx.calls.index(("systemctl", "--user", "restart", "jomaa-app.service")),
-                        ctx.calls.index(("build-app",)))
-        self.assertEqual(result["modules"]["app"], "deployed")
-        self.assertIsNone(json.loads((self.deploy_dir / "modules/app/record.json").read_text())["pending"])
+            result = engine.activate(ctx, {**ALL_JOBS, "check (app)": "failure"})
+        self.assertEqual(result["modules"]["app"], "ineligible")
+        self.assertEqual((self.unit_dir / "jomaa-app.service").read_text(), old_unit)
+        self.assertFalse((self.deploy_dir / "modules/app/current").exists())
+        self.assertIn(("systemctl", "--user", "restart", "jomaa-app.service"), ctx.calls)
+        self.assertFalse(pending_file.exists())
+        self.assertEqual(json.loads(record_file.read_text()),
+                         {"name": "app", "kind": "Service", "directory": "app", "revision": None,
+                          "fingerprint": None, "declaration": None, "failed": True})
+        retry = self.context(sha)
+        self.assertEqual(engine.activate(retry, ALL_JOBS)["modules"]["app"], "deployed")
 
-    def test_record_in_another_format_is_discarded(self):
-        self.first_deployment()
-        path = self.deploy_dir / "modules/app/record.json"
-        record = json.loads(path.read_text())
-        del record["pending"]
-        path.write_text(json.dumps(record))
-        ctx = self.context(self.git("rev-parse", "HEAD"))
-        with contextlib.redirect_stderr(io.StringIO()) as errors:
-            result = engine.activate(ctx, ALL_JOBS)
-        self.assertIn(f"discarding {path}", errors.getvalue())
-        self.assertEqual(result["modules"]["app"], "deployed")
-        self.assertEqual(result["modules"]["web"], "unchanged")
-        self.assertIsNone(json.loads(path.read_text())["pending"])
+    def test_record_written_by_c187fc0_loads_unchanged(self):
+        first, _ = self.first_deployment()
+        declaration = {key: value for key, value in APP.items() if key != "stateInputs"}
+        record = {"name": "app", "kind": "Service", "directory": "app", "revision": first.sha,
+                  "fingerprint": "f" * 64, "declaration": declaration, "failed": False}
+        (self.deploy_dir / "modules/app/record.json").write_text(json.dumps(record, indent=2) + "\n")
+        self.assertEqual(engine.records(self.deploy_dir)["app"], record)
 
     def test_route_claimed_by_two_modules_is_kept_by_the_first(self):
         self.add_all()
