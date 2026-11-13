@@ -24,6 +24,7 @@ others. The Python tools use the standard library.
 | `settings.py` | Reads `config.json`. |
 | `notify.py` | GitHub Actions signed deployment request and reconnect retries. |
 | `verify.py` | Runs module checks locally and in GitHub Actions. |
+| `e2e/` | Container fault-injection suite on a systemd jerry with fake GitHub and Cloudflare APIs; see [`e2e/README.md`](e2e/README.md). |
 
 ## Modules
 
@@ -87,8 +88,9 @@ and in the workflow's check job. Create its `state` paths in the checkout on
 jerry first; state paths are untracked and cannot overlap.
 
 A class may override the `Module` methods: `routes()`, `children()`,
-`fingerprint(repo, sha)`, `build`, `activate`, `verify`, `rollback` and
-`remove(record)`. The static server's `deploy_module.py` overrides
+`fingerprint(ctx)`, `build`, `snapshot`, `activate`, `verify`,
+`rollback(snapshot)` and `remove(record)`. `snapshot` returns, as JSON, what
+`activate` will replace, and `rollback` receives it. The static server's `deploy_module.py` overrides
 `children()` to return a `StaticSite` for each hostname folder.
 
 Removing a module's folder, or renaming the module, removes it at the next
@@ -106,10 +108,13 @@ jomaa-static-pages/new.jomaa.org/gallery/index.html
 
 Each hostname folder is its own module, named with the hostname. Activation
 points the site map at the folder in the new release, the static server
-re-reads the map, and the site must answer `/` with HTTP 200 for its Host
-header. A site that fails keeps its previous folder, or stays out of the map
-when it is new. Hostname folders need an `index.html` inside them and cannot
-be symlinks. Folders without a dot, such as `device-panel/`, are not sites.
+re-reads the map, and the site must answer `/` for its Host header with HTTP
+200 and exactly the bytes of the folder's `index.html`. A site that fails
+keeps its previous folder, or stays out of the map when it is new. Hostname
+folders need an `index.html` inside them and cannot be symlinks. Every
+relative asset that `index.html` references, through a `src` attribute or a
+`<link>` element's `href`, must exist inside the folder; absolute,
+root-relative and other hosts' references are not checked. Folders without a dot, such as `device-panel/`, are not sites.
 Sarah's site lives in `jomaa-static-pages/sarah.jomaa.org/`.
 
 ### Routes
@@ -131,13 +136,23 @@ receives the original request path. DNS is shared by all paths on a hostname.
 
 ## Automatic deployment
 
-`.github/workflows/deploy.yml` runs on every push and pull request:
+`.github/workflows/deploy.yml` runs on every push and pull request, and
+weekly on a schedule:
 
 - `modules` lists the modules with checks, from
-  `python3 jomaa-deploy/deploy.py modules --json`.
+  `python3 jomaa-deploy/deploy.py modules --json`, and decides whether the
+  container suite runs.
 - `verify` runs this folder's checks.
 - `check (<module>)` runs each listed module's checks, one job per module,
   without cancelling the others when one fails.
+- `e2e (<suite>)` runs one file of the [container suite](e2e/README.md) per
+  job, `python3 jomaa-deploy/e2e/harness.py <suite>` for `install`,
+  `modules`, `ingress`, `receiver` and `chaos`, without cancelling the others
+  when one fails. It runs when the push or pull request changes
+  `jomaa-deploy/` or the workflow, and on every scheduled and manual run. The
+  real cloudflared is cached by its `tunnel.cloudflaredVersion`, and a failing
+  suite uploads the artifacts of its failed tests. `deploy` does not wait for
+  it.
 - `deploy`, on pushes to `main`, runs when `verify` succeeded, whatever the
   module checks concluded, and sends a signed request to the receiver.
 
@@ -151,9 +166,12 @@ new release while holding `deploy.lock`, with its output in the receiver's
 journal. The activation writes its result to the file, and the receiver
 answers the request with the result and the revision. The receiver restarts
 after answering when the `current` pointer moved, which it does at the end of
-every activation, so the next request runs the new receiver.
+every activation whose new receiver passes its self-check, so the next
+request runs the new receiver.
 
-Pull requests and manual workflow runs check without deploying.
+Pull requests, manual and scheduled workflow runs check without deploying.
+Only the `deploy` job is serialized: one deployment runs at a time, and the
+checks and container suite of a later push run alongside it.
 
 ### Activation
 
@@ -163,10 +181,15 @@ succeeded; a failed, skipped, cancelled or missing job makes it ineligible,
 and it keeps its deployed version.
 
 Each module's fingerprint is a hash of the git objects of its folder's
-top-level entries and of its `inputs` at the revision, together with its
-declaration. Entries that the module's children own are left out: a static
-site's folder counts for that site alone, so a site change does not restart
-the static server. A module is built and activated only when its fingerprint
+top-level entries and of its `inputs` at the revision, the path and content of
+every source file in the release that defines one of the module's classes
+(its `deploy_module.py` and the `modules/*.py` it inherits from), the SHA-256
+of each `state` path that is a file in the local checkout (such as the hub's
+`.env` and `config.json`; folders such as `data` are left out), together
+with its declaration. Editing a state file therefore redeploys and restarts
+its module on the next activation. Entries that the module's children own are left out: a
+static site's folder counts for that site alone, so a site change does not
+restart the static server. A module is built and activated only when its fingerprint
 differs from its record or its last attempt failed; an unchanged module is
 not built or restarted. Commands run on every activation.
 
@@ -202,14 +225,21 @@ tunnel are deleted. Hostnames under management are listed in `ingress.json`.
 Before the commands run, the live services and routes are written to the
 file a command declares as `inventory`. The health Worker bundles that file.
 
-At the end the `current` pointer moves to the new release, and releases
-beyond `releasesKept` are pruned unless a pointer still uses them.
+At the end the new release's `deploy.py self-check` runs, within
+`selfCheckTimeoutSeconds`. It loads the receiver's code, settings and request
+handler without binding its port, reading the webhook secret or contacting the
+network. When it passes, the `current` pointer moves to the new release and
+the result reports `"engine": "deployed"`. When it fails, `current` stays on
+the running receiver, the result reports `"engine": "failed"` and the status
+is `partial`; the modules keep what this activation deployed. Releases beyond
+`releasesKept` are pruned unless a pointer still uses them.
 
 ### Result
 
 ```json
 {"status": "partial", "modules": {"hub": "deployed", "static": "unchanged", "ssh": "ineligible"},
- "ingress": {"tunnel": "unchanged", "conflicts": [], "dns": {"hub.jomaa.org": "unchanged"}}}
+ "ingress": {"tunnel": "unchanged", "conflicts": [], "dns": {"hub.jomaa.org": "unchanged"}},
+ "engine": "deployed"}
 ```
 
 | Module status | Meaning |
@@ -224,7 +254,8 @@ beyond `releasesKept` are pruned unless a pointer still uses them.
 DNS hosts report `created`, `updated`, `unchanged`, `deleted`, `unmanaged`
 (an unwanted record that deployment does not own), `conflict` or `failed`.
 The status is `deployed` when every module is deployed, unchanged or
-removed and ingress has no failure, and `partial` otherwise. `notify.py`
+removed, ingress has no failure and the engine is `deployed`, and `partial`
+otherwise. `notify.py`
 succeeds for `deployed` and an ignored older revision, and for `partial`
 prints each module's status and fails the workflow. Rerunning the `deploy`
 job retries the failed modules.
@@ -238,12 +269,24 @@ job retries the failed modules.
   modules/<name>/current -> releases/<sha>
   modules/<name>/previous -> releases/<sha>
   modules/<name>/record.json         revision, fingerprint, live declaration, failed
+  modules/<name>/pending.json        revision and snapshot of a deployment in progress
   results/<sha>-<run id>-<attempt>.json  result of each run attempt
   sites.json                         static site map
   ingress.json                       hostnames under DNS management
 ```
 
 Result files are deleted with their release.
+
+Before a module activates, `pending.json` receives the new revision and the
+module's snapshot: a service's previous pointer target and unit file text, a
+static site's previous site map entry. The record is not changed. A finished
+deployment, successful or rolled back, writes the record and then deletes
+`pending.json`. When an activation finds a `pending.json`, the previous one
+stopped mid-module: it rolls the module back with the snapshot, using the
+recorded declaration or, without one, the new release's module, then marks the
+record failed, or writes a failed record without a declaration when there is
+none, and deletes `pending.json`, so the module deploys again. A module whose
+rollback fails reports `failed-unrestored`.
 
 A service's unit runs from its module pointer, so it keeps its release when
 other modules deploy. `previous` is the release the module replaced. Local
@@ -303,6 +346,7 @@ is missing or outdated.
 ```bash
 python3 jomaa-deploy/deploy.py modules
 python3 jomaa-deploy/deploy.py plan
+python3 jomaa-deploy/deploy.py self-check
 python3 jomaa-deploy/verify.py
 python3 jomaa-deploy/verify.py hub
 python3 -m unittest discover -s jomaa-deploy -v
@@ -310,6 +354,8 @@ python3 -m unittest discover -s jomaa-deploy -v
 
 `modules` lists every module, its class, folder and check job. `plan`
 validates the declarations and prints the modules, the tunnel rules and the
-state paths without contacting Cloudflare or changing services. `verify.py`
+state paths without contacting Cloudflare or changing services.
+`self-check` loads the receiver as activation does before moving `current`.
+`verify.py`
 runs every module's checks, or the named modules'. Tests use temporary
 repositories, a simulated Cloudflare and recorded service commands.

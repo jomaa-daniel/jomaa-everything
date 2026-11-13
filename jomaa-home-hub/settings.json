@@ -18,5 +18,11 @@
     "observationMaxAgeSeconds": 300,
     "downloadUrl": "https://tailscale.com/download",
     "adminUsersUrl": "https://login.tailscale.com/admin/users"
+  },
+  "secrets": {
+    "envFiles": ["jomaa-home-hub/.env", "jomaa-tailscale/.env"],
+    "ghCommand": "/snap/bin/gh",
+    "deployConfig": "jomaa-deploy/config.json",
+    "redeployPollSeconds": 5
   }
 }

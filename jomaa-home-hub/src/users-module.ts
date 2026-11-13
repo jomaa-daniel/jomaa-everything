@@ -18,13 +18,13 @@ import type { AccountOnboarding } from "./onboarding.js";
 import { MemberPrincipal } from "./principal.js";
 
 export class UsersModule implements FeatureModule {
-  /** Counts failed owner and account sign-ins separately. */
-  readonly #ownerLimiter = new LoginLimiter();
+  /** Counts failed account sign-ins; owner sign-ins count on ownerLimiter, which the Secrets page shares. */
   readonly #accountLimiter = new LoginLimiter();
 
   constructor(
     private readonly users: UserService,
     private readonly onboarding: AccountOnboarding,
+    private readonly ownerLimiter: LoginLimiter,
     private readonly log: Log,
   ) {}
 
@@ -60,7 +60,7 @@ export class UsersModule implements FeatureModule {
     const username = body.string("username");
     const password = body.string("password") ?? "";
     const client = clientIP(req);
-    const limiter = username === null ? this.#ownerLimiter : this.#accountLimiter;
+    const limiter = username === null ? this.ownerLimiter : this.#accountLimiter;
     const { ok, waitMs } = limiter.allow(client);
     if (!ok) {
       res.setHeader("Retry-After", String(Math.trunc(waitMs / 1000) + 1));

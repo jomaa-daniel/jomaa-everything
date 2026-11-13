@@ -75,6 +75,7 @@ const api = new Api(
   new HealthStore(":memory:"),
   undefined,
   undefined,
+  undefined,
   service,
 );
 const origin = await serve(api.handle);

@@ -1,0 +1,27 @@
+{
+  "name": "fx-cmd",
+  "inputs": [],
+  "checks": [
+    [
+      "{python}",
+      "app.py",
+      "check"
+    ]
+  ],
+  "state": [
+    "fx-cmd/state"
+  ],
+  "build": [
+    [
+      "{python}",
+      "app.py",
+      "build"
+    ]
+  ],
+  "command": [
+    "{python}",
+    "{release}/fx-cmd/app.py",
+    "run"
+  ],
+  "inventory": "inventory.json"
+}

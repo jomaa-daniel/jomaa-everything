@@ -24,9 +24,13 @@ import { TailscaleModule } from "./tailscale-module.js";
 import { LayoutChanges } from "./layout-changes.js";
 import { AccountOnboarding, OnboardingError, TailscaleOnboarding } from "./onboarding.js";
 import type { TailscaleService } from "./tailscale.js";
+import { SecretsModule, type SecretsAdmin } from "./secrets-module.js";
+import { SecretsError } from "./secrets.js";
+import { LoginLimiter } from "./limiter.js";
 import { settings } from "./settings.js";
 
 export { sessionToken } from "./users.js";
+export type { SecretsAdmin } from "./secrets-module.js";
 
 /** Serves the hub API. */
 export class Api {
@@ -49,6 +53,7 @@ export class Api {
     health?: HealthStore,
     layoutPath?: string,
     organization?: Organization,
+    secrets?: SecretsAdmin,
     tailscale?: TailscaleService,
   ) {
     // An account's link is deleted with it; the sync then removes its access.
@@ -57,9 +62,12 @@ export class Api {
       ? new HealthHttp(health, log.with({ component: "device-health" }), matter, hub, organization)
       : undefined;
     const layout = new LayoutChanges(hub, log);
-    const users = new UsersModule(this.#users, new AccountOnboarding(this.#users), log);
+    // Owner sign-ins and Secrets password checks share one failure limit.
+    const ownerLimiter = new LoginLimiter();
+    const users = new UsersModule(this.#users, new AccountOnboarding(this.#users), ownerLimiter, log);
     const modules = [
       users,
+      new SecretsModule(this.#users, ownerLimiter, log, secrets),
       new LightsModule(hub, log),
       new DevicesModule(hub, matter, layout, log, layoutPath, organization),
       new OrganizationModule(hub, matter, layout, log, health, layoutPath, organization),
@@ -84,7 +92,8 @@ export class Api {
         err instanceof HttpError ||
         err instanceof HealthError ||
         err instanceof AccountError ||
-        err instanceof OnboardingError
+        err instanceof OnboardingError ||
+        err instanceof SecretsError
       ) {
         if (err instanceof HealthError && err.status === 429) res.setHeader("Retry-After", "15");
         writeError(res, err.status, err.message);

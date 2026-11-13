@@ -15,6 +15,7 @@
   "moduleTimeoutSeconds": 600,
   "healthWaitSeconds": 90,
   "healthRequestTimeoutSeconds": 2,
+  "selfCheckTimeoutSeconds": 60,
   "hubPasswordMinLength": 12,
   "tunnel": {
     "name": "jomaa-home-hub",
@@ -33,6 +34,7 @@
   "github": {
     "api": "https://api.github.com",
     "remote": "https://github.com",
+    "workflow": ".github/workflows/deploy.yml",
     "timeoutSeconds": 20,
     "jobsPerPage": 100
   },

@@ -1,0 +1,12 @@
+{
+  "name": "fx-shell",
+  "inputs": [],
+  "checks": [],
+  "state": [],
+  "origin": "ssh://127.0.0.1:22",
+  "routes": [
+    {
+      "hostname": "shell.e2e.test"
+    }
+  ]
+}

@@ -1,4 +1,5 @@
-"""config.md documents every global setting and every key of the module declarations."""
+"""config.md documents every global setting and every key of the module declarations; e2e/config.md
+documents every setting of the container suite."""
 import json
 import unittest
 from pathlib import Path
@@ -43,6 +44,11 @@ class ConfigDocTest(unittest.TestCase):
         for path in declarations:
             for key in keys(json.loads(path.read_text())):
                 self.assertDocumented(key, f"{path.parent.name}/deploy.json")
+
+    def test_e2e_doc_documents_every_setting_in_e2e_config_json(self):
+        doc = (HERE / "e2e/config.md").read_text()
+        for key in keys(json.loads((HERE / "e2e/config.json").read_text())):
+            self.assertIn(f"`{key}`", doc, f"e2e/config.md does not document {key} of e2e/config.json")
 
     def test_documents_every_key_a_module_kind_declares(self):
         for kind in KINDS.values():

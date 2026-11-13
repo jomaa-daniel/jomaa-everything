@@ -65,6 +65,7 @@ def main() -> int:
             for name, status in sorted(result.get("modules", {}).items()):
                 print(f"  {name}: {status}")
             print(f"  ingress: {json.dumps(result.get('ingress', {}))}")
+            print(f"  engine: {result.get('engine')}")
             return 1
         return 0
     except (KeyError, ValueError, OSError, urllib.error.URLError) as e:

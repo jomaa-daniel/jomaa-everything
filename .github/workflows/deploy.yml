@@ -2,24 +2,25 @@ name: Deploy Jomaa services and routes
 
 # A signed HTTPS request triggers the local deployment after the deployment
 # code is verified. Each module deploys only when its own check job succeeded.
+# The weekly run exercises the container suite against base image and
+# cloudflared drift; it never deploys.
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: '23 4 * * 1'
 
 permissions:
   contents: read
-
-concurrency:
-  group: jomaa-deploy-${{ github.ref }}
-  cancel-in-progress: false
 
 jobs:
   modules:
     runs-on: ubuntu-latest
     outputs:
       modules: ${{ steps.list.outputs.modules }}
+      e2e: ${{ steps.e2e.outputs.run }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,6 +28,21 @@ jobs:
           python-version: '3.12'
       - id: list
         run: echo "modules=$(python3 jomaa-deploy/deploy.py modules --json)" >> "$GITHUB_OUTPUT"
+      # The container suite runs when the deployment code or this workflow
+      # changed, and on every scheduled and manual run.
+      - id: e2e
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          case "$EVENT" in push|pull_request) ;; *) echo "run=true" >> "$GITHUB_OUTPUT"; exit 0 ;; esac
+          if ! git fetch -q --depth=1 origin "$BASE"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet "$BASE" HEAD -- jomaa-deploy .github/workflows/deploy.yml; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
 
   verify:
     runs-on: ubuntu-latest
@@ -60,8 +76,49 @@ jobs:
           python-version: '3.12'
       - run: python3 jomaa-deploy/verify.py "${{ matrix.module }}"
 
+  e2e:
+    needs: modules
+    if: needs.modules.outputs.e2e == 'true'
+    name: e2e (${{ matrix.suite }})
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [install, modules, ingress, receiver, chaos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - id: settings
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'EOF'
+          import json
+          from pathlib import Path
+          deploy = json.loads(Path("jomaa-deploy/config.json").read_text())
+          e2e = json.loads(Path("jomaa-deploy/e2e/config.json").read_text())
+          print(f"cloudflared={deploy['tunnel']['cloudflaredVersion']}")
+          print(f"cache={Path(e2e['cloudflaredCache']).expanduser()}")
+          print(f"artifacts={e2e['artifactDirectory']}")
+          EOF
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.settings.outputs.cache }}
+          key: cloudflared-${{ runner.os }}-${{ runner.arch }}-${{ steps.settings.outputs.cloudflared }}
+      - run: python3 jomaa-deploy/e2e/harness.py "${{ matrix.suite }}"
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-${{ matrix.suite }}
+          path: ${{ steps.settings.outputs.artifacts }}/${{ matrix.suite }}
+          if-no-files-found: ignore
+
   deploy:
     needs: [verify, check]
+    concurrency:
+      group: jomaa-deploy-${{ github.ref }}
+      cancel-in-progress: false
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verify.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10

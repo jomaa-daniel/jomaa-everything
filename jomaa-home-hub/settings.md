@@ -38,3 +38,16 @@ script holds the Tailscale API token, and its own settings are in
 | `tailscale.observationMaxAgeSeconds` | whole number | Age after which observed users, devices and jerry's status are shown as out of date, and opening the page checks again.                                                                                                                  |
 | `tailscale.downloadUrl`              | https URL    | Where the setup steps send people to install Tailscale.                                                                                                                                                                                  |
 | `tailscale.adminUsersUrl`            | https URL    | The Tailscale admin console's users page, where the owner invites people.                                                                                                                                                                |
+
+## secrets
+
+The owner-only Secrets page at `/secrets`, which edits environment files and
+reruns the deployment workflow.
+
+| Key                           | Type         | Meaning                                                                                                                                                                             |
+| ----------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `secrets`                     | object       | Settings for the Secrets page.                                                                                                                                                      |
+| `secrets.envFiles`            | list         | Environment files the page can read and write, as repository paths resolved from the release root the hub runs in. Any other file is refused.                                       |
+| `secrets.ghCommand`           | string       | Absolute path of the GitHub CLI on the server. The hub runs `auth token` with it on each request for the token that reruns the deployment workflow, within `github.timeoutSeconds`. |
+| `secrets.deployConfig`        | string       | The deployment's settings file, resolved from the release root. The hub reads `repo`, `github.api`, `github.workflow`, `github.timeoutSeconds` and `hubPasswordMinLength` from it.  |
+| `secrets.redeployPollSeconds` | whole number | How often the page asks for the status of a redeploy run.                                                                                                                           |

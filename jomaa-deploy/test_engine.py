@@ -1,4 +1,6 @@
 """Engine checks: modules deploy, fail, stay unchanged and disappear independently of each other."""
+import contextlib
+import io
 import json
 import shutil
 import unittest
@@ -13,6 +15,13 @@ from modules.base import expand, unit_text
 
 ALL_JOBS = {"check (app)": "success", "check (bench)": "success"}
 APP_WITHOUT_UNIT = {k: v for k, v in APP.items() if k != "unit"}
+
+
+RECORD_FIELDS = {"name", "kind", "directory", "revision", "fingerprint", "declaration", "failed"}
+
+
+class Crash(BaseException):
+    """Stops an activation the way a killed process does: no handler catches it."""
 
 
 class EngineTest(ModuleTestCase):
@@ -170,6 +179,27 @@ class EngineTest(ModuleTestCase):
         self.assertEqual(result["modules"]["web"], "unchanged")
         self.assertEqual(self.restarted(ctx), set())
 
+    def test_static_site_serving_other_bytes_fails_and_keeps_its_previous_directory(self):
+        first, _ = self.first_deployment()
+        self.write("web/one.example.org/index.html", "one, second version")
+        ctx = self.context(self.commit(), served={"one.example.org": b"one"})
+        result = engine.activate(ctx, ALL_JOBS)
+        self.assertEqual(result["modules"]["one.example.org"], "failed")
+        self.assertEqual(ctx.sites.load(), {"one.example.org": str(first.release / "web/one.example.org")})
+        self.assertTrue(json.loads((self.deploy_dir / "modules/one.example.org/record.json").read_text())["failed"])
+
+    def test_site_with_a_missing_asset_fails_alone(self):
+        self.add_all()
+        self.write("web/two.example.org/index.html", '<script src="app.js"></script>')
+        self.write("web/one.example.org/index.html", '<link rel="stylesheet" href="style.css">')
+        self.write("web/one.example.org/style.css", "body {}")
+        ctx = self.context(self.commit())
+        result = engine.activate(ctx, ALL_JOBS)
+        self.assertEqual(result["modules"]["two.example.org"], "failed")
+        self.assertEqual(result["modules"]["one.example.org"], "deployed")
+        self.assertEqual(result["modules"]["web"], "deployed")
+        self.assertEqual(ctx.sites.load(), {"one.example.org": str(ctx.release / "web/one.example.org")})
+
     def test_site_change_redeploys_only_that_site_and_server_change_the_server(self):
         self.first_deployment()
         self.write("web/one.example.org/index.html", "one, second version")
@@ -265,6 +295,130 @@ class EngineTest(ModuleTestCase):
         result = engine.activate(ctx, ALL_JOBS)
         self.assertEqual(result["modules"]["tool"], "deployed")
         self.assertEqual(self.built(ctx), {"tool-build", "tool-run"})
+
+    def test_failing_self_check_keeps_current_and_reports_partial(self):
+        first, result = self.first_deployment()
+        self.assertEqual(result["engine"], "deployed")
+        self.assertEqual((self.deploy_dir / "current").resolve(), first.release)
+        self.write("jomaa-deploy/deploy.py", "raise SystemExit(1)\n")
+        self.write("app/server.py", "# app, second version\n")
+        ctx = self.context(self.commit("broken receiver"))
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            result = engine.activate(ctx, ALL_JOBS)
+        self.assertEqual(result["engine"], "failed")
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["modules"]["app"], "deployed")
+        self.assertTrue(all(status in engine.SUCCESS for status in result["modules"].values()), result)
+        self.assertEqual((self.deploy_dir / "current").resolve(), first.release)
+        self.assertEqual((self.deploy_dir / "modules/app/current").resolve(), ctx.release)
+        self.assertIn("self-check", errors.getvalue())
+
+    def crash_on_app_health(self, ctx):
+        """Make the app's health check stop the activation with an exception that nothing catches."""
+        def healthy(check):
+            if check["url"] == "http://127.0.0.1:9001/healthz":
+                raise Crash()
+            return True
+        ctx.healthy = healthy
+        with self.assertRaises(Crash):
+            engine.activate(ctx, ALL_JOBS)
+
+    def watch_build(self, ctx, seen):
+        """Record the app pointer and unit text when the app's build starts."""
+        original = ctx.run
+
+        def run(*args, cwd=None):
+            if args == ("build-app",):
+                pointer = self.deploy_dir / "modules/app/current"
+                seen.append((pointer.resolve() if pointer.exists() else None,
+                             (self.unit_dir / "jomaa-app.service").read_text()))
+            original(*args, cwd=cwd)
+        ctx.run = run
+
+    def test_deployment_that_stopped_mid_way_is_restored_then_redeployed(self):
+        first, _ = self.first_deployment()
+        old_unit = (self.unit_dir / "jomaa-app.service").read_text()
+        pointer = self.deploy_dir / "modules/app/current"
+        record_file = self.deploy_dir / "modules/app/record.json"
+        pending_file = self.deploy_dir / "modules/app/pending.json"
+        recorded = record_file.read_text()
+        self.write("app/server.py", "# app, second version\n")
+        sha = self.commit()
+        crashed = self.context(sha)
+        self.crash_on_app_health(crashed)
+        self.assertEqual(json.loads(pending_file.read_text()),
+                         {"revision": sha, "snapshot": {"pointer": str(first.release), "unit": old_unit}})
+        self.assertEqual(record_file.read_text(), recorded)
+        self.assertEqual(pointer.resolve(), crashed.release)
+        ctx = self.context(sha)
+        seen = []
+        self.watch_build(ctx, seen)
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            result = engine.activate(ctx, ALL_JOBS)
+        self.assertIn("app stopped while deploying", errors.getvalue())
+        self.assertEqual(seen, [(first.release, old_unit)])
+        self.assertEqual(result["modules"]["app"], "deployed")
+        self.assertEqual(pointer.resolve(), ctx.release)
+        self.assertFalse(pending_file.exists())
+        record = json.loads(record_file.read_text())
+        self.assertEqual((record["revision"], record["failed"]), (sha, False))
+        self.assertEqual(set(record), RECORD_FIELDS)
+
+    def test_stopped_first_run_service_restores_the_unit_text_it_replaced(self):
+        old_unit = "[Service]\nExecStart=/previous/deployer/hub\n"
+        (self.unit_dir / "jomaa-app.service").write_text(old_unit)
+        record_file = self.deploy_dir / "modules/app/record.json"
+        pending_file = self.deploy_dir / "modules/app/pending.json"
+        self.add_all()
+        sha = self.commit()
+        self.crash_on_app_health(self.context(sha))
+        self.assertFalse(record_file.exists())
+        self.assertEqual(json.loads(pending_file.read_text())["snapshot"], {"pointer": None, "unit": old_unit})
+        self.assertNotEqual((self.unit_dir / "jomaa-app.service").read_text(), old_unit)
+        ctx = self.context(sha)
+        with contextlib.redirect_stderr(io.StringIO()):
+            result = engine.activate(ctx, {**ALL_JOBS, "check (app)": "failure"})
+        self.assertEqual(result["modules"]["app"], "ineligible")
+        self.assertEqual((self.unit_dir / "jomaa-app.service").read_text(), old_unit)
+        self.assertFalse((self.deploy_dir / "modules/app/current").exists())
+        self.assertIn(("systemctl", "--user", "restart", "jomaa-app.service"), ctx.calls)
+        self.assertFalse(pending_file.exists())
+        self.assertEqual(json.loads(record_file.read_text()),
+                         {"name": "app", "kind": "Service", "directory": "app", "revision": None,
+                          "fingerprint": None, "declaration": None, "failed": True})
+        retry = self.context(sha)
+        self.assertEqual(engine.activate(retry, ALL_JOBS)["modules"]["app"], "deployed")
+
+    def test_record_written_by_c187fc0_restores_its_version_when_a_change_fails(self):
+        first, _ = self.first_deployment()
+        old_unit = (self.unit_dir / "jomaa-app.service").read_text()
+        record_file = self.deploy_dir / "modules/app/record.json"
+        # The record as c187fc0's engine.deploy writes it after a successful deployment.
+        record = {"name": "app", "kind": "Service", "directory": "app", "revision": first.sha,
+                  "fingerprint": "f" * 64, "declaration": APP, "failed": False}
+        record_file.write_text(json.dumps(record, indent=2) + "\n")
+        self.assertEqual(engine.records(self.deploy_dir)["app"], record)
+        self.write("app/server.py", "# broken app\n")
+        ctx = self.context(self.commit())
+        checks = []
+
+        def healthy(check):
+            checks.append(check["url"])
+            # The new version is unhealthy; the restored one answers again.
+            return check["url"] != "http://127.0.0.1:9001/healthz" or checks.count(check["url"]) > 1
+        ctx.healthy = healthy
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            result = engine.activate(ctx, ALL_JOBS)
+        self.assertNotIn("does not load", errors.getvalue())
+        self.assertIn("build-app", self.built(ctx))
+        self.assertEqual(result["modules"]["app"], "failed")
+        self.assertEqual((self.deploy_dir / "modules/app/current").resolve(), first.release)
+        self.assertEqual((self.unit_dir / "jomaa-app.service").read_text(), old_unit)
+        self.assertEqual(checks.count("http://127.0.0.1:9001/healthz"), 2)
+        self.assertIn("app.example.org", self.tunnel.read_text())
+        self.assertEqual(result["ingress"]["dns"]["app.example.org"], "unchanged")
+        self.assertEqual(json.loads(record_file.read_text()), {**record, "failed": True})
+        self.assertFalse((self.deploy_dir / "modules/app/pending.json").exists())
 
     def test_route_claimed_by_two_modules_is_kept_by_the_first(self):
         self.add_all()

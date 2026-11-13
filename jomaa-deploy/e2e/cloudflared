@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""cloudflared for the e2e jerry.
+
+"tunnel run" is an HTTPS edge proxy: it reads the ingress rules of the --config file and sends each
+request to the service of the first rule whose hostname and path regular expression match, like
+cloudflared. Every other command, such as "tunnel ingress validate" and "tunnel ingress rule", runs the
+real cloudflared. The JSON file named by the JOMAA_E2E_EDGE environment variable gives the real binary,
+the certificate and key, the listening port and the origin timeout.
+"""
+from __future__ import annotations
+
+import http.client
+import json
+import os
+import re
+import socket
+import ssl
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
+
+EDGE_ENV = "JOMAA_E2E_EDGE"
+HOP_HEADERS = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers",
+               "transfer-encoding", "upgrade", "content-length"}
+ORIGIN_UNREACHABLE = 502
+ORIGIN_TIMEOUT = 524
+STATUS_SERVICE = "http_status:"
+
+
+def edge_settings() -> dict:
+    with open(os.environ[EDGE_ENV]) as file:
+        return json.load(file)
+
+
+def config_path(argv: list[str]) -> str | None:
+    for i, argument in enumerate(argv):
+        if argument == "--config" and i + 1 < len(argv):
+            return argv[i + 1]
+        if argument.startswith("--config="):
+            return argument.split("=", 1)[1]
+    return None
+
+
+def words(argv: list[str]) -> list[str]:
+    """Arguments that are not options or the value of --config."""
+    found, skip = [], False
+    for argument in argv:
+        if skip:
+            skip = False
+        elif argument == "--config":
+            skip = True
+        elif not argument.startswith("-"):
+            found.append(argument)
+    return found
+
+
+def scalar(text: str) -> object:
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return text.strip().strip("'\"")
+
+
+def parse_ingress(text: str) -> list[dict]:
+    """The ingress rules of a tunnel configuration in the block style that routing.render writes."""
+    rules: list[dict] = []
+    inside = False
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line.startswith(" "):
+            inside = line.rstrip() == "ingress:"
+            continue
+        if not inside:
+            continue
+        item = line.strip()
+        if item.startswith("- "):
+            rules.append({})
+            item = item[2:]
+        if not rules:
+            raise ValueError(f"ingress entry outside a rule: {line!r}")
+        key, _, value = item.partition(":")
+        rules[-1][key.strip()] = scalar(value.strip())
+    return rules
+
+
+def host_matches(pattern: str, host: str) -> bool:
+    pattern, host = pattern.lower(), host.lower()
+    if pattern.startswith("*."):
+        return host.endswith(pattern[1:])
+    return pattern == host
+
+
+def match(rules: list[dict], host: str, path: str) -> dict | None:
+    """The first rule whose hostname and path match, as cloudflared picks it."""
+    host = host.split(":")[0]
+    for rule in rules:
+        if rule.get("hostname") and not host_matches(str(rule["hostname"]), host):
+            continue
+        if rule.get("path") and re.search(str(rule["path"]), path) is None:
+            continue
+        return rule
+    return None
+
+
+def make_handler(rules: list[dict], origin_timeout: float, handshake_timeout: float) -> type:
+    class Edge(BaseHTTPRequestHandler):
+        server_version = "jomaa-e2e-edge"
+        protocol_version = "HTTP/1.1"
+
+        def setup(self) -> None:
+            self.request.settimeout(handshake_timeout)
+            self.request.do_handshake()
+            self.request.settimeout(None)
+            super().setup()
+
+        def log_message(self, fmt, *args) -> None:
+            print(f"{self.headers.get('Host') if hasattr(self, 'headers') else '-'} {fmt % args}", flush=True)
+
+        def reply(self, status: int, body: bytes = b"", headers: list[tuple[str, str]] = ()) -> None:
+            self.send_response(status)
+            for name, value in headers:
+                self.send_header(name, value)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Connection", "close")
+            self.end_headers()
+            self.wfile.write(body)
+            self.close_connection = True
+
+        def forward(self) -> None:
+            length = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(length) if length else None
+            rule = match(rules, self.headers.get("Host") or "", urlsplit(self.path).path)
+            service = str(rule["service"]) if rule else f"{STATUS_SERVICE}404"
+            if service.startswith(STATUS_SERVICE):
+                self.reply(int(service[len(STATUS_SERVICE):]))
+                return
+            origin = urlsplit(service)
+            if origin.scheme not in ("http", "https"):
+                self.reply(ORIGIN_UNREACHABLE, b"origin is not HTTP")
+                return
+            connection_class = http.client.HTTPSConnection if origin.scheme == "https" else http.client.HTTPConnection
+            extra = {"context": ssl._create_unverified_context()} if origin.scheme == "https" else {}
+            connection = connection_class(origin.hostname, origin.port, timeout=origin_timeout, **extra)
+            headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP_HEADERS}
+            try:
+                connection.request(self.command, self.path, body=body, headers=headers)
+                response = connection.getresponse()
+                content = response.read()
+            except (TimeoutError, socket.timeout):
+                self.reply(ORIGIN_TIMEOUT, b"origin timed out")
+                return
+            except (OSError, http.client.HTTPException):
+                self.reply(ORIGIN_UNREACHABLE, b"origin unreachable")
+                return
+            finally:
+                connection.close()
+            self.reply(response.status, content,
+                       [(k, v) for k, v in response.getheaders() if k.lower() not in HOP_HEADERS])
+
+        def handle_one_request(self) -> None:
+            try:
+                super().handle_one_request()
+            except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
+                self.close_connection = True
+
+        do_GET = do_POST = do_PUT = do_DELETE = do_HEAD = do_PATCH = do_OPTIONS = forward
+
+    return Edge
+
+
+class EdgeServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+    def handle_error(self, request, client_address) -> None:
+        print(f"edge connection from {client_address[0]} failed: {sys.exc_info()[1]}", flush=True)
+
+
+def serve(config: str, settings: dict) -> None:
+    with open(config) as file:
+        rules = parse_ingress(file.read())
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(settings["certificate"], settings["key"])
+    timeout = settings["originTimeoutSeconds"]
+    server = EdgeServer(("0.0.0.0", settings["port"]), make_handler(rules, timeout, timeout))
+    server.socket = context.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
+    print(f"edge proxy on port {settings['port']} with {len(rules)} ingress rules from {config}", flush=True)
+    server.serve_forever()
+
+
+def main(argv: list[str]) -> int:
+    settings = edge_settings()
+    command = words(argv)
+    config = config_path(argv)
+    if command[:1] == ["tunnel"] and "run" in command and config is not None:
+        serve(config, settings)
+        return 0
+    os.execv(settings["cloudflared"], [settings["cloudflared"], *argv])
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

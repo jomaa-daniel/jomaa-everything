@@ -12,10 +12,13 @@ import { Hub } from "./hub.js";
 import { HealthStore } from "./health/store.js";
 import { Organization } from "./organization.js";
 import { Accounts } from "./accounts.js";
-import { settings } from "./settings.js";
 import { TailscaleService } from "./tailscale.js";
 import { TailscaleStore } from "./tailscale-store.js";
 import { CommandGateway, schemaText, scriptPath } from "./tailscale-gateway.js";
+import { deploySettings, releaseRoot, settings } from "./settings.js";
+import { EnvFiles } from "./secrets.js";
+import { DeployWorkflow, GitHubCli } from "./redeploy.js";
+import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { stderrLog, type Log } from "./log.js";
 import { MatterNotReadyError, type MatterAdmin, type MatterNodes } from "./matter/nodes.js";
@@ -118,6 +121,16 @@ async function run(log: Log): Promise<void> {
       store,
       cliOptions.config,
       organization,
+      {
+        files: new EnvFiles(fileURLToPath(releaseRoot), settings.secrets.envFiles, deploySettings.hubPasswordMinLength),
+        workflow: new DeployWorkflow({
+          api: deploySettings.githubApi,
+          repo: deploySettings.repo,
+          workflow: deploySettings.workflow,
+          timeoutMs: deploySettings.githubTimeoutSeconds * 1000,
+        }),
+        cli: new GitHubCli(settings.secrets.ghCommand, deploySettings.githubTimeoutSeconds * 1000),
+      },
       tailscale,
     );
     const cert = process.env["HUB_TLS_CERT"];

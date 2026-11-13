@@ -111,6 +111,7 @@ class World {
       new HealthStore(":memory:"),
       undefined,
       undefined,
+      undefined,
       this.service,
     );
     this.url = await serve(api.handle);

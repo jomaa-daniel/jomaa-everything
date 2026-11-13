@@ -1,0 +1,12 @@
+{
+  "name": "fx-checks",
+  "inputs": [],
+  "checks": [
+    [
+      "{python}",
+      "-c",
+      "print('fx-checks')"
+    ]
+  ],
+  "state": []
+}

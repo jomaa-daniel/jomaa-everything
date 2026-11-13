@@ -29,6 +29,7 @@ GitHub Actions secret `JOMAA_DEPLOY_SECRET` holds the same value.
 | `moduleTimeoutSeconds` | seconds | Time budget of one module's build, activation and health check, and separately of its rollback. Commands and health waits stop when it runs out. |
 | `healthWaitSeconds` | seconds | How long a restarted service may take to pass its health check. |
 | `healthRequestTimeoutSeconds` | seconds | Deadline of each health check request. |
+| `selfCheckTimeoutSeconds` | seconds | Deadline of the new release's `deploy.py self-check`, run before the `current` pointer moves to it. |
 | `hubPasswordMinLength` | characters | Minimum length of the hub's `HUB_PASSWORD`, checked by the installer. |
 | `tunnel` | object | The locally managed Cloudflare tunnel. |
 | `tunnel.name` | string | Tunnel created or selected by the installer, unless `--tunnel-name` names another. |
@@ -45,6 +46,7 @@ GitHub Actions secret `JOMAA_DEPLOY_SECRET` holds the same value.
 | `github` | object | GitHub access. |
 | `github.api` | URL | GitHub API base URL, for workflow runs, their jobs and cloudflared releases. |
 | `github.remote` | URL | Base URL the receiver fetches `main` from, followed by `/OWNER/REPOSITORY.git`. |
+| `github.workflow` | path | Repository path of the deployment workflow. The receiver accepts only runs of it, and the hub's Secrets page reruns its latest push run on `main`. |
 | `github.timeoutSeconds` | seconds | Deadline of each GitHub API request. |
 | `github.jobsPerPage` | count | Page size when reading a workflow run's jobs. |
 | `notify` | object | Retries of `notify.py` in GitHub Actions. |
