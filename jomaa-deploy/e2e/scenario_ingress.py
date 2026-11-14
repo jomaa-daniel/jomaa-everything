@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import math
 import time
-import unittest
 import uuid
 
 import harness
@@ -179,13 +178,12 @@ class Ingress(harness.E2ETestCase):
         for host in (gone, kept, new):
             self.assertEqual(self.records_for(host), [], host)
 
-    @unittest.expectedFailure
     def test_4_cloudflare_hangs(self):
         """I4: with Cloudflare hanging on more hosts than notify.deadlineSeconds allows at
         cloudflare.timeoutSeconds each, the activation still answers within notify.deadlineSeconds.
 
-        Cloudflare requests have their own timeout outside the module budget, so the ingress phase takes
-        one timeout per hanging host and the answer comes after notify.py gave up.
+        Cloudflare requests count against the ingress phase's moduleTimeoutSeconds budget, so the hosts left
+        when it runs out fail at once.
         """
         h = self.h
         folder = "fx-hang"

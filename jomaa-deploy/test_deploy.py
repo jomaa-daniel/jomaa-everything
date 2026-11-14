@@ -1,6 +1,7 @@
 """Receiver, release and installation checks use temporary repositories and mocked services."""
 
 import contextlib
+import fcntl
 import hashlib
 import hmac
 import io
@@ -77,7 +78,7 @@ class DeploymentTest(ModuleTestCase):
         (self.deploy_dir / "webhook-secret").write_bytes(secret)
         ready = threading.Event()
         servers = []
-        original_server = deploy.HTTPServer
+        original_server = deploy.ThreadingHTTPServer
 
         def create_server(address, handler):
             server = original_server((address[0], 0), handler)
@@ -93,7 +94,7 @@ class DeploymentTest(ModuleTestCase):
             switch_link(self.deploy_dir / "current", new)
             return {"status": "partial", "modules": {"app": "failed"}}
 
-        with mock.patch.object(deploy, "HTTPServer", side_effect=create_server), \
+        with mock.patch.object(deploy, "ThreadingHTTPServer", side_effect=create_server), \
                 mock.patch.object(deploy, "verify_run") as verified, \
                 mock.patch.object(deploy, "deploy_revision", side_effect=deployed) as applied:
             thread = threading.Thread(target=deploy.serve, args=(self.source, self.deploy_dir, "example/hub"),
@@ -119,10 +120,49 @@ class DeploymentTest(ModuleTestCase):
         verified.assert_called_once_with("example/hub", self.second, 12, 1)
         applied.assert_called_once_with(self.source, self.deploy_dir, "example/hub", self.second, 12, 1)
 
+    def test_request_during_an_activation_answers_409_at_once(self):
+        secret = b"a-fixture-secret-with-at-least-32-bytes"
+        (self.deploy_dir / "webhook-secret").write_bytes(secret)
+        ready = threading.Event()
+        servers = []
+        original_server = deploy.ThreadingHTTPServer
+
+        def create_server(address, handler):
+            server = original_server((address[0], 0), handler)
+            servers.append(server)
+            ready.set()
+            return server
+
+        switch_link(self.deploy_dir / "current", deploy.extract_release(self.repo, self.first, self.deploy_dir))
+        with mock.patch.object(deploy, "ThreadingHTTPServer", side_effect=create_server), \
+                mock.patch.object(deploy, "verify_run") as verified, \
+                (self.deploy_dir / "deploy.lock").open("w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            thread = threading.Thread(target=deploy.serve, args=(self.source, self.deploy_dir, "example/hub"),
+                                      daemon=True)
+            thread.start()
+            self.assertTrue(ready.wait(3))
+            try:
+                url = f"http://127.0.0.1:{servers[0].server_port}{deploy.WEBHOOK_PATH}"
+                body = json.dumps({"repo": "example/hub", "sha": self.second, "run_id": 12, "attempt": 1,
+                                   "timestamp": int(time.time())}).encode()
+                signature = "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest()
+                for _ in range(2):
+                    request = urllib.request.Request(url, data=body, headers={"X-Jomaa-Signature": signature})
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        urllib.request.urlopen(request, timeout=5)
+                    self.assertEqual(error.exception.code, 409)
+                    error.exception.close()
+                self.assertTrue(thread.is_alive())
+            finally:
+                servers[0].shutdown()
+                thread.join(timeout=5)
+        verified.assert_not_called()
+
     def test_self_check_loads_the_receiver_without_its_secret_or_a_socket(self):
         self.assertFalse((self.deploy_dir / "webhook-secret").exists())
         with mock.patch.dict(os.environ, {"JOMAA_DEPLOY_HOME": str(self.deploy_dir)}), \
-                mock.patch.object(deploy, "HTTPServer") as server, \
+                mock.patch.object(deploy, "ThreadingHTTPServer") as server, \
                 mock.patch.object(deploy, "receiver", wraps=deploy.receiver) as built, \
                 contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(deploy.main(["self-check"]), 0)
@@ -231,6 +271,9 @@ class DeploymentTest(ModuleTestCase):
         results.mkdir()
         for name in ("r3-12-1.json", "r4-12-1.json"):
             (results / name).write_text("{}")
+        interrupted = releases / f"{deploy.RELEASE_TEMP}interrupted"
+        (interrupted / "release/jomaa-deploy").mkdir(parents=True)
+        (interrupted / "source.tar").write_text("partial")
         deploy.prune_releases(self.deploy_dir, keep=3)
         self.assertEqual(sorted(p.name for p in releases.iterdir()), ["r0", "r1", "r2", "r4", "r5", "r6"])
         self.assertEqual([p.name for p in results.iterdir()], ["r4-12-1.json"])

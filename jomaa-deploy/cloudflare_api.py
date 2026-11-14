@@ -5,6 +5,7 @@ import json
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 
 
 class CloudflareError(Exception):
@@ -14,7 +15,8 @@ class CloudflareError(Exception):
 class Cloudflare:
     """Minimal Cloudflare v4 API client: just the calls this script needs."""
 
-    def __init__(self, token: str, base: str, timeout: float):
+    def __init__(self, token: str, base: str, timeout: Callable[[], float]):
+        """timeout gives the seconds each request may take when it starts, and raises when none remain."""
         if not token:
             raise CloudflareError("CLOUDFLARE_API_TOKEN is not set")
         self.token = token
@@ -26,8 +28,9 @@ class Cloudflare:
         req = urllib.request.Request(url, method=method, data=json.dumps(body).encode() if body is not None else None)
         req.add_header("Authorization", f"Bearer {self.token}")
         req.add_header("Content-Type", "application/json")
+        timeout = self.timeout()
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as res:
+            with urllib.request.urlopen(req, timeout=timeout) as res:
                 payload = json.loads(res.read() or b"{}")
         except urllib.error.HTTPError as e:
             try:

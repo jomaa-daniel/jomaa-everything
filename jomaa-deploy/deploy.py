@@ -16,7 +16,7 @@ import sys
 import tarfile
 import tempfile
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -35,6 +35,7 @@ CONFIG = settings.CONFIG
 SOURCE = Path(__file__).resolve().parent.parent
 UNIT_DIR = settings.path(CONFIG["unitDirectory"])
 WEBHOOK_PATH = settings.WEBHOOK_PATH
+RELEASE_TEMP = "release-"
 ERRORS = (DeployError, CloudflareError, OSError, ValueError, subprocess.SubprocessError, urllib.error.URLError)
 
 
@@ -102,7 +103,7 @@ def extract_release(repo: Path, sha: str, deploy_dir: Path) -> Path:
         if (target / ".revision").read_text().strip() != sha:
             raise DeployError(f"existing release {target} has the wrong revision")
         return target
-    with tempfile.TemporaryDirectory(prefix="release-", dir=releases) as tmp:
+    with tempfile.TemporaryDirectory(prefix=RELEASE_TEMP, dir=releases) as tmp:
         folder = Path(tmp)
         archive = folder / "source.tar"
         with archive.open("wb") as out:
@@ -121,9 +122,13 @@ def extract_release(repo: Path, sha: str, deploy_dir: Path) -> Path:
 def prune_releases(deploy_dir: Path, keep: int) -> None:
     """Delete old releases, keeping the newest, the current one and every module's current and previous one.
 
-    Stored activation results go with their release.
+    Stored activation results go with their release. Temporary folders of interrupted extractions are deleted;
+    callers hold deploy.lock, so no extraction is running.
     """
     releases = deploy_dir / "releases"
+    for leftover in releases.glob(RELEASE_TEMP + "*"):
+        if leftover.is_dir() and not (leftover / ".revision").is_file():
+            shutil.rmtree(leftover, ignore_errors=True)
     pointers = [deploy_dir / "current", *deploy_dir.glob("modules/*/current"), *deploy_dir.glob("modules/*/previous")]
     used = {pointer.resolve() for pointer in pointers if pointer.exists()}
     built = sorted((r for r in releases.iterdir() if (r / ".revision").is_file()),
@@ -310,7 +315,7 @@ def receiver(source: Path, deploy_dir: Path, repo: str, secret: bytes) -> type[B
                 print(f"deployment failed: {e}", file=sys.stderr, flush=True)
                 self.respond(500, {"error": "deployment failed; see server logs"})
             if current.resolve() != before:
-                self.server.reload_after_response = True
+                self.server.shutdown()
 
         def log_message(self, fmt, *args) -> None:
             # Do not log signatures, request bodies, or credentials.
@@ -325,15 +330,15 @@ def serve(source: Path, deploy_dir: Path, repo: str) -> None:
         raise DeployError("deployment webhook secret is missing or too short")
     handler = receiver(source, deploy_dir, repo, secret)
     port = CONFIG["webhook"]["port"]
-    server = HTTPServer(("127.0.0.1", port), handler)
-    server.reload_after_response = False
+    server = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    server.daemon_threads = False
     print(f"Deployment receiver listening on 127.0.0.1:{port}", flush=True)
     try:
-        while not server.reload_after_response:
-            server.handle_request()
+        server.serve_forever()
     finally:
         server.server_close()
-    # The systemd service uses Restart=always, loading the new release on exit.
+    # A response that moved current stops the server once its requests finish; the systemd service, with
+    # Restart=always, then loads the new release.
 
 
 def self_check(source: Path, deploy_dir: Path, repo: str) -> None:

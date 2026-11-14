@@ -163,9 +163,10 @@ revision is ignored. It extracts the revision into `releases/<sha>` and hands
 activation to that release's own code: it runs
 `deploy.py activate --sha SHA --run-id N --attempt N --result FILE` from the
 new release while holding `deploy.lock`, with its output in the receiver's
-journal. The activation writes its result to the file, and the receiver
+journal. Requests are served concurrently: one that arrives while an
+activation holds the lock answers 409 at once, and `notify.py` retries it. The activation writes its result to the file, and the receiver
 answers the request with the result and the revision. The receiver restarts
-after answering when the `current` pointer moved, which it does at the end of
+after answering, once its other requests finish, when the `current` pointer moved, which it does at the end of
 every activation whose new receiver passes its self-check, so the next
 request runs the new receiver.
 
@@ -183,7 +184,8 @@ and it keeps its deployed version.
 Each module's fingerprint is a hash of the git objects of its folder's
 top-level entries and of its `inputs` at the revision, the path and content of
 every source file in the release that defines one of the module's classes
-(its `deploy_module.py` and the `modules/*.py` it inherits from), the SHA-256
+(its `deploy_module.py` and the `modules/*.py` it inherits from, also when
+installation runs the engine from the checkout), the SHA-256
 of each `state` path that is a file in the local checkout (such as the hub's
 `.env` and `config.json`; folders such as `data` are left out), together
 with its declaration. Editing a state file therefore redeploys and restarts
@@ -220,7 +222,10 @@ deployment request; the sender retries until the receiver answers. DNS is
 reconciled per hostname: records carry the `Managed by jomaa-deploy`
 comment, existing CNAMEs to this tunnel are adopted, a conflicting record is
 reported and left alone, and only records with that comment pointing to this
-tunnel are deleted. Hostnames under management are listed in `ingress.json`.
+tunnel are deleted. Cloudflare requests count against the ingress phase's
+budget; once it runs out, every hostname not yet reconciled reports `failed`
+and is retried by the next activation. Hostnames under management are listed
+in `ingress.json`.
 
 Before the commands run, the live services and routes are written to the
 file a command declares as `inventory`. The health Worker bundles that file.
@@ -232,7 +237,8 @@ network. When it passes, the `current` pointer moves to the new release and
 the result reports `"engine": "deployed"`. When it fails, `current` stays on
 the running receiver, the result reports `"engine": "failed"` and the status
 is `partial`; the modules keep what this activation deployed. Releases beyond
-`releasesKept` are pruned unless a pointer still uses them.
+`releasesKept` are pruned unless a pointer still uses them, along with any
+`releases/release-*` folder left by an extraction that was interrupted.
 
 ### Result
 
