@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { Accounts } from "./accounts.js";
 import { hubApi } from "./hub-api.js";
+import { Clicks } from "./clicks.js";
 import { Hub } from "./hub.js";
 import { Fields, parseJson } from "./json.js";
 import { newLog } from "./log.js";
@@ -163,6 +164,7 @@ async function setup(ghCommand: string = gh.loggedIn): Promise<Env> {
     matter: noMatter,
     password: ownerPassword,
     accounts,
+    prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
     log,
     health: null,
     layoutPath: null,

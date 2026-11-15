@@ -11,6 +11,7 @@ import { sessionToken } from "../api.js";
 import { hubApi } from "../hub-api.js";
 import { Hub } from "../hub.js";
 import { Accounts } from "../accounts.js";
+import { Clicks } from "../clicks.js";
 import { silentLog } from "../log.js";
 import type { MatterAdmin, NodeSummary } from "../matter/nodes.js";
 import { HealthStore } from "./store.js";
@@ -66,6 +67,7 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     matter,
     password: "test-hub-password",
     accounts,
+    prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
     log: silentLog,
     health: { store, i2c: settings.i2c },
     layoutPath: null,
@@ -326,6 +328,7 @@ await test("device inventory includes registered Matter nodes without issuing Pi
       matter: controller,
       password: "inventory-test-password",
       accounts: new Accounts(":memory:", settings.accounts),
+      prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
       log: silentLog,
       health: { store, i2c: settings.i2c },
       layoutPath: null,

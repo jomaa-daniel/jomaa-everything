@@ -1,13 +1,49 @@
 ---
 name: pico-imaging-bench
-description: Image, provision, inspect, and troubleshoot a USB-connected Pico for the Jomaa hub's Wi-Fi health reporting, including RP2040 boards with an external ESP8285 radio.
+description: Implement and operate Jomaa Pico Wi-Fi health reporting and I2C streaming, including USB imaging, provisioning, and RP2040 boards with an external ESP8285 radio.
 ---
 
-# Pico imaging and health
+# Pico Wi-Fi features, imaging, and health
 
 Use the scripts in this directory for imaging and verification. Read [README.md](README.md) for command
 arguments and the complete imaging procedure. The implementation shares provisioning with
 `../jomaa-home-hub/scripts/init_pico.py` and firmware with `../jomaa-home-hub/devices/pico-health/`.
+For capture features, read the [stream settings](../jomaa-home-hub/devices/pico-health/stream.md)
+and [receiver API](../jomaa-home-hub/docs/health-monitoring.md).
+
+## I²C and Wi-Fi design rules
+
+1. **Define the acquisition contract.** Device polling, register reads, and passive bus capture require
+   different approaches. Passive observation needs a bus-sampling mechanism such as PIO.
+   An address scan identifies responders, not their measurement protocol.
+   Use the sensor's register and conversion contract. Choose SDA/SCL from the peripheral mapping
+   and actual wiring; valid hardware I²C assignments include nonadjacent GPIO pairs.
+2. **Separate acquisition from delivery.** Choose the sampling schedule independently of network
+   latency. When continuous acquisition is required, use a mechanism that remains active during
+   uploads, with bounded buffers and explicit overflow accounting. Batch uploads without losing
+   sample order or acquisition timestamps; server receipt time describes delivery.
+3. **Budget the entire data path.** Compare the generated data rate with the slowest transport link.
+   For an 8N1 UART, theoretical byte throughput is baud divided by ten. Account for address and
+   length framing, encoding expansion, TLS, radio commands, and mode-switch delays. Wi-Fi bandwidth
+   does not increase the capacity of a UART bridge. Read pins, rates, and limits from committed config.
+4. **Reuse connections for streams.** Repeated TCP/TLS setup consumes time and power. Keep a verified
+   connection open when the delivery contract permits it. Consume each response completely,
+   including HTTP chunk trailers, before the next request. Renew request deadlines without expiring
+   a healthy connection merely because it has been open for a long time.
+5. **Coordinate radio ownership.** On AT radios, control commands and TCP payload share the UART.
+   Serialize their use and coordinate mode transitions. Obtain connection state before entering
+   transparent transfer; cache information such as IP or switch modes safely to refresh it. Ordinary
+   AT queries cannot be interleaved with TLS bytes. Native Pico W networking has a different interface.
+6. **Preserve meaning across retries and compression.** Use boot identifiers, increasing sequences,
+   and idempotent acknowledgments to distinguish retries, loss, and restarts. Use monotonic time
+   with wrap-safe arithmetic for acquisition intervals. Zero-valued bytes are valid data; an empty
+   capture means nothing was captured. Coalesce empty intervals only within the same contiguous
+   stream, preserving boundaries caused by gaps, loss, bus changes, or reboots.
+7. **Design and verify recovery.** Bound connection setup, handshakes, reads, writes, and worker
+   shutdown. A healthy heartbeat does not establish USB-console responsiveness or successful
+   worker shutdown. Test console access, cancellation, reconnection, and startup with acquisition
+   active. Treat missing acknowledgments and timeouts as incomplete operations and choose a
+   bounded recovery path within the authorized task.
 
 ## Script responsibilities
 
@@ -19,7 +55,7 @@ arguments and the complete imaging procedure. The implementation shares provisio
 | `scripts/image_and_test.py` | Imaging with explicit firmware, volume, serial port, and optional UID guard; LittleFS formatting. |
 | `scripts/common.py` | Private files, USB result markers, hub requests, and persisted-report verification. |
 | `../jomaa-home-hub/scripts/init_pico.py` | Shared reporter preparation and USB installation. |
-| `../jomaa-home-hub/devices/pico-health/` | MicroPython reporter and ESP8285 transport installed on the board. |
+| `../jomaa-home-hub/devices/pico-health/` | MicroPython health reporter, I²C collector, and ESP8285 transport installed on the board. |
 
 `setup_pico.py --configure-port` retains the filesystem and replaces startup reporting files.
 `setup_wifi.py --configure-port` formats the filesystem and installs Wi-Fi-only startup. Reimaging
@@ -102,9 +138,12 @@ the hub hostname for SNI and certificate verification. Keep certificate validati
 `TCPStream` implements the MicroPython `io.IOBase` stream protocol (`readinto`, `write`, `ioctl`) so
 the TLS context can wrap it.
 
-The transport uses a 16 KiB UART receive buffer and a 30-second request deadline. An empty UART poll
-does not mean EOF: reads wait for bytes until the deadline. Handle partial writes. Escape passthrough
-and close TCP after a report or failed handshake.
+The UART receive buffer accommodates TLS records. The external stream's `requestTimeoutSeconds`
+comes from the installed stream settings and is renewed for each request. An empty UART poll does
+not mean EOF: reads wait for bytes until the deadline. Handle partial writes. Streaming firmware shares
+one verified TLS connection between health and capture uploads, consumes each framed response fully,
+and closes the connection on errors or when the peer requests closure. Escape passthrough before
+issuing radio commands during recovery.
 
 Set the Pico's UTC clock before TLS validation. The ESP supports `AT+CIPSNTPCFG=1,0,"pool.ntp.org"` and
 `AT+CIPSNTPTIME?`; the driver parses that date into `machine.RTC`. Native Pico W networking uses `ntptime`.

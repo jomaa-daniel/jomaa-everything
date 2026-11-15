@@ -13,6 +13,7 @@ import { HealthStore } from "./health/store.js";
 import type { MatterAdmin, MatterNodes, NodeSummary } from "./matter/nodes.js";
 import { Organization } from "./organization.js";
 import { Accounts } from "./accounts.js";
+import { Clicks } from "./clicks.js";
 import { silentLog } from "./log.js";
 import { serve } from "./testing.js";
 
@@ -73,6 +74,7 @@ test("management edits categories, rooms and assignments without changing report
       matter,
       password: "management-test",
       accounts: new Accounts(":memory:", settings.accounts),
+      prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
       log: silentLog,
       health: { store: health, i2c: settings.i2c },
       layoutPath: path,

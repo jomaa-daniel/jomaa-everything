@@ -15,6 +15,7 @@ import { Accounts } from "./accounts.js";
 import { TailscaleService } from "./tailscale.js";
 import { TailscaleStore } from "./tailscale-store.js";
 import { CommandGateway, schemaText, scriptPath } from "./tailscale-gateway.js";
+import { Clicks } from "./clicks.js";
 import { deploySettings, releaseRoot, settings, settingsFile } from "./settings.js";
 import { EnvFiles } from "./secrets.js";
 import { DeployWorkflow, GitHubCli } from "./redeploy.js";
@@ -77,6 +78,7 @@ async function run(log: Log): Promise<void> {
   let organization: Organization | undefined;
   let accounts: Accounts | undefined;
   let tailscale: TailscaleService | undefined;
+  let clicks: Clicks | undefined;
   let cleanup: ReturnType<typeof setInterval> | undefined;
   try {
     const govee = new GoveeClient(goveeKey, process.env["GOVEE_BASE_URL"] || defaultBaseURL);
@@ -114,11 +116,14 @@ async function run(log: Log): Promise<void> {
         log.with({ component: "tailscale" }),
       );
     }
+    const followed = new Clicks(besideHealth(settings.prefetch.databaseFile));
+    clicks = followed;
     const api = hubApi({
       hub: Hub.build(cfg, govee, matter),
       matter,
       password,
       accounts: people,
+      prefetch: { clicks: followed, settings: settings.prefetch },
       log,
       health: { store, i2c: settings.i2c },
       layoutPath: cliOptions.config,
@@ -185,6 +190,7 @@ async function run(log: Log): Promise<void> {
       health?.close();
       organization?.close();
       accounts?.close();
+      clicks?.close();
     } finally {
       await matter.stop();
     }

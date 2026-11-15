@@ -11,6 +11,7 @@ import { GoveeClient } from "./govee.js";
 import { Hub } from "./hub.js";
 import { HealthStore } from "./health/store.js";
 import { Accounts } from "./accounts.js";
+import { Clicks } from "./clicks.js";
 import { silentLog } from "./log.js";
 import type { MatterAdmin, MatterNodes, NodeSummary } from "./matter/nodes.js";
 import { serve } from "./testing.js";
@@ -70,6 +71,7 @@ test("group edits persist room membership and update the running fan-out", async
       matter: controller,
       password: "test-password",
       accounts: new Accounts(":memory:", settings.accounts),
+      prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
       log: silentLog,
       health: { store, i2c: settings.i2c },
       layoutPath: path,

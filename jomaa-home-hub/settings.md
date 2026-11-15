@@ -39,6 +39,17 @@ script holds the Tailscale API token, and its own settings are in
 | `tailscale.downloadUrl`              | https URL    | Where the setup steps send people to install Tailscale.                                                                                                                                                                                  |
 | `tailscale.adminUsersUrl`            | https URL    | The Tailscale admin console's users page, where the owner invites people.                                                                                                                                                                |
 
+## prefetch
+
+Every hub page prefetches the hub pages it links to, with their scripts and
+styles, once the browser is idle. Pages whose links are followed most go first.
+
+| Key                     | Type         | Meaning                                                                                                                    |
+| ----------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `prefetch`              | object       | Settings for link prefetching.                                                                                             |
+| `prefetch.databaseFile` | string       | SQLite file for how often each page's links are followed, in the same directory as the health database (`HEALTH_DB_PATH`). |
+| `prefetch.concurrency`  | whole number | Prefetch requests a page keeps in flight at once.                                                                          |
+
 ## secrets
 
 The owner-only Secrets page at `/secrets`, which edits environment files and

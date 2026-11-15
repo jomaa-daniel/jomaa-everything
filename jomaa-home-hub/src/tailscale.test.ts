@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { mock, test } from "node:test";
 import { Accounts } from "./accounts.js";
+import { Clicks } from "./clicks.js";
 import { allFeatures, type Command, type Device, type Features, type State } from "./device.js";
 import { Group } from "./group.js";
 import { HealthStore } from "./health/store.js";
@@ -107,6 +108,7 @@ class World {
       matter: noMatter,
       password: ownerPassword,
       accounts: this.accounts,
+      prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
       log: silentLog,
       health: { store: new HealthStore(":memory:", settings.i2c), i2c: settings.i2c },
       layoutPath: null,

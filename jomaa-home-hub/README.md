@@ -72,6 +72,30 @@ state lives in `data/matter`.
 and the project documentation. The hub serves the page at `/home` and its CSS under
 `/home/`; edit `web/home.html` to add another page. It needs no session.
 
+### Link prefetching
+
+Every hub page except the light panel loads `/home/prefetch.js`. Once the
+browser is idle after the page loads, the script asks `GET /api/prefetch`
+for the pages the visitor can open, most-clicked first, with the stylesheets,
+scripts and imported modules each page loads. It then prefetches each
+same-origin page the current page links to, along with that page's files,
+skipping files the current page already loaded. It keeps at most
+`prefetch.concurrency` requests in flight (see [`settings.md`](settings.md)).
+Signed-out visitors get every page, since each one has its own sign-in form;
+a signed-in account gets only the pages its scopes open. Nothing is
+prefetched when the browser asks to save data. Browsers without
+`<link rel="prefetch">` fetch the files into the HTTP cache instead.
+
+Following a same-origin link, by click or middle click, sends
+`POST /api/clicks` with the page's path. The hub counts clicks per page in
+`prefetch.databaseFile`, beside the health database, and accepts only hub page
+paths from same-origin requests.
+
+Pages and their files are served with `Cache-Control: no-cache` and a content
+`ETag`. Chrome opens a prefetched copy for five minutes without asking the hub
+again; other browsers revalidate it, and the hub answers `304 Not Modified`
+while the file is unchanged.
+
 The locally managed Cloudflare tunnel also routes hostname `jomaa.org`, paths `/`,
 `/home`, `/devices`, `/manage`, `/lights`, `/invite`, `/join`, `/permissions`, `/tailscale`, `/secrets` (including assets), and the pages' API requests to the hub on port 8080. Its proxied DNS record
 points to the same tunnel as `hub.jomaa.org`. The apex `/` redirects to `/home`;

@@ -1,0 +1,6 @@
+{
+  "name": "agent-pipeline",
+  "inputs": [],
+  "checks": [["{python}", "-m", "unittest", "discover", "-s", ".", "-q"]],
+  "state": []
+}

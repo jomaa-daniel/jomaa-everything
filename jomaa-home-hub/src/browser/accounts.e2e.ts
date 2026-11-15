@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { chromium, type BrowserContext, type Page } from "playwright-core";
 import { Accounts } from "../accounts.js";
 import { hubApi } from "../hub-api.js";
+import { Clicks } from "../clicks.js";
 import { allFeatures, type Command, type Device, type Features, type State } from "../device.js";
 import { Group } from "../group.js";
 import { HealthStore } from "../health/store.js";
@@ -62,6 +63,7 @@ const api = hubApi({
   matter: noMatter,
   password: ownerPassword,
   accounts: new Accounts(":memory:", settings.accounts),
+  prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
   log: silentLog,
   health: { store: new HealthStore(":memory:", settings.i2c), i2c: settings.i2c },
   layoutPath: null,

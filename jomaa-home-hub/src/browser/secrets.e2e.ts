@@ -21,6 +21,7 @@ import { test } from "node:test";
 import { chromium, type BrowserContext, type Page } from "playwright-core";
 import { Accounts } from "../accounts.js";
 import { hubApi } from "../hub-api.js";
+import { Clicks } from "../clicks.js";
 import { Hub } from "../hub.js";
 import { silentLog } from "../log.js";
 import { MatterNotReadyError, type MatterAdmin } from "../matter/nodes.js";
@@ -105,6 +106,7 @@ const api = hubApi({
   matter: noMatter,
   password: ownerPassword,
   accounts,
+  prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
   log: silentLog,
   health: null,
   layoutPath: null,
