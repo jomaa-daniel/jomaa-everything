@@ -9,6 +9,7 @@ import { GoveeClient } from "./govee.js";
 import { Hub } from "./hub.js";
 import { HealthStore } from "./health/store.js";
 import { Accounts } from "./accounts.js";
+import { Clicks } from "./clicks.js";
 import { silentLog } from "./log.js";
 import type { MatterAdmin, MatterNodes, NodeSummary } from "./matter/nodes.js";
 import { serve } from "./testing.js";
@@ -63,7 +64,8 @@ test("group edits persist room membership and update the running fan-out", async
   const store = new HealthStore(":memory:");
   const hub = Hub.build(parseConfig(JSON.stringify(cfg)), new GoveeClient("test", "http://127.0.0.1:1"), controller);
   const origin = await serve(
-    new Api(hub, controller, "test-password", new Accounts(":memory:"), silentLog, store, path).handle,
+    new Api(hub, controller, "test-password", new Accounts(":memory:"), new Clicks(":memory:"), silentLog, store, path)
+      .handle,
   );
   const headers = { Authorization: `Bearer ${sessionToken("test-password")}`, "Content-Type": "application/json" };
   const save = (body: unknown) =>

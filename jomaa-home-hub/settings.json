@@ -18,6 +18,10 @@
     "reconnectMilliseconds": 2000,
     "maxLiveClients": 32
   },
+  "prefetch": {
+    "databaseFile": "clicks.sqlite",
+    "concurrency": 2
+  },
   "secrets": {
     "envFiles": ["jomaa-home-hub/.env", "jomaa-tailscale/.env"],
     "ghCommand": "/snap/bin/gh",

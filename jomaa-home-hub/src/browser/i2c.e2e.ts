@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { chromium } from "playwright-core";
 import { Accounts } from "../accounts.js";
+import { Clicks } from "../clicks.js";
 import { Api } from "../api.js";
 import { HealthStore } from "../health/store.js";
 import { Hub } from "../hub.js";
@@ -27,7 +28,9 @@ await test("device details show live raw captures, condensed idle spans, pause, 
   const password = "i2c browser owner password";
   store.enroll({ id: "pico-test", name: "Stream Pico" });
   store.enroll({ id: "pico-other", name: "Other Pico" });
-  const origin = await serve(new Api(new Hub(), matter, password, accounts, silentLog, store).handle);
+  const origin = await serve(
+    new Api(new Hub(), matter, password, accounts, new Clicks(":memory:"), silentLog, store).handle,
+  );
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   const page = await browser.newPage();
   const errors: string[] = [];

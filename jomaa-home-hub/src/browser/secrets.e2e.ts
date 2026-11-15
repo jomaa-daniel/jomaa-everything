@@ -20,6 +20,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { chromium, type BrowserContext, type Page } from "playwright-core";
 import { Accounts } from "../accounts.js";
+import { Clicks } from "../clicks.js";
 import { Api } from "../api.js";
 import { Hub } from "../hub.js";
 import { silentLog } from "../log.js";
@@ -100,16 +101,27 @@ const accounts = new Accounts(":memory:");
 const { token: invite } = accounts.createInvite();
 await accounts.join(invite, "guest", guestPassword);
 accounts.setScopes("guest", ["lights", "devices", "manage"]);
-const api = new Api(new Hub(), noMatter, ownerPassword, accounts, silentLog, undefined, undefined, undefined, {
-  files: new EnvFiles(root, Object.keys(contents), deploySettings.hubPasswordMinLength),
-  workflow: new DeployWorkflow({
-    api: fakeGitHub,
-    repo: deploySettings.repo,
-    workflow: deploySettings.workflow,
-    timeoutMs: 5000,
-  }),
-  cli: new GitHubCli(ghCommand, deploySettings.githubTimeoutSeconds * 1000),
-});
+const api = new Api(
+  new Hub(),
+  noMatter,
+  ownerPassword,
+  accounts,
+  new Clicks(":memory:"),
+  silentLog,
+  undefined,
+  undefined,
+  undefined,
+  {
+    files: new EnvFiles(root, Object.keys(contents), deploySettings.hubPasswordMinLength),
+    workflow: new DeployWorkflow({
+      api: fakeGitHub,
+      repo: deploySettings.repo,
+      workflow: deploySettings.workflow,
+      timeoutMs: 5000,
+    }),
+    cli: new GitHubCli(ghCommand, deploySettings.githubTimeoutSeconds * 1000),
+  },
+);
 const origin = await serve(api.handle);
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const owner = await browser.newContext();

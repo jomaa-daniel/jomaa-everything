@@ -11,6 +11,7 @@ import { Hub } from "./hub.js";
 import { HealthStore } from "./health/store.js";
 import { Organization } from "./organization.js";
 import { Accounts } from "./accounts.js";
+import { Clicks } from "./clicks.js";
 import { deploySettings, releaseRoot, settings } from "./settings.js";
 import { EnvFiles } from "./secrets.js";
 import { DeployWorkflow, GitHubCli } from "./redeploy.js";
@@ -72,6 +73,7 @@ async function run(log: Log): Promise<void> {
   let health: HealthStore | undefined;
   let organization: Organization | undefined;
   let accounts: Accounts | undefined;
+  let clicks: Clicks | undefined;
   let cleanup: ReturnType<typeof setInterval> | undefined;
   try {
     const govee = new GoveeClient(goveeKey, process.env["GOVEE_BASE_URL"] || defaultBaseURL);
@@ -87,11 +89,14 @@ async function run(log: Log): Promise<void> {
     organization = new Organization(besideHealth("organization.sqlite"));
     const people = new Accounts(besideHealth(settings.accounts.databaseFile));
     accounts = people;
+    const followed = new Clicks(besideHealth(settings.prefetch.databaseFile));
+    clicks = followed;
     const api = new Api(
       Hub.build(cfg, govee, matter),
       matter,
       password,
       people,
+      followed,
       log,
       store,
       cliOptions.config,
@@ -154,6 +159,7 @@ async function run(log: Log): Promise<void> {
       health?.close();
       organization?.close();
       accounts?.close();
+      clicks?.close();
     } finally {
       await matter.stop();
     }

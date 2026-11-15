@@ -10,6 +10,7 @@ import { test } from "node:test";
 import { Api, sessionToken } from "../api.js";
 import { Hub } from "../hub.js";
 import { Accounts } from "../accounts.js";
+import { Clicks } from "../clicks.js";
 import { silentLog } from "../log.js";
 import type { MatterAdmin, NodeSummary } from "../matter/nodes.js";
 import { HealthStore } from "./store.js";
@@ -60,7 +61,7 @@ await test("HTTPS API separates admin and device auth and persists authenticated
   const ca = readFileSync(join(dir, "cert.pem"));
   const store = new HealthStore(join(dir, "health.sqlite"));
   const accounts = new Accounts(":memory:");
-  const api = new Api(new Hub(), matter, "test-hub-password", accounts, silentLog, store);
+  const api = new Api(new Hub(), matter, "test-hub-password", accounts, new Clicks(":memory:"), silentLog, store);
   const secure = createServer({ cert: ca, key: readFileSync(join(dir, "key.pem")) }, api.handle);
   const insecure = httpServer(api.handle);
   await Promise.all([
@@ -309,7 +310,15 @@ await test("device inventory includes registered Matter nodes without issuing Pi
   };
   const store = new HealthStore(":memory:");
   const server = httpServer(
-    new Api(new Hub(), controller, "inventory-test-password", new Accounts(":memory:"), silentLog, store).handle,
+    new Api(
+      new Hub(),
+      controller,
+      "inventory-test-password",
+      new Accounts(":memory:"),
+      new Clicks(":memory:"),
+      silentLog,
+      store,
+    ).handle,
   );
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

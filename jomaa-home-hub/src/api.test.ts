@@ -5,6 +5,7 @@ import { allFeatures, type Command, type Device, type Features, type State } fro
 import { Group } from "./group.js";
 import { Hub } from "./hub.js";
 import { Accounts } from "./accounts.js";
+import { Clicks } from "./clicks.js";
 import { silentLog } from "./log.js";
 import {
   MatterError,
@@ -140,7 +141,7 @@ async function setup(): Promise<Env> {
   hub.addDevice("test", a);
   hub.addDevice("test", b);
   hub.addRoom(new Group("room", "Room", [a, b]));
-  const url = await serve(new Api(hub, matter, "hunter2", accounts, silentLog).handle);
+  const url = await serve(new Api(hub, matter, "hunter2", accounts, new Clicks(":memory:"), silentLog).handle);
   const { status, body } = await call({ url, token: "" }, "POST", "/api/login", '{"password":"hunter2"}');
   assert.equal(status, 200);
   return { url, token: body["token"] as string, a, b, matter, accounts };
@@ -157,7 +158,8 @@ await test("light controller assets are public without a health store, while com
     const response = await fetch(env.url + path);
     assert.equal(response.status, 200);
     assert.ok(response.headers.get("content-type")?.startsWith(contentType));
-    assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("cache-control"), "no-cache");
+    assert.match(response.headers.get("etag") ?? "", /^"[\w-]+"$/);
     assert.ok(response.headers.get("content-security-policy")?.includes("script-src 'self'"));
     assert.ok((await response.text()).length > 0);
   }
@@ -645,4 +647,86 @@ test("account pages are public", async () => {
   for (const path of ["/home/accounts.js", "/home/accounts.css"]) {
     assert.equal((await fetch(e.url + path)).status, 200, path);
   }
+});
+
+test("pages revalidate by entity tag", async () => {
+  const first = await fetch(e.url + "/home");
+  const etag = first.headers.get("etag") ?? "";
+  assert.equal(first.headers.get("cache-control"), "no-cache");
+  for (const tag of [etag, `W/${etag}`, `"other", ${etag}`, "*"]) {
+    const again = await fetch(e.url + "/home/", { headers: { "If-None-Match": tag } });
+    assert.equal(again.status, 304, tag);
+    assert.equal(again.headers.get("etag"), etag);
+    assert.equal(await again.text(), "");
+  }
+  assert.equal((await fetch(e.url + "/home", { headers: { "If-None-Match": '"other"' } })).status, 200);
+  const style = await fetch(e.url + "/home/style.css");
+  assert.notEqual(style.headers.get("etag"), etag, "each file has its own tag");
+});
+
+test("the prefetch list names every page with the files it loads, most-clicked first", async () => {
+  const env = await setup();
+  const anon = { url: env.url, token: "" };
+  const listed = async (who: Pick<Env, "url" | "token">) => {
+    const { status, body } = await call(who, "GET", "/api/prefetch");
+    assert.equal(status, 200);
+    assert.ok(Number.isInteger(body["concurrency"]) && (body["concurrency"] as number) >= 1);
+    return body["pages"] as { path: string; clicks: number; assets: string[] }[];
+  };
+  const pages = await listed(anon);
+  assert.deepEqual(pages.map((page) => page.path).sort(), [
+    "/devices",
+    "/home",
+    "/invite",
+    "/join",
+    "/lights",
+    "/manage",
+    "/permissions",
+    "/secrets",
+  ]);
+  const assets = (path: string) => pages.find((page) => page.path === path)?.assets;
+  assert.deepEqual(assets("/home"), ["/home/base.css", "/home/style.css", "/home/prefetch.js"]);
+  assert.deepEqual(assets("/permissions"), [
+    "/home/base.css",
+    "/home/accounts.css",
+    "/permissions/app.js",
+    "/home/prefetch.js",
+    "/home/accounts.js",
+  ]);
+  assert.deepEqual(assets("/lights"), ["/lights/style.css", "/lights/app.js"]);
+  for (const page of pages) {
+    for (const url of [page.path, ...page.assets]) assert.equal((await fetch(env.url + url)).status, 200, url);
+  }
+
+  const click = (path: unknown, headers: Record<string, string> = {}) =>
+    call(anon, "POST", "/api/clicks", JSON.stringify({ path }), headers);
+  for (const path of ["/manage", "/lights", "/manage", "/manage", "/lights", "/secrets"]) {
+    assert.equal((await click(path)).status, 200, path);
+  }
+  assert.equal((await click("/nowhere")).status, 404, "only hub pages are counted");
+  assert.equal((await click(5)).status, 400);
+  assert.equal((await click("/home", { Origin: "https://evil.example" })).status, 403, "cross-site clicks are refused");
+  const ranked = await listed(anon);
+  assert.deepEqual(
+    ranked.slice(0, 3).map((page) => [page.path, page.clicks]),
+    [
+      ["/manage", 3],
+      ["/lights", 2],
+      ["/secrets", 1],
+    ],
+  );
+  assert.ok(ranked.slice(3).every((page) => page.clicks === 0));
+
+  const guest = { url: env.url, token: await joinAs(env, "visitor") };
+  assert.deepEqual(
+    (await listed(guest)).map((page) => page.path),
+    ["/home", "/join"],
+    "a signed-in account gets only the pages it can open",
+  );
+  await call(env, "PUT", "/api/accounts/visitor/scopes", JSON.stringify({ scopes: ["lights"] }));
+  assert.deepEqual(
+    (await listed(guest)).map((page) => page.path),
+    ["/lights", "/home", "/join"],
+  );
+  assert.equal((await listed(env)).length, pages.length, "the owner gets every page");
 });

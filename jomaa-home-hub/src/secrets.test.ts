@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { Accounts } from "./accounts.js";
+import { Clicks } from "./clicks.js";
 import { Api } from "./api.js";
 import { Hub } from "./hub.js";
 import { Fields, parseJson } from "./json.js";
@@ -158,11 +159,22 @@ async function setup(ghCommand: string = gh.loggedIn): Promise<Env> {
     timeoutMs: 5000,
   });
   const log = newLog({}, (line) => logs.push(line));
-  const api = new Api(new Hub(), noMatter, ownerPassword, accounts, log, undefined, undefined, undefined, {
-    files: envFiles(root),
-    workflow,
-    cli: new GitHubCli(ghCommand, deploySettings.githubTimeoutSeconds * 1000),
-  });
+  const api = new Api(
+    new Hub(),
+    noMatter,
+    ownerPassword,
+    accounts,
+    new Clicks(":memory:"),
+    log,
+    undefined,
+    undefined,
+    undefined,
+    {
+      files: envFiles(root),
+      workflow,
+      cli: new GitHubCli(ghCommand, deploySettings.githubTimeoutSeconds * 1000),
+    },
+  );
   const url = await serve(api.handle);
   const login = await fetch(url + "/api/login", { method: "POST", body: JSON.stringify({ password: ownerPassword }) });
   const owner = new Fields(parseJson(await login.text()), "login").string("token") ?? "";
