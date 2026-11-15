@@ -1,3 +1,4 @@
+import { settings } from "../settings.js";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,7 +13,7 @@ const empty = { bootId: "abcdef0123456789", sequence: 0, bus: 0, startUs: 0, end
 test("empty intervals occupy one durable row while zero bytes round-trip as captured data", () => {
   const dir = mkdtempSync(join(tmpdir(), "i2c-store-"));
   const path = join(dir, "health.sqlite");
-  let store = new HealthStore(path);
+  let store = new HealthStore(path, settings.i2c);
   try {
     store.enroll({ id: "pico-test", name: "Pico" });
     for (let sequence = 0; sequence < 1000; sequence++) {
@@ -31,7 +32,7 @@ test("empty intervals occupy one durable row while zero bytes round-trip as capt
     const zeros = "00".repeat(1000);
     store.i2c.record("pico-test", { ...empty, sequence: 1000, startUs: 1000000000, endUs: 1001000000, data: zeros });
     store.close();
-    store = new HealthStore(path);
+    store = new HealthStore(path, settings.i2c);
     assert.equal(store.i2c.logs("pico-test").logs[0]?.data, zeros);
     assert.equal(store.i2c.logs("pico-test").logs[0]?.condensed, "zero:1000");
     const db = new DatabaseSync(path, { readOnly: true });
@@ -45,7 +46,7 @@ test("empty intervals occupy one durable row while zero bytes round-trip as capt
 });
 
 test("duplicates, bus changes, reboot boundaries, timing gaps and loss remain distinguishable", () => {
-  const store = new HealthStore(":memory:");
+  const store = new HealthStore(":memory:", settings.i2c);
   try {
     store.enroll({ id: "pico-test", name: "Pico" });
     const events: number[] = [];
@@ -78,11 +79,11 @@ test("compression preserves literal, repetitive and arbitrary bytes", () => {
     "001122ffeedd",
     Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, "0")).join(""),
   ])
-    assert.equal(expand(condense(value, 1)), value);
+    assert.equal(expand(condense(value, 1), settings.i2c.maxDataBytes), value);
 });
 
 test("raw history follows health retention without losing retry sequence tracking", () => {
-  const store = new HealthStore(":memory:", 1);
+  const store = new HealthStore(":memory:", settings.i2c, 1);
   try {
     store.now = () => 0;
     store.enroll({ id: "pico-test", name: "Pico" });

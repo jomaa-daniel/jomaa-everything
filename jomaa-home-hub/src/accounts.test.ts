@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { AccountError, Accounts, inviteLifetimeMs, sessionLifetimeMs } from "./accounts.js";
+import { AccountError, Accounts } from "./accounts.js";
 import { settings } from "./settings.js";
 
 test("invites and sessions expire", async () => {
-  const accounts = new Accounts(":memory:");
+  const accounts = new Accounts(":memory:", settings.accounts);
   let now = 1_000_000;
   accounts.now = () => now;
   const { token } = accounts.createInvite();
-  now += inviteLifetimeMs;
+  now += accounts.inviteLifetimeMs;
   assert.throws(() => accounts.checkInvite(token), AccountError);
   assert.deepEqual(accounts.invites(), []);
 
@@ -17,14 +17,14 @@ test("invites and sessions expire", async () => {
   assert.equal(account.username, "sam");
   const session = accounts.createSession("sam");
   assert.equal(accounts.session(session)?.username, "sam");
-  now += sessionLifetimeMs;
+  now += accounts.sessionLifetimeMs;
   assert.equal(accounts.session(session), null);
   accounts.prune();
   assert.equal(accounts.session(session), null);
 });
 
 test("passwords are verified without storing them", async () => {
-  const accounts = new Accounts(":memory:");
+  const accounts = new Accounts(":memory:", settings.accounts);
   await accounts.join(accounts.createInvite().token, "sam", "a long enough password");
   assert.equal((await accounts.verify("sam", "a long enough password"))?.username, "sam");
   assert.equal(await accounts.verify("sam", "the wrong password"), null);
@@ -32,7 +32,7 @@ test("passwords are verified without storing them", async () => {
 });
 
 test("an account keeps its newest sessions up to the configured count", async () => {
-  const accounts = new Accounts(":memory:");
+  const accounts = new Accounts(":memory:", settings.accounts);
   await accounts.join(accounts.createInvite().token, "sam", "a long enough password");
   const sessions = Array.from({ length: settings.accounts.sessionsPerAccount + 1 }, () =>
     accounts.createSession("sam"),
@@ -42,14 +42,14 @@ test("an account keeps its newest sessions up to the configured count", async ()
 });
 
 test("scopes are stored in a fixed order without duplicates", async () => {
-  const accounts = new Accounts(":memory:");
+  const accounts = new Accounts(":memory:", settings.accounts);
   await accounts.join(accounts.createInvite().token, "sam", "a long enough password");
   assert.deepEqual(accounts.setScopes("sam", ["manage", "lights", "manage"]).scopes, ["lights", "manage"]);
   assert.throws(() => accounts.setScopes("nobody", []), AccountError);
 });
 
 test("two concurrent joins with one invite create one account", async () => {
-  const accounts = new Accounts(":memory:");
+  const accounts = new Accounts(":memory:", settings.accounts);
   const { token } = accounts.createInvite();
   const results = await Promise.allSettled([
     accounts.join(token, "first", "a long enough password"),

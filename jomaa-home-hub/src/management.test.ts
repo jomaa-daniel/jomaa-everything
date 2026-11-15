@@ -1,9 +1,11 @@
+import { settings } from "./settings.js";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { Api, sessionToken } from "./api.js";
+import { sessionToken } from "./api.js";
+import { hubApi } from "./hub-api.js";
 import { parseConfig } from "./config.js";
 import { GoveeClient } from "./govee.js";
 import { Hub } from "./hub.js";
@@ -62,11 +64,22 @@ test("management edits categories, rooms and assignments without changing report
     removeNode: () => Promise.resolve(),
   };
   const organization = new Organization(":memory:");
-  const health = new HealthStore(":memory:");
+  const health = new HealthStore(":memory:", settings.i2c);
   health.enroll({ id: "pico-test", name: "Pico" });
   const hub = Hub.build(parseConfig(JSON.stringify(cfg)), new GoveeClient("test", "http://127.0.0.1:1"), matter);
   const origin = await serve(
-    new Api(hub, matter, "management-test", new Accounts(":memory:"), silentLog, health, path, organization).handle,
+    hubApi({
+      hub,
+      matter,
+      password: "management-test",
+      accounts: new Accounts(":memory:", settings.accounts),
+      log: silentLog,
+      health: { store: health, i2c: settings.i2c },
+      layoutPath: path,
+      organization,
+      secrets: null,
+      tailscale: null,
+    }).handle,
   );
   const headers = { Authorization: `Bearer ${sessionToken("management-test")}`, "Content-Type": "application/json" };
   const read = async () =>

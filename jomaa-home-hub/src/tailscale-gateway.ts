@@ -5,17 +5,17 @@ import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { settings, settingsFile } from "./settings.js";
+import type { TailscaleSettings } from "./settings.js";
 import { Fields, JsonShapeError, parseJson } from "./json.js";
 
-/** tailnet.py, from settings.tailscale.script relative to the hub directory. */
-export function scriptPath(): string {
-  return fileURLToPath(new URL(settings.tailscale.script, settingsFile));
+/** tailnet.py, from tailscale.script relative to the hub's settings file. */
+export function scriptPath(tailscale: TailscaleSettings, settingsFile: URL): string {
+  return fileURLToPath(new URL(tailscale.script, settingsFile));
 }
 
-/** The access tables, defined beside tailnet.py so the hub and the sync share one schema. */
-export function schemaText(): string {
-  return readFileSync(join(dirname(scriptPath()), "access.sql"), "utf8");
+/** The access tables, defined beside the tailnet.py at script so the hub and the sync share one schema. */
+export function schemaText(script: string): string {
+  return readFileSync(join(dirname(script), "access.sql"), "utf8");
 }
 
 export interface ProviderUser {

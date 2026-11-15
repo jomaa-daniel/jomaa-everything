@@ -6,13 +6,14 @@ import type { MatterAdmin } from "../matter/nodes.js";
 import type { Hub } from "../hub.js";
 import type { Organization } from "../organization.js";
 import { HealthError, type HealthStore } from "./store.js";
-import { settings } from "../settings.js";
+import type { I2CSettings } from "../settings.js";
 
 /** Serves device health to sessions with the devices scope, while pings use only device credentials. */
 export class HealthHttp {
   readonly #limiter = new LoginLimiter();
   constructor(
     private readonly store: HealthStore,
+    private readonly i2cSettings: I2CSettings,
     private readonly log: Log,
     private readonly matter: MatterAdmin,
     private readonly hub: Hub,
@@ -45,7 +46,7 @@ export class HealthHttp {
         throw err;
       }
       if (ping[2] === "i2c") {
-        const result = this.store.i2c.record(id, await body(req, settings.i2c.maxRequestBytes));
+        const result = this.store.i2c.record(id, await body(req, this.i2cSettings.maxRequestBytes));
         json(res, 200, { ok: true, duplicate: result.duplicate });
       } else {
         const result = this.store.record(id, await body(req));
@@ -62,8 +63,8 @@ export class HealthHttp {
       const id = decodeURIComponent(capture[1] ?? "");
       if (capture[2] === "events") this.live(req, res, id, currentAccess);
       else {
-        const limit = Number(url.searchParams.get("limit") ?? settings.i2c.historyLimit);
-        if (limit > settings.i2c.historyLimit) throw new HealthError(400, "limit too large");
+        const limit = Number(url.searchParams.get("limit") ?? this.i2cSettings.historyLimit);
+        if (limit > this.i2cSettings.historyLimit) throw new HealthError(400, "limit too large");
         json(
           res,
           200,
@@ -114,9 +115,9 @@ export class HealthHttp {
         matterConnected: this.matter.ready,
         retentionDays: this.store.retentionDays,
         i2c: {
-          historyLimit: settings.i2c.historyLimit,
-          liveRows: settings.i2c.liveRows,
-          reconnectMilliseconds: settings.i2c.reconnectMilliseconds,
+          historyLimit: this.i2cSettings.historyLimit,
+          liveRows: this.i2cSettings.liveRows,
+          reconnectMilliseconds: this.i2cSettings.reconnectMilliseconds,
         },
         groups: this.hub
           .list()
@@ -157,7 +158,7 @@ export class HealthHttp {
   }
 
   private live(req: IncomingMessage, res: ServerResponse, id: string, currentAccess: () => Access): void {
-    const snapshot = this.store.i2c.logs(id, settings.i2c.liveRows);
+    const snapshot = this.store.i2c.logs(id, this.i2cSettings.liveRows);
     let closed = false;
     let blocked = false;
     const pending: [string, unknown][] = [];
@@ -188,7 +189,7 @@ export class HealthHttp {
         return;
       }
       pending.push([event, value]);
-      if (pending.length > settings.i2c.liveRows) close();
+      if (pending.length > this.i2cSettings.liveRows) close();
       else flush();
     };
     const unsubscribe = this.store.i2c.subscribe(id, (entry) => {
@@ -206,10 +207,10 @@ export class HealthHttp {
       "X-Accel-Buffering": "no",
     });
     res.flushHeaders();
-    res.write(`retry: ${settings.i2c.reconnectMilliseconds}\n\n`);
+    res.write(`retry: ${this.i2cSettings.reconnectMilliseconds}\n\n`);
     const timer = setInterval(() => {
       send("keepalive", {});
-    }, settings.i2c.keepaliveSeconds * 1000);
+    }, this.i2cSettings.keepaliveSeconds * 1000);
     timer.unref();
     send("snapshot", snapshot);
     req.on("aborted", close);

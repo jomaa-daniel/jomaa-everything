@@ -1,3 +1,4 @@
+import { settings } from "../settings.js";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -17,7 +18,7 @@ const ping = {
 };
 
 await test("enrollment, registration, retries, stale status, rename and revocation", () => {
-  const store = new HealthStore(":memory:");
+  const store = new HealthStore(":memory:", settings.i2c);
   try {
     let now = 1800000000000;
     store.now = () => now;
@@ -72,7 +73,7 @@ await test("enrollment, registration, retries, stale status, rename and revocati
 await test("database persists registration and hashed credentials; cursor pagination and retention", () => {
   const dir = mkdtempSync(join(tmpdir(), "jomaa-health-"));
   const path = join(dir, "health.sqlite");
-  let store = new HealthStore(path, 1);
+  let store = new HealthStore(path, settings.i2c, 1);
   try {
     let now = Date.now();
     store.now = () => now;
@@ -87,7 +88,7 @@ await test("database persists registration and hashed credentials; cursor pagina
     store.close();
     assert.equal(statSync(path).mode & 0o777, 0o600);
     assert.equal(readFileSync(path).includes(Buffer.from(token)), false);
-    store = new HealthStore(path, 1);
+    store = new HealthStore(path, settings.i2c, 1);
     store.authenticate("pico-test", token);
     assert.equal(store.logs("pico-test").logs.length, 3);
     assert.notEqual(store.get("pico-test").registeredAt, null);
@@ -104,7 +105,7 @@ await test("database persists registration and hashed credentials; cursor pagina
 });
 
 await test("invalid reports cannot register devices or enter logs", () => {
-  const store = new HealthStore(":memory:");
+  const store = new HealthStore(":memory:", settings.i2c);
   try {
     store.enroll({ id: "pico-test", name: "Test" });
     for (const invalid of [

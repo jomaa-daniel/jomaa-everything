@@ -3,8 +3,8 @@
 // anything changes.
 import { type Account, type Accounts, type Scope, scopes as allScopes } from "./accounts.js";
 import type { UserService } from "./users.js";
-import type { AccessState, TailscaleService } from "./tailscale.js";
-import { TailscaleError } from "./tailscale-store.js";
+import type { AccessState, ProfileView } from "./tailscale.js";
+import { TailscaleError, type Link } from "./tailscale-store.js";
 
 export type StepState = "complete" | "pending" | "waiting" | "blocked" | "failed" | "not-started" | "unknown";
 
@@ -118,6 +118,14 @@ const accessSteps: Record<AccessState, Step> = {
   },
 };
 
+/** What TailscaleOnboarding reads and changes on the Tailscale service. */
+export interface TailscaleProfiles {
+  profile(account: Account): ProfileView;
+  link(account: Account, providerUserId: string): Promise<Link>;
+  unlink(account: Account): void;
+  setAccess(account: Account, access: boolean): Link;
+}
+
 /**
  * Setting up an account's exit-node access: link their Tailscale user, give
  * access, then they sign in on a device. Steps come from saved links and
@@ -127,7 +135,7 @@ const accessSteps: Record<AccessState, Step> = {
 export class TailscaleOnboarding extends OnboardingModule<TailscaleAction, unknown> {
   constructor(
     private readonly accounts: Accounts,
-    private readonly tailscale: TailscaleService,
+    private readonly tailscale: TailscaleProfiles,
   ) {
     super();
   }

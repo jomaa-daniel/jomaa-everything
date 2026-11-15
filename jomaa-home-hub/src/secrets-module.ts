@@ -17,15 +17,16 @@ import { clientIP, type LoginLimiter } from "./limiter.js";
 import type { Log } from "./log.js";
 import type { DeployWorkflow, GitHubCli } from "./redeploy.js";
 import type { EnvFiles } from "./secrets.js";
-import { settings } from "./settings.js";
 import type { UserService } from "./users.js";
 
-/** What the Secrets page edits and reruns. */
+/** What the Secrets page edits and reruns, and how often the page polls a rerun. */
 export interface SecretsAdmin {
   files: EnvFiles;
   workflow: DeployWorkflow;
   /** The source of the token that reruns the workflow. */
   cli: GitHubCli;
+  /** secrets.redeployPollSeconds. */
+  redeployPollSeconds: number;
 }
 
 export class SecretsModule implements FeatureModule {
@@ -71,14 +72,14 @@ export class SecretsModule implements FeatureModule {
   }
 
   async #secretsList({ res }: RequestContext): Promise<void> {
-    const { files, cli } = this.#secretsAdmin();
+    const { files, cli, redeployPollSeconds } = this.#secretsAdmin();
     const [listed, token] = await Promise.all([files.list(), cli.token()]);
     writeJSON(res, 200, {
       files: listed,
       redeploy: {
         available: "token" in token,
         unavailable: "unavailable" in token ? token.unavailable : null,
-        pollSeconds: settings.secrets.redeployPollSeconds,
+        pollSeconds: redeployPollSeconds,
       },
     });
   }
