@@ -29,13 +29,17 @@ test("invalid settings name the setting", () => {
     deployConfig: "deploy/config.json",
     redeployPollSeconds: 1,
   };
-  assert.equal(parseSettings(JSON.stringify({ accounts: valid, secrets })).accounts.sessionsPerAccount, 1);
-  const broken = (change: Record<string, unknown>) => JSON.stringify({ accounts: { ...valid, ...change }, secrets });
+  assert.equal(
+    parseSettings(JSON.stringify({ accounts: valid, secrets, i2c: settings.i2c })).accounts.sessionsPerAccount,
+    1,
+  );
+  const broken = (change: Record<string, unknown>) =>
+    JSON.stringify({ accounts: { ...valid, ...change }, secrets, i2c: settings.i2c });
   assert.throws(() => parseSettings(broken({ sessionLifetimeDays: 0 })), /accounts\.sessionLifetimeDays/);
   assert.throws(() => parseSettings(broken({ passwordLength: { min: 20, max: 10 } })), /passwordLength\.max/);
   assert.throws(() => parseSettings(broken({ extra: 1 })), /unknown field "extra"/);
   const badSecrets = (change: Record<string, unknown>) =>
-    JSON.stringify({ accounts: valid, secrets: { ...secrets, ...change } });
+    JSON.stringify({ accounts: valid, secrets: { ...secrets, ...change }, i2c: settings.i2c });
   assert.throws(() => parseSettings(badSecrets({ envFiles: ["../outside/.env"] })), /secrets\.envFiles/);
   assert.throws(() => parseSettings(badSecrets({ envFiles: ["/etc/.env"] })), /secrets\.envFiles/);
   assert.throws(() => parseSettings(badSecrets({ envFiles: [] })), /secrets\.envFiles/);

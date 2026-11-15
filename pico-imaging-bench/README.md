@@ -1,5 +1,12 @@
 # Pico imaging bench
 
+The health image includes continuous raw I²C reads and Wi-Fi capture uploads alongside heartbeats.
+The device's details page shows live captures, condensed empty intervals and capture loss.
+[Stream settings](../jomaa-home-hub/devices/pico-health/stream.md) defines the GPIO assignments,
+sampling, sensor register reads and buffering. Provisioning installs those settings and the collector
+with the startup reporter. A Wi-Fi-only image from `setup_wifi.py` has no hub device credential;
+use `setup_pico.py` to enroll and install capture reporting.
+
 Image a selected Pico from MicroPython firmware through working Wi-Fi and verified HTTPS health reports.
 The scripts reuse the hub's provisioning code and require three **new persisted reports from one boot** to pass.
 

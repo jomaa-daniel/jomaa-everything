@@ -23,6 +23,41 @@ export interface SecretSettings {
 export interface Settings {
   accounts: AccountSettings;
   secrets: SecretSettings;
+  i2c: I2CSettings;
+}
+
+export interface I2CSettings {
+  maxDataBytes: number;
+  maxRequestBytes: number;
+  historyLimit: number;
+  liveRows: number;
+  keepaliveSeconds: number;
+  reconnectMilliseconds: number;
+  maxLiveClients: number;
+}
+
+function parseI2C(value: unknown): I2CSettings {
+  const fields = new Fields(value, "settings.json i2c").only(
+    "maxDataBytes",
+    "maxRequestBytes",
+    "historyLimit",
+    "liveRows",
+    "keepaliveSeconds",
+    "reconnectMilliseconds",
+    "maxLiveClients",
+  );
+  const result: I2CSettings = {
+    maxDataBytes: positive(fields, "maxDataBytes", "i2c"),
+    maxRequestBytes: positive(fields, "maxRequestBytes", "i2c"),
+    historyLimit: positive(fields, "historyLimit", "i2c"),
+    liveRows: positive(fields, "liveRows", "i2c"),
+    keepaliveSeconds: positive(fields, "keepaliveSeconds", "i2c"),
+    reconnectMilliseconds: positive(fields, "reconnectMilliseconds", "i2c"),
+    maxLiveClients: positive(fields, "maxLiveClients", "i2c"),
+  };
+  if (result.maxRequestBytes <= result.maxDataBytes * 2)
+    throw new Error("i2c.maxRequestBytes must exceed twice i2c.maxDataBytes");
+  return result;
 }
 
 /** The deployment settings the hub reads from the deployment's config.json. */
@@ -108,7 +143,9 @@ export function parseDeploySettings(text: string): DeploySettings {
 
 /** Parses settings.json; throws naming the first missing or invalid setting. */
 export function parseSettings(text: string): Settings {
-  const root = new Fields(parseJson(text), "settings.json").only("accounts", "secrets").required("accounts", "secrets");
+  const root = new Fields(parseJson(text), "settings.json")
+    .only("accounts", "secrets", "i2c")
+    .required("accounts", "secrets", "i2c");
   const accounts = new Fields(root.value("accounts"), "settings.json accounts")
     .only("databaseFile", "sessionLifetimeDays", "sessionsPerAccount", "inviteLifetimeDays", "passwordLength")
     .required("databaseFile", "passwordLength");
@@ -130,6 +167,7 @@ export function parseSettings(text: string): Settings {
       passwordLength: { min, max },
     },
     secrets: parseSecrets(root.value("secrets")),
+    i2c: parseI2C(root.value("i2c")),
   };
 }
 

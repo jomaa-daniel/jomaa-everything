@@ -32,3 +32,17 @@ reruns the deployment workflow.
 | `secrets.ghCommand`           | string       | Absolute path of the GitHub CLI on the server. The hub runs `auth token` with it on each request for the token that reruns the deployment workflow, within `github.timeoutSeconds`. |
 | `secrets.deployConfig`        | string       | The deployment's settings file, resolved from the release root. The hub reads `repo`, `github.api`, `github.workflow`, `github.timeoutSeconds` and `hubPasswordMinLength` from it.  |
 | `secrets.redeployPollSeconds` | whole number | How often the page asks for the status of a redeploy run.                                                                                                                           |
+
+# I²C streaming
+
+`i2c` controls raw capture storage and the live device view. Capture rows share the health database and its retention period.
+
+| Setting                     | Meaning                                                                                  |
+| --------------------------- | ---------------------------------------------------------------------------------------- |
+| `i2c.maxDataBytes`          | Maximum decoded raw bytes accepted in one capture.                                       |
+| `i2c.maxRequestBytes`       | Maximum JSON request size for a capture, including hexadecimal data and metadata.        |
+| `i2c.historyLimit`          | Default and maximum number of capture records in a history request.                      |
+| `i2c.liveRows`              | Maximum recent capture records sent when a live view connects and retained by that view. |
+| `i2c.keepaliveSeconds`      | Interval between live connection keepalives and session access checks.                   |
+| `i2c.reconnectMilliseconds` | Delay before a disconnected live view reconnects.                                        |
+| `i2c.maxLiveClients`        | Maximum simultaneous live capture viewers on the hub.                                    |

@@ -118,9 +118,7 @@ def prepare(module, output, device_id, origin, config, issued, root):
     output.mkdir(mode=0o700)
     private_json(output / "device_config.json", settings)
     module.private_write(output / "health_ca.der", root)
-    module.private_write(output / "main.py", module.FIRMWARE.read_bytes())
-    if settings["wifi_transport"] == "esp8285":
-        module.private_write(output / "esp8285.py", module.ESP_FIRMWARE.read_bytes())
+    module.prepare_firmware(output, settings["wifi_transport"])
 
 
 def main(argv=None):

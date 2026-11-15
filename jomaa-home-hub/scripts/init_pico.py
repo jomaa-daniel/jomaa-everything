@@ -23,6 +23,19 @@ import urllib.request
 
 FIRMWARE = Path(__file__).resolve().parent.parent / "devices" / "pico-health" / "main.py"
 ESP_FIRMWARE = FIRMWARE.with_name("esp8285.py")
+STREAM_FIRMWARE = FIRMWARE.with_name("stream.py")
+STREAM_SETTINGS = FIRMWARE.with_name("stream.json")
+
+
+def prepare_firmware(output, transport):
+    settings = json.loads(STREAM_SETTINGS.read_text())
+    hub_settings = json.loads((FIRMWARE.parents[2] / "settings.json").read_text())
+    settings["maxDataBytes"] = hub_settings["i2c"]["maxDataBytes"]
+    private_write(output / "stream.json", (json.dumps(settings, indent=2) + "\n").encode())
+    private_write(output / "stream.py", STREAM_FIRMWARE.read_bytes())
+    private_write(output / "main.py", FIRMWARE.read_bytes())
+    if transport == "esp8285":
+        private_write(output / "esp8285.py", ESP_FIRMWARE.read_bytes())
 
 
 class ProvisionError(ValueError):
@@ -104,7 +117,7 @@ def install(port: str, output: Path, *, env=None) -> None:
         remote("exec", "import machine, io; assert hasattr(machine, 'UART'); assert hasattr(io, 'IOBase')")
     else:
         remote("exec", "import network; assert hasattr(network, 'WLAN')")
-    names = ["device_config.json", "health_ca.der"]
+    names = ["device_config.json", "health_ca.der", "stream.json", "stream.py"]
     if config["wifi_transport"] == "esp8285":
         names.append("esp8285.py")
     for name in names + ["main.py"]:
@@ -187,9 +200,7 @@ def main(argv=None) -> int:
         args.output.mkdir(parents=True, mode=0o700)
         private_write(args.output / "device_config.json", (json.dumps(config, indent=2) + "\n").encode())
         private_write(args.output / "health_ca.der", ca)
-        private_write(args.output / "main.py", FIRMWARE.read_bytes())
-        if args.wifi_transport == "esp8285":
-            private_write(args.output / "esp8285.py", ESP_FIRMWARE.read_bytes())
+        prepare_firmware(args.output, args.wifi_transport)
         print("Prepared health firmware for %s in %s" % (args.id, args.output))
         if args.install:
             install(args.port, args.output)

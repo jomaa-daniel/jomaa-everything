@@ -21,6 +21,12 @@ let scanTimer = null;
 let scanGeneration = 0;
 let pairingDevice = null;
 let pairing = false;
+let captureSource = null;
+let captureSettings = null;
+let captureLogs = new Map();
+let captureCursor = null;
+let capturePaused = false;
+let captureGeneration = 0;
 const columnFilters = { type: null, capabilities: null, group: null };
 let statusFilter = null;
 const filterColumns = ["type", "capabilities", "group", "status"];
@@ -152,6 +158,7 @@ function signedIn(value) {
   $("login-section").hidden = value;
   for (const id of ["inventory", "add", "logout"]) $(id).hidden = !value;
   if (!value) {
+    stopCaptures();
     sessionGeneration += 1;
     selected = null;
     devices = [];
@@ -346,6 +353,7 @@ function renderMatterDetail() {
 }
 
 function selectMatter(nodeId) {
+  stopCaptures();
   selected = null;
   selectedMatter = nodeId;
   matterNameDirty = false;
@@ -402,6 +410,7 @@ async function refreshInventory() {
   devices = result.devices;
   matterNodes = result.matterNodes;
   groups = result.groups;
+  captureSettings = result.i2c;
   signedIn(true);
   $("retention").textContent =
     `Updates every 15 seconds. Offline after three missed reports (minimum 90 seconds). History retained for ${result.retentionDays} days.`;
@@ -435,6 +444,7 @@ async function logs(append = false) {
 }
 
 function select(id) {
+  stopCaptures();
   selectedMatter = null;
   selected = id;
   dirty = false;
@@ -443,6 +453,84 @@ function select(id) {
   $("log-rows").replaceChildren();
   render();
   logs().catch(error);
+  captureLogs.clear();
+  captureCursor = null;
+  capturePaused = false;
+  $("i2c-pause").textContent = "Pause live view";
+  renderCaptures();
+  startCaptures();
+}
+
+function stopCaptures() {
+  captureGeneration += 1;
+  captureSource?.close();
+  captureSource = null;
+}
+
+function renderCaptures() {
+  const entries = [...captureLogs.values()].sort((a, b) => b.id - a.id);
+  $("i2c-live").replaceChildren();
+  for (const entry of entries) {
+    const item = node("div", undefined, "i2c-entry");
+    item.append(
+      node(
+        "span",
+        `${stamp(entry.receivedAt)} · Bus ${entry.bus} · #${entry.firstSequence}–${entry.sequence}`,
+        "muted",
+      ),
+    );
+    item.append(
+      node(
+        "code",
+        entry.data
+          ? entry.data.match(/../g).join(" ").toUpperCase()
+          : `EMPTY × ${entry.captures} · ${((entry.endUs - entry.startUs) / 1000000).toFixed(3)}s`,
+        "i2c-bytes",
+      ),
+    );
+    if (entry.dropped) item.append(node("strong", `${entry.dropped} capture units lost`, "i2c-gap"));
+    if (entry.data && !entry.condensed.startsWith("hex:"))
+      item.append(node("span", `Stored as ${entry.condensed}`, "muted i2c-encoding"));
+    $("i2c-live").append(item);
+  }
+  $("i2c-empty").hidden = entries.length > 0;
+  $("i2c-more").hidden = captureCursor === null;
+}
+
+function startCaptures() {
+  if (!selected || !captureSettings) return;
+  stopCaptures();
+  const id = selected;
+  const generation = captureGeneration;
+  $("i2c-status").textContent = "Connecting…";
+  const source = new EventSource(`/api/devices/${encodeURIComponent(id)}/i2c/events`);
+  captureSource = source;
+  source.addEventListener("snapshot", (event) => {
+    if (generation !== captureGeneration || selected !== id) return;
+    const snapshot = JSON.parse(event.data);
+    captureLogs = new Map(snapshot.logs.map((entry) => [entry.id, entry]));
+    captureCursor = snapshot.nextCursor;
+    $("i2c-status").textContent = "Live · Waiting for captures";
+    renderCaptures();
+  });
+  source.addEventListener("capture", (event) => {
+    if (generation !== captureGeneration || selected !== id) return;
+    const entry = JSON.parse(event.data);
+    captureLogs.set(entry.id, entry);
+    const ordered = [...captureLogs.keys()].sort((a, b) => b - a);
+    for (const key of ordered.slice(captureSettings.liveRows)) captureLogs.delete(key);
+    captureCursor = ordered.length >= captureSettings.liveRows ? ordered[captureSettings.liveRows - 1] : captureCursor;
+    $("i2c-status").textContent = `Live · Received ${stamp(entry.receivedAt)}`;
+    renderCaptures();
+  });
+  source.addEventListener("denied", () => {
+    if (generation === captureGeneration) signedIn(false);
+  });
+  source.onerror = () => {
+    if (generation !== captureGeneration || selected !== id) return;
+    $("i2c-status").textContent = "Disconnected · Reconnecting…";
+    api("/api/session").catch(error);
+  };
 }
 function showCredential(result) {
   credential = { id: result.device.id, token: result.token };
@@ -618,8 +706,35 @@ $("refresh").addEventListener("click", () => {
     .catch(error);
 });
 $("close-detail").addEventListener("click", () => {
+  stopCaptures();
   selected = null;
   render();
+});
+$("i2c-pause").addEventListener("click", () => {
+  capturePaused = !capturePaused;
+  $("i2c-pause").textContent = capturePaused ? "Resume live view" : "Pause live view";
+  if (capturePaused) {
+    stopCaptures();
+    $("i2c-status").textContent = "View paused · Device capture continues";
+  } else startCaptures();
+});
+$("i2c-more").addEventListener("click", async () => {
+  if (!selected || captureCursor === null) return;
+  if (!capturePaused) $("i2c-pause").click();
+  const id = selected;
+  const generation = captureGeneration;
+  $("i2c-more").disabled = true;
+  try {
+    const result = await api(`/api/devices/${encodeURIComponent(id)}/i2c?before=${captureCursor}`);
+    if (selected !== id || generation !== captureGeneration) return;
+    for (const entry of result.logs) captureLogs.set(entry.id, entry);
+    captureCursor = result.nextCursor;
+    renderCaptures();
+  } catch (reason) {
+    error(reason);
+  } finally {
+    $("i2c-more").disabled = false;
+  }
 });
 $("close-matter-detail").addEventListener("click", () => {
   selectedMatter = null;

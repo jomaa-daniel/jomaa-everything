@@ -1,0 +1,21 @@
+{
+  "buses": [
+    { "id": 0, "sda": 4, "scl": 5, "registers": {} },
+    { "id": 1, "sda": 6, "scl": 7, "registers": {} }
+  ],
+  "frequencyHz": 100000,
+  "timeoutUs": 5000,
+  "sampleMilliseconds": 50,
+  "scanMilliseconds": 1000,
+  "readBytes": 6,
+  "uploadMilliseconds": 500,
+  "idleMilliseconds": 10,
+  "retrySeconds": 5,
+  "retryMaxSeconds": 60,
+  "joinTimeoutMilliseconds": 20000,
+  "joinPollMilliseconds": 250,
+  "lowHeapBytes": 20000,
+  "socketTimeoutSeconds": 15,
+  "maxResponseBytes": 8192,
+  "maxStatusLineBytes": 512
+}

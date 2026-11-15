@@ -202,3 +202,22 @@ Tests cover actual HTTPS certificate trust, separation of administrator/device c
 invalid reports, idempotent retries, revocation, persistence, file permissions, offline status, retention, pagination,
 private preparation without USB/network access when using a supplied credential, and the firmware HTTP parser.
 For browser verification, use an isolated local hub with test devices instead of connecting to physical lights or the Pico.
+
+# Raw I²C logs
+
+Open a device in Device health to view its raw I²C captures. The live view updates as the hub receives captures, reconnects with a fresh history snapshot, and supports pausing the view and loading older captures. Pausing the view leaves device capture running.
+
+The hub receives captures at `POST /api/devices/DEVICE_ID/i2c` over verified HTTPS using that device's bearer credential. The JSON fields are:
+
+| Field              | Meaning                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `bootId`           | Hexadecimal identifier for the Pico boot.                                                                    |
+| `sequence`         | Increasing capture sequence for this bus and boot; retries reuse the same sequence.                          |
+| `bus`              | I²C controller identifier.                                                                                   |
+| `startUs`, `endUs` | Capture interval relative to the collector's start in this boot, in microseconds; the end exceeds the start. |
+| `data`             | Raw bytes as lowercase hexadecimal; an empty string denotes no captured activity.                            |
+| `dropped`          | Number of capture units lost before or during this interval.                                                 |
+
+`GET /api/devices/DEVICE_ID/i2c` returns capture history to sessions with Device health access. It accepts `limit` and `before` parameters. `GET /api/devices/DEVICE_ID/i2c/events` supplies a live event stream with snapshot and capture events. Live capture events replace an existing row when its empty interval grows. Access is checked during the connection.
+
+Captures occupy `i2c_logs` in the same SQLite connection and database as `health_logs`. Their retention uses the health retention setting. Consecutive, contiguous empty intervals from the same bus and boot occupy one `empty:<count>` string. Gaps, dropped captures, bus changes and reboots keep distinct records. Nonempty bytes use the shortest literal hexadecimal, zero run or deflate encoding; the API reconstructs every byte. Zero bytes are captured data, distinct from no activity. [Settings](../settings.md) describes request limits and live view settings.

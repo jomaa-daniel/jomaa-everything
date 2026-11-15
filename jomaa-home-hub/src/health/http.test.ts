@@ -176,6 +176,63 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     assert.equal((await call(path, "POST", ping, token)).status, 201);
     assert.equal((await call(path, "POST", ping, token)).body["duplicate"], true);
     assert.equal(store.logs("pico-api").logs.length, 1);
+    const capture = {
+      bootId: ping.bootId,
+      sequence: 0,
+      bus: 0,
+      startUs: 0,
+      endUs: 1000000,
+      data: "a632001122",
+      dropped: 0,
+    };
+    const capturePath = "/api/devices/pico-api/i2c";
+    assert.equal((await call(capturePath, "POST", capture, admin)).status, 401);
+    assert.equal((await call(capturePath, "POST", capture, token, true)).status, 426);
+    assert.equal((await call(capturePath, "POST", capture, token)).status, 200);
+    assert.equal((await call(capturePath, "POST", capture, token)).body["duplicate"], true);
+    assert.equal((await call(capturePath, "GET", undefined, token)).status, 401);
+    assert.equal((await call(capturePath, "GET", undefined, admin)).status, 200);
+    assert.equal(store.i2c.logs("pico-api").logs[0]?.data, capture.data);
+    let liveText = "";
+    let snapshotReady: () => void = () => {};
+    const snapshot = new Promise<void>((resolve) => {
+      snapshotReady = resolve;
+    });
+    const liveDone = new Promise<void>((resolve, reject) => {
+      const req = request(
+        {
+          hostname: "127.0.0.1",
+          servername: "localhost",
+          ca,
+          port,
+          path: capturePath + "/events",
+          headers: { Authorization: "Bearer " + guest },
+        },
+        (res) => {
+          assert.equal(res.statusCode, 200);
+          res.on("data", (chunk: Buffer) => {
+            liveText += chunk.toString();
+            if (liveText.includes("event: snapshot")) snapshotReady();
+          });
+          res.on("end", resolve);
+          res.on("error", reject);
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+    await snapshot;
+    assert.match(liveText, /a632001122/);
+    accounts.setScopes("guest", []);
+    await call(
+      capturePath,
+      "POST",
+      { ...capture, sequence: 1, startUs: 1000000, endUs: 2000000, data: "ffeedd" },
+      token,
+    );
+    await liveDone;
+    assert.match(liveText, /event: denied/);
+    assert.ok(!liveText.includes("ffeedd"), "revoked viewers receive no new raw bytes");
     assert.equal((await call("/api/devices/pico-api", "PATCH", { name: "Updated" }, admin)).status, 200);
     assert.equal(store.get("pico-api").name, "Updated");
     assert.equal(
@@ -189,6 +246,7 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     assert.equal((await call("/api/devices/pico-api/logs?limit=500", "GET", undefined, admin)).status, 400);
     assert.equal((await call("/api/devices/pico-api/revoke", "POST", {}, admin)).status, 200);
     assert.equal((await call(path, "POST", ping, token)).status, 401);
+    assert.equal((await call(capturePath, "POST", { ...capture, sequence: 1 }, token)).status, 401);
     assert.equal(store.logs("pico-api").logs.length, 1);
     await assert.rejects(
       new Promise<void>((resolve, reject) => {

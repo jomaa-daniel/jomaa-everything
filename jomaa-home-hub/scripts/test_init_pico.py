@@ -56,7 +56,7 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual(config["hub_host"], "hub.jomaa.org")
         self.assertEqual(config["wifi_password"], "test-password")
         self.assertEqual(output.stat().st_mode & 0o777, 0o700)
-        for name in ("main.py", "device_config.json", "health_ca.der"):
+        for name in ("main.py", "device_config.json", "health_ca.der", "stream.py", "stream.json"):
             self.assertEqual((output / name).stat().st_mode & 0o777, 0o600)
         self.assertNotIn("a" * 64, printed.getvalue())
         self.assertNotIn("test-password", printed.getvalue())
@@ -121,7 +121,7 @@ class FirmwareProtocolTests(unittest.TestCase):
         return stream
 
     def send(self, stream, wrap_error=None):
-        config = {"hub_host": "hub.example", "hub_port": 443, "id": "pico-test", "token": "a" * 64}
+        config = {"hub_host": "hub.example", "hub_port": 443, "id": "pico-test", "token": "a" * 64, "runtime": json.loads(init_pico.STREAM_SETTINGS.read_text())}
         with patch.object(firmware.socket, "socket") as raw, patch.object(firmware.socket, "getaddrinfo", return_value=[(0, 0, 0, "", ("127.0.0.1", 443))]):
             tls = unittest.mock.Mock()
             if wrap_error:
@@ -152,7 +152,7 @@ class FirmwareProtocolTests(unittest.TestCase):
                 self.send(self.stream(response))
 
     def test_esp_transport_still_verifies_hostname_and_closes_on_bad_certificate(self):
-        config = {"hub_host": "hub.example", "hub_port": 443, "id": "pico-test", "token": "a" * 64}
+        config = {"hub_host": "hub.example", "hub_port": 443, "id": "pico-test", "token": "a" * 64, "runtime": json.loads(init_pico.STREAM_SETTINGS.read_text())}
         radio = unittest.mock.Mock()
         tls = unittest.mock.Mock()
         tls.wrap_socket.side_effect = ssl.SSLCertVerificationError("untrusted certificate")
