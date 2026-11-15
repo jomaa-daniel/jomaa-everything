@@ -128,3 +128,14 @@ test("text input arrows retain editing, Alt arrows move fields, and modal naviga
   await page.keyboard.press("Escape");
   assert.ok(await page.locator("#enroll-dialog").isHidden());
 });
+
+test("health edits appear in the organization inventory when returning to Devices", async () => {
+  const page = await pageAt("/manage#health");
+  await page.getByRole("button", { name: "First Pico", exact: true }).click();
+  await page.locator("#device-name").fill("Renamed Pico");
+  await page.locator("#edit-form button").click();
+  await page.getByRole("button", { name: "Renamed Pico", exact: true }).waitFor();
+  await page.locator("#devices-tab").click();
+  await page.getByRole("button", { name: "Edit Renamed Pico", exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Edit First Pico", exact: true }).count(), 0);
+});

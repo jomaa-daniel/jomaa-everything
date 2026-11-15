@@ -212,6 +212,7 @@ function plural(count, singular) {
 }
 
 function showTab(tab, focus = false) {
+  const refreshDevices = activeTab === "health" && tab === "devices" && canManage && !$("management").hidden;
   if (tab !== "health") closeHealth();
   activeTab = tab;
   for (const name of tabs) {
@@ -223,6 +224,17 @@ function showTab(tab, focus = false) {
   updateCommands();
   if (focus) $(tab + "-tab").focus();
   if (tab === "health" && canHealth && !$("management").hidden) loadHealth().catch(error);
+  if (refreshDevices) refreshCatalog().catch(error);
+}
+
+async function refreshCatalog() {
+  const current = generation;
+  const result = await api("/api/manage");
+  if (current !== generation) return;
+  const focused = document.activeElement?.id;
+  catalog = result;
+  render();
+  restoreFocus(focused);
 }
 
 function renderList(kind, values) {
