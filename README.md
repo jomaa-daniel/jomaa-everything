@@ -12,6 +12,7 @@ Home projects, kept in one repo.
 | `jomaa-ssh/` | SSH into jerry from anywhere through the hub's Cloudflare tunnel (`ssh jerry`), keys only. |
 | `jomaa-tailscale/` | jerry on Tailscale: home LAN subnet router and exit node. Deployments apply the tailnet policy and node settings. |
 | `pico-imaging-bench/` | Flash and verify the Pico health reporter over USB. |
+| `jomaa-agent-pipeline/` | The blind pipeline every code change goes through: product instruction, reviewed hidden tests, blind implementation, trajectory audit. |
 
 Repo rules for people and agents are in [`AGENTS.md`](AGENTS.md).
 
@@ -20,7 +21,7 @@ Repo rules for people and agents are in [`AGENTS.md`](AGENTS.md).
 Run `python3 jomaa-deploy/verify.py` before pushing. It loads every deployment
 module and runs its checks: hub dependencies, formatting, types, lint, Node
 tests, dependency audit, the health page's types and tests, and Python tests
-for deployment, static sites, SSH, Tailscale, and the Pico imaging bench. CI
+for deployment, static sites, SSH, Tailscale, the Pico imaging bench, and the agent pipeline. CI
 runs each module's checks in its own job.
 
 ## Deployment

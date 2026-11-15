@@ -1,5 +1,11 @@
 # Repository rules
 
+- Write code through the blind pipeline in
+  [`jomaa-agent-pipeline/SKILL.md`](jomaa-agent-pipeline/SKILL.md): plan the
+  change as a product instruction, get it reviewed, have hidden fail-to-pass
+  and pass-to-pass tests written and sealed, refactoring first when the code
+  can't be tested from outside, and let a blind agent implement it. Land it only
+  when the sealed tests pass unchanged and the trajectory audit passes.
 - Comments describe what the code does now. Don't write comments about design
   choices, alternatives, history, or why something changed.
 - Docs describe the current state only. No journaling: no dated entries, change

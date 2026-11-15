@@ -1,0 +1,58 @@
+{
+  "stateDir": "~/.jomaa-agent-pipeline",
+  "workspaceDir": "/tmp/jomaa-agent-pipeline",
+  "claudeProjectsDir": "~/.claude/projects",
+  "claude": ["/usr/local/bin/claude_code/native/claude", "claude"],
+  "clearEnvironment": [
+    "CLAUDECODE",
+    "CLAUDE_CODE_PROCESS_WRAPPER",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_CURRENT_SESSION_ID",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_PID",
+    "META_3PAI_SANDBOX_RUNTIME"
+  ],
+  "roles": {
+    "instruction-reviewer": {
+      "model": "opus",
+      "effort": "high",
+      "tools": ["Read", "Glob", "Grep"],
+      "budgetUsd": 5,
+      "persist": false
+    },
+    "test-author": {
+      "model": "opus",
+      "effort": "high",
+      "tools": ["Bash", "Read", "Edit", "Write", "Glob", "Grep"],
+      "budgetUsd": 20,
+      "persist": false
+    },
+    "test-reviewer": {
+      "model": "opus",
+      "effort": "high",
+      "tools": ["Read", "Glob", "Grep"],
+      "budgetUsd": 5,
+      "persist": false
+    },
+    "implementer": {
+      "model": "opus",
+      "effort": "high",
+      "tools": ["Bash", "Read", "Edit", "Write", "Glob", "Grep"],
+      "budgetUsd": 30,
+      "persist": true
+    }
+  },
+  "systemPaths": ["/usr", "/bin", "/sbin", "/opt", "/dev", "~/.homebrew"],
+  "prepare": {
+    "jomaa-home-hub": [["npm", "ci", "--no-audit", "--no-fund"]],
+    "jomaa-health": [["npm", "ci", "--no-audit", "--no-fund"]]
+  },
+  "feedbackRounds": 2,
+  "sealRuns": 2,
+  "testTimeoutSeconds": 900,
+  "agentTimeoutSeconds": 5400,
+  "agentWatchSeconds": 5,
+  "secretLineLength": 30
+}

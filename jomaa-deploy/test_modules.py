@@ -72,8 +72,9 @@ class DeclarationTest(unittest.TestCase):
         modules, failures = engine.discover(CHECKOUT)
         self.assertEqual(failures, {})
         self.assertEqual({m.name: m.kind for m in modules}, {
-            "deploy": "Checks", "pico-imaging-bench": "Checks", "ssh": "External", "hub": "Service",
-            "static": "Service", "sarah.jomaa.org": "StaticSite", "health": "Command", "tailnet": "Command"})
+            "deploy": "Checks", "pico-imaging-bench": "Checks", "agent-pipeline": "Checks", "ssh": "External",
+            "hub": "Service", "static": "Service", "sarah.jomaa.org": "StaticSite", "health": "Command",
+            "tailnet": "Command"})
         units = {m.name: m.unit for m in modules if m.kind == "Service"}
         self.assertEqual(units, {"hub": "jomaa-hub", "static": "jomaa-static-pages"})
 
