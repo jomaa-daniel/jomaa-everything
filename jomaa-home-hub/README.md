@@ -443,6 +443,15 @@ and drive it against a fake Govee API. `npm test` runs just the Node tests.
 `node dist/main.js --no-matter` runs the hub without the Matter controller,
 for Govee-only homes and tests.
 
+`npm run test:browser` runs the Playwright suites in Chrome. The Tailscale
+integration suite drives the real hub API and sync against a fake provider.
+`npm run test:ui` runs the Tailscale and account UI suite with every API
+request intercepted by Playwright. It serves the built pages, checks request
+methods and payloads, and rejects unmocked requests. Each test has its own
+browser context and API responses. These tests cover sign-in, activation,
+invites, links, access changes, sync failures, unlinking, account deletion,
+session expiry and phone layouts without starting backend services.
+
 ## Wi-Fi device health
 
 The hub includes a device inventory, SQLite health history, and a management page at `https://jomaa.org/devices`.

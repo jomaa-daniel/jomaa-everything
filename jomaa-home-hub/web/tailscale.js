@@ -55,6 +55,7 @@ async function act(button, work) {
   } finally {
     busy = false;
     await load().catch((reason) => notify(reason.message));
+    for (const control of document.querySelectorAll("#content button, #content select")) control.disabled = false;
     const target = card ? document.querySelector(`#${CSS.escape(card)} h3`) : button;
     if (target?.isConnected) target.focus();
   }
