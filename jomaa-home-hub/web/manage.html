@@ -58,7 +58,8 @@
           </div>
           <p id="matter-unavailable" class="alert" hidden>Matter controller offline. Matter devices are unavailable.</p>
           <div id="device-workspace" class="device-workspace">
-            <div class="device-list">
+            <div class="device-list" role="region" aria-labelledby="inventory-title">
+              <div class="pane-heading"><h2 id="inventory-title">Devices</h2></div>
               <div class="table-wrap" id="assignment-table-wrap">
                 <table aria-label="Devices">
                   <thead>
@@ -72,12 +73,15 @@
                 </table>
               </div>
               <p id="devices-empty" class="empty" hidden>No devices are available.</p>
-              <p id="devices-no-match" class="empty" hidden>No devices match that search.</p>
+              <p id="devices-no-match" class="empty" hidden>No devices match that search. Press Esc to clear it.</p>
             </div>
-            <aside id="device-editor" aria-labelledby="selected-name" hidden>
+            <aside id="device-editor" aria-labelledby="assignments-title selected-name" hidden>
+              <div class="pane-heading">
+                <h2 id="assignments-title">Assignments</h2>
+                <span id="selection-position"></span>
+              </div>
               <button id="editor-back" class="quiet">← Devices</button>
-              <p class="section-label">Selected device</p>
-              <h2 id="selected-name"></h2>
+              <h3 id="selected-name"></h3>
               <p id="selected-source" class="muted"></p>
               <fieldset id="editor-fields">
                 <legend class="sr-only">Device assignments</legend>
@@ -126,10 +130,7 @@
     <footer class="command-bar">
       <div class="command-content">
         <p id="notice" role="status" aria-live="polite">Connecting…</p>
-        <p id="command-hints" hidden>
-          <kbd>↑↓</kbd> select <span>·</span> <kbd>Enter</kbd> edit <span>·</span> <kbd>/</kbd> search <span>·</span>
-          <kbd>Esc</kbd> back
-        </p>
+        <div id="command-hints" aria-label="Keyboard commands" hidden></div>
       </div>
     </footer>
   </body>

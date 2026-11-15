@@ -24,6 +24,64 @@ function notice(text, state = "") {
   $("notice").className = state;
 }
 
+function updateCommands() {
+  const target = document.activeElement;
+  let commands;
+  if (target.closest(".tabs")) {
+    commands = [
+      ["←→", "Tabs"],
+      ["Tab", "Panel"],
+      ["/", "Search"],
+    ];
+    if (activeTab === "devices" && selectedKey) commands.splice(1, 0, ["↓", "Devices"]);
+  } else if (target === $("device-search")) {
+    commands = [
+      ["↓", "Select"],
+      ["Esc", searchQuery ? "Clear search" : "Devices"],
+      ["Tab", "Next"],
+    ];
+  } else if (target.closest("#device-editor")) {
+    commands =
+      target.type === "checkbox"
+        ? [["Space", "Toggle group"]]
+        : target === $("assigned-type")
+          ? [["↑↓", "Category"]]
+          : [["Enter", "Activate"]];
+    commands.push(["Tab", "Next"], ["Esc", "Devices"]);
+  } else if (target.closest(".editing")) {
+    commands = [
+      ["Enter", target.tagName === "INPUT" ? "Save" : "Activate"],
+      ["Esc", "Cancel"],
+      ["Tab", "Actions"],
+    ];
+  } else if (target.closest(".create-form")) {
+    commands = [
+      ["Enter", activeTab === "types" ? "Add type" : "Add group"],
+      ["Tab", "Next"],
+    ];
+  } else if (activeTab === "devices") {
+    commands = [
+      ["↑↓", "Select"],
+      ["Enter", "Edit"],
+      ["Tab", "Assignments"],
+      ["/", "Search"],
+    ];
+  } else {
+    commands = [
+      ["Enter", "Activate"],
+      ["Tab", "Next"],
+      ["/", "Devices"],
+    ];
+  }
+  const hints = $("command-hints");
+  hints.replaceChildren();
+  for (const [key, label] of commands) {
+    const command = element("span", undefined, "key-command");
+    command.append(element("kbd", key), element("span", label));
+    hints.append(command);
+  }
+}
+
 function signedIn(value) {
   $("login-section").hidden = value;
   for (const id of ["management", "logout", "refresh", "command-hints"]) $(id).hidden = !value;
@@ -66,6 +124,7 @@ function setBusy() {
   for (const container of ["type-create", "group-create", "type-list", "group-list"]) {
     for (const control of $(container).querySelectorAll("input, button")) control.disabled = pending || catalogStale;
   }
+  updateCommands();
 }
 
 function restoreFocus(id) {
@@ -140,10 +199,7 @@ function showTab(tab, focus = false) {
     button.tabIndex = name === tab ? 0 : -1;
     $(name + "-panel").hidden = name !== tab;
   }
-  $("command-hints").textContent =
-    tab === "devices"
-      ? "↑↓ select · Enter edit · / search · Esc back"
-      : "←→ tabs · Enter activate · Esc cancel · / devices";
+  updateCommands();
   if (focus) $(tab + "-tab").focus();
 }
 
@@ -309,6 +365,9 @@ function renderDevices() {
   $("visible-count").textContent = searchQuery
     ? `${visible.length} of ${plural(catalog.devices.length, "device")}`
     : plural(catalog.devices.length, "device");
+  $("selection-position").textContent = selectedKey
+    ? `${visible.findIndex((device) => device.key === selectedKey) + 1} / ${visible.length}`
+    : "";
   const rows = $("assignment-rows");
   rows.replaceChildren();
   for (const device of visible) {
@@ -384,6 +443,7 @@ async function saveAssignment() {
 }
 
 $("assigned-type").addEventListener("change", saveAssignment);
+document.addEventListener("focusin", updateCommands);
 $("editor-back").addEventListener("click", closeEditor);
 $("login-form").addEventListener("submit", async (event) => {
   event.preventDefault();

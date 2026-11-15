@@ -230,11 +230,16 @@ test("mobile shows the inventory first, opens one device, and returns without ov
   assert.equal(await page.evaluate<boolean>("document.documentElement.scrollWidth <= innerWidth"), true);
   await page.getByRole("button", { name: "Edit Lamp", exact: true }).click();
   assert.ok(await page.locator("#device-editor").isVisible());
+  const paneTitle = await page.locator("#device-editor .pane-heading").boundingBox();
+  const editor = await page.locator("#device-editor").boundingBox();
+  assert.ok(paneTitle && editor && Math.abs(paneTitle.y - editor.y) < 30);
   assert.ok(await page.locator(".device-list").isHidden());
   assert.equal(await page.locator("#selected-name").textContent(), "Lamp");
   await page.locator("#editor-back").click();
   assert.ok(await page.locator(".device-list").isVisible());
   assert.ok(await page.locator("#device-editor").isHidden());
+  assert.equal(await page.evaluate<boolean>("document.documentElement.scrollWidth <= innerWidth"), true);
+  await page.setViewportSize({ width: 320, height: 640 });
   assert.equal(await page.evaluate<boolean>("document.documentElement.scrollWidth <= innerWidth"), true);
   await page.close();
 });
@@ -325,5 +330,24 @@ test("an expired session during a save returns to sign-in with a visible message
   await page.locator("#login-section:not([hidden])").waitFor();
   assert.ok(await page.locator("#management").isHidden());
   assert.ok((await page.locator("#notice").textContent())?.includes("Sign in to continue"));
+  await page.close();
+});
+
+test("keyboard hints follow focus through search, assignments, and renaming", async () => {
+  const page = await openManage();
+  assert.ok((await page.locator("#command-hints").innerText()).includes("Tabs"));
+  await page.keyboard.press("/");
+  await page.locator("#device-search").fill("pico");
+  assert.ok((await page.locator("#command-hints").innerText()).includes("Clear search"));
+  await page.keyboard.press("ArrowDown");
+  assert.ok((await page.locator("#command-hints").innerText()).includes("Assignments"));
+  await page.keyboard.press("Enter");
+  assert.ok((await page.locator("#command-hints").innerText()).includes("Category"));
+  await page.keyboard.press("Tab");
+  assert.ok((await page.locator("#command-hints").innerText()).includes("Toggle group"));
+  await page.locator("#types-tab").click();
+  await page.getByRole("button", { name: "Rename type Light strips", exact: true }).click();
+  assert.ok((await page.locator("#command-hints").innerText()).includes("Save"));
+  assert.ok((await page.locator("#command-hints").innerText()).includes("Cancel"));
   await page.close();
 });

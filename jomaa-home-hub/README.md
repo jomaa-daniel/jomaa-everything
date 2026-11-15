@@ -87,7 +87,9 @@ changes save immediately. The Types and Groups tabs create, rename, and delete
 categories and groups. Arrow keys select device rows, Enter opens the editor,
 `/` focuses search, and Escape returns to the list or cancels a rename.
 On phones, selecting a device opens its editor with a button to return to the
-inventory. The bottom bar shows keyboard commands and save results.
+inventory. The bottom bar shows commands for the focused control and save results.
+The dark palette, titled panes, and focus indicators are described in
+[Organization design](docs/organization-design.md).
 
 Types have distinct colors; assigning a
 custom type changes the inventory category while hardware types and capabilities
