@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import secrets
 import time
-import unittest
 
 import harness
 
@@ -230,13 +229,8 @@ class Receiver(harness.E2ETestCase):
         self.assertEqual((h.version("fx-alpha"), h.version("fx-beta")), ("r04", "r04"))
         h.last_notify, h.last_result = two, stored
 
-    @unittest.expectedFailure
     def test_04b_busy_receiver_answers_409(self):
-        """R4: a request that arrives while an activation runs answers 409 at once.
-
-        The receiver serves one request at a time, so the second request waits behind the activation and
-        its connection is dropped when the receiver restarts after answering the first.
-        """
+        """R4: a request that arrives while an activation runs answers 409 at once."""
         h = self.h
         h.repo.set_behavior("fx-alpha", build="hang")
         sha = h.repo.commit("Hang the fx-alpha build again")

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import shlex
-import unittest
 from urllib.parse import urlsplit
 
 import harness
@@ -270,13 +269,8 @@ class Chaos(harness.E2ETestCase):
         self.assertEqual(self.current(), h.deploy_path(f"releases/{sha}"))
         self.assertEqual(h.version(ALPHA), "p3b")
 
-    @unittest.expectedFailure
     def test_p3c_extraction_leaves_no_temporary_folder(self):
-        """P3 during extraction: no releases/release-* folder survives the next deploy and prune.
-
-        Expected to fail: extract_release() removes its temporary folder only when the receiver process
-        survives, and prune_releases() considers only folders with a .revision file.
-        """
+        """P3 during extraction: no releases/release-* folder survives the next deploy and prune."""
         leaked = type(self).p3_leaked
         if leaked is None:
             self.skipTest("test_p3b did not reach the retried deploy")

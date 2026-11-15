@@ -4,7 +4,6 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-import unittest
 
 import harness
 
@@ -116,13 +115,8 @@ class Install(harness.E2ETestCase):
         receiver = h.settings["receiverUnit"]
         harness.wait_for(lambda: h.unit_active(receiver), harness.TIMEOUTS["bootSeconds"], f"{receiver} is not active")
 
-    @unittest.expectedFailure
     def test_3b_first_push_after_install_leaves_other_modules_unchanged(self):
-        """The first push after install leaves the modules it does not change unchanged.
-
-        Expected to fail: install runs the engine from the checkout, so the fingerprints it records leave out
-        the module classes in jomaa-deploy/modules/, which the release's own activation includes.
-        """
+        """The first push after install leaves the modules it does not change unchanged."""
         others = type(self).first_push_others
         if others is None:
             self.skipTest("test_3 did not reach the first push")

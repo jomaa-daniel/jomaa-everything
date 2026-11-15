@@ -6,6 +6,7 @@ import type { MatterAdmin } from "../matter/nodes.js";
 import type { Hub } from "../hub.js";
 import type { Organization } from "../organization.js";
 import { HealthError, type HealthStore } from "./store.js";
+import { settings } from "../settings.js";
 
 /** Serves device health to sessions with the devices scope, while pings use only device credentials. */
 export class HealthHttp {
@@ -19,12 +20,17 @@ export class HealthHttp {
   ) {}
 
   /** access is the caller's access to the devices scope; device pings authenticate with their own credentials. */
-  async handle(req: IncomingMessage, res: ServerResponse, access: Access): Promise<boolean> {
+  async handle(
+    req: IncomingMessage,
+    res: ServerResponse,
+    access: Access,
+    currentAccess: () => Access = () => access,
+  ): Promise<boolean> {
     const url = new URL(req.url ?? "/", "http://hub");
     if (url.pathname !== "/api/devices" && !url.pathname.startsWith("/api/devices/")) return false;
     res.setHeader("Cache-Control", "no-store");
-    const ping = /^\/api\/devices\/([^/]+)\/health$/.exec(url.pathname);
-    if (ping) {
+    const ping = /^\/api\/devices\/([^/]+)\/(health|i2c)$/.exec(url.pathname);
+    if (ping && (ping[2] === "health" || req.method === "POST")) {
       if (req.method !== "POST") throw new HealthError(405, "method not allowed");
       // Forwarded HTTPS is trusted only from the existing local tunnel (limiter.ts).
       if (!isHTTPS(req)) throw new HealthError(426, "device health reports require HTTPS");
@@ -38,13 +44,38 @@ export class HealthHttp {
         this.#limiter.fail(client);
         throw err;
       }
-      const result = this.store.record(id, await body(req));
-      if (result.registered) this.log.info("health device registered", { deviceId: id });
-      json(res, result.registered ? 201 : 200, { ok: true, ...result });
+      if (ping[2] === "i2c") {
+        const result = this.store.i2c.record(id, await body(req, settings.i2c.maxRequestBytes));
+        json(res, 200, { ok: true, duplicate: result.duplicate });
+      } else {
+        const result = this.store.record(id, await body(req));
+        if (result.registered) this.log.info("health device registered", { deviceId: id });
+        json(res, result.registered ? 201 : 200, { ok: true, ...result });
+      }
       return true;
     }
     if (access === "signed-out") throw new HealthError(401, "sign in first");
     if (access === "forbidden") throw new HealthError(403, refusal("devices"));
+    const capture = /^\/api\/devices\/([^/]+)\/i2c(?:\/(events))?$/.exec(url.pathname);
+    if (capture) {
+      if (req.method !== "GET") throw new HealthError(405, "method not allowed");
+      const id = decodeURIComponent(capture[1] ?? "");
+      if (capture[2] === "events") this.live(req, res, id, currentAccess);
+      else {
+        const limit = Number(url.searchParams.get("limit") ?? settings.i2c.historyLimit);
+        if (limit > settings.i2c.historyLimit) throw new HealthError(400, "limit too large");
+        json(
+          res,
+          200,
+          this.store.i2c.logs(
+            id,
+            limit,
+            url.searchParams.has("before") ? Number(url.searchParams.get("before")) : undefined,
+          ),
+        );
+      }
+      return true;
+    }
     // Browser mutations must be same-origin; scripts use the Authorization header.
     if (!["GET", "HEAD"].includes(req.method ?? "")) {
       if (req.headers["sec-fetch-site"] === "cross-site") throw new HealthError(403, "cross-site request refused");
@@ -82,6 +113,11 @@ export class HealthHttp {
           : [],
         matterConnected: this.matter.ready,
         retentionDays: this.store.retentionDays,
+        i2c: {
+          historyLimit: settings.i2c.historyLimit,
+          liveRows: settings.i2c.liveRows,
+          reconnectMilliseconds: settings.i2c.reconnectMilliseconds,
+        },
         groups: this.hub
           .list()
           .filter((target) => target.kind === "room")
@@ -119,6 +155,65 @@ export class HealthHttp {
     } else throw new HealthError(405, "method not allowed");
     return true;
   }
+
+  private live(req: IncomingMessage, res: ServerResponse, id: string, currentAccess: () => Access): void {
+    const snapshot = this.store.i2c.logs(id, settings.i2c.liveRows);
+    let closed = false;
+    let blocked = false;
+    const pending: [string, unknown][] = [];
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      pending.length = 0;
+      clearInterval(timer);
+      unsubscribe();
+      res.end();
+    };
+    const flush = () => {
+      while (!closed && !blocked && pending.length) {
+        if (currentAccess() !== "allowed") {
+          res.write("event: denied\ndata: {}\n\n");
+          close();
+          return;
+        }
+        const next = pending.shift();
+        if (next) blocked = !res.write(`event: ${next[0]}\ndata: ${JSON.stringify(next[1])}\n\n`);
+      }
+    };
+    const send = (event: string, value: unknown) => {
+      if (closed) return;
+      if (currentAccess() !== "allowed") {
+        res.write("event: denied\ndata: {}\n\n");
+        close();
+        return;
+      }
+      pending.push([event, value]);
+      if (pending.length > settings.i2c.liveRows) close();
+      else flush();
+    };
+    const unsubscribe = this.store.i2c.subscribe(id, (entry) => {
+      send("capture", entry);
+    });
+    res.on("close", close);
+    res.on("error", close);
+    res.on("drain", () => {
+      blocked = false;
+      flush();
+    });
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-store",
+      "X-Accel-Buffering": "no",
+    });
+    res.flushHeaders();
+    res.write(`retry: ${settings.i2c.reconnectMilliseconds}\n\n`);
+    const timer = setInterval(() => {
+      send("keepalive", {});
+    }, settings.i2c.keepaliveSeconds * 1000);
+    timer.unref();
+    send("snapshot", snapshot);
+    req.on("aborted", close);
+  }
 }
 
 function requireSecureCredential(req: IncomingMessage): void {
@@ -128,7 +223,7 @@ function requireSecureCredential(req: IncomingMessage): void {
   }
 }
 
-async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function body(req: IncomingMessage, maxBytes = 4096): Promise<Record<string, unknown>> {
   if (req.headers["content-type"]?.split(";")[0]?.trim() !== "application/json")
     throw new HealthError(415, "use application/json");
   const chunks: Buffer[] = [];
@@ -136,7 +231,7 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
   for await (const chunk of req) {
     const bytes = chunk as Buffer;
     size += bytes.length;
-    if (size > 4096) throw new HealthError(413, "health request too large");
+    if (size > maxBytes) throw new HealthError(413, "device request too large");
     chunks.push(bytes);
   }
   let value: unknown;

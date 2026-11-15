@@ -42,7 +42,7 @@ GitHub Actions secret `JOMAA_DEPLOY_SECRET` holds the same value.
 | `cloudflare` | object | Cloudflare API access for DNS. |
 | `cloudflare.api` | URL | Cloudflare API base URL. |
 | `cloudflare.env` | path | Checkout environment file holding `CLOUDFLARE_API_TOKEN`. |
-| `cloudflare.timeoutSeconds` | seconds | Deadline of each Cloudflare API request. |
+| `cloudflare.timeoutSeconds` | seconds | Deadline of each Cloudflare API request, cut short by the ingress phase's `moduleTimeoutSeconds` budget. |
 | `github` | object | GitHub access. |
 | `github.api` | URL | GitHub API base URL, for workflow runs, their jobs and cloudflared releases. |
 | `github.remote` | URL | Base URL the receiver fetches `main` from, followed by `/OWNER/REPOSITORY.git`. |

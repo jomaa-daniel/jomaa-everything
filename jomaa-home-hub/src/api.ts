@@ -112,7 +112,12 @@ export class Api {
     const path = new URL(req.url ?? "/", "http://hub").pathname;
     if (serveWeb(req, res)) return;
     const principal = this.#users.resolve(req);
-    if (await this.#healthHttp?.handle(req, res, this.#authorization.access(principal, "devices"))) return;
+    if (
+      await this.#healthHttp?.handle(req, res, this.#authorization.access(principal, "devices"), () =>
+        this.#authorization.access(this.#users.resolve(req), "devices"),
+      )
+    )
+      return;
     if (await this.#serve(this.#public, req, res, path, signal, false, principal)) {
       return;
     }

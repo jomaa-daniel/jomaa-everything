@@ -19,6 +19,15 @@
     "downloadUrl": "https://tailscale.com/download",
     "adminUsersUrl": "https://login.tailscale.com/admin/users"
   },
+  "i2c": {
+    "maxDataBytes": 4096,
+    "maxRequestBytes": 12288,
+    "historyLimit": 100,
+    "liveRows": 200,
+    "keepaliveSeconds": 15,
+    "reconnectMilliseconds": 2000,
+    "maxLiveClients": 32
+  },
   "secrets": {
     "envFiles": ["jomaa-home-hub/.env", "jomaa-tailscale/.env"],
     "ghCommand": "/snap/bin/gh",

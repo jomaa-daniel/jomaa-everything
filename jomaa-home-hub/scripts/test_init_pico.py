@@ -56,7 +56,7 @@ class ProvisioningTests(unittest.TestCase):
         self.assertEqual(config["hub_host"], "hub.jomaa.org")
         self.assertEqual(config["wifi_password"], "test-password")
         self.assertEqual(output.stat().st_mode & 0o777, 0o700)
-        for name in ("main.py", "device_config.json", "health_ca.der"):
+        for name in ("main.py", "device_config.json", "health_ca.der", "stream.py", "stream.json"):
             self.assertEqual((output / name).stat().st_mode & 0o777, 0o600)
         self.assertNotIn("a" * 64, printed.getvalue())
         self.assertNotIn("test-password", printed.getvalue())
@@ -121,7 +121,7 @@ class FirmwareProtocolTests(unittest.TestCase):
         return stream
 
     def send(self, stream, wrap_error=None):
-        config = {"hub_host": "hub.example", "hub_port": 443, "id": "pico-test", "token": "a" * 64}
+        config = {"hub_host": "hub.example", "hub_port": 443, "id": "pico-test", "token": "a" * 64, "runtime": json.loads(init_pico.STREAM_SETTINGS.read_text())}
         with patch.object(firmware.socket, "socket") as raw, patch.object(firmware.socket, "getaddrinfo", return_value=[(0, 0, 0, "", ("127.0.0.1", 443))]):
             tls = unittest.mock.Mock()
             if wrap_error:
@@ -140,6 +140,51 @@ class FirmwareProtocolTests(unittest.TestCase):
             self.assertEqual(self.send(stream)["nextIntervalSeconds"], 60)
             self.assertIn(b"POST /api/devices/pico-test/health", stream.sent)
 
+    def test_health_and_capture_share_one_verified_connection_and_consume_trailers(self):
+        body = b'{"ok":true,"nextIntervalSeconds":60}'
+        first = b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n" + ("%x" % len(body)).encode() + b"\r\n" + body + b"\r\n0\r\nTrace: test\r\n\r\n"
+        second = b"HTTP/1.1 200 OK\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body
+        stream = self.stream(first + second)
+        config = {"hub_host": "hub.example", "hub_port": 443, "id": "pico-test", "token": "a" * 64,
+                  "runtime": json.loads(init_pico.STREAM_SETTINGS.read_text())}
+        tls = unittest.mock.Mock()
+        tls.wrap_socket.return_value = stream
+        with patch.object(firmware.socket, "socket") as raw, patch.object(firmware.socket, "getaddrinfo", return_value=[(0, 0, 0, "", ("127.0.0.1", 443))]):
+            client = firmware.HTTPSClient(config, tls)
+            self.assertTrue(client.post({"health": 1}, "health")["ok"])
+            self.assertFalse(stream.closed)
+            self.assertTrue(client.post({"data": ""}, "i2c")["ok"])
+            raw.assert_called_once()
+            tls.wrap_socket.assert_called_once_with(raw.return_value, server_hostname="hub.example")
+            self.assertIn(b"POST /api/devices/pico-test/i2c", stream.sent)
+            self.assertEqual(stream.sent.count(b"Connection: keep-alive"), 2)
+            client.close()
+            self.assertTrue(stream.closed)
+
+    def test_native_reporting_sets_the_clock_before_sending_health(self):
+        class Stop(BaseException):
+            pass
+        ntp = unittest.mock.Mock()
+        wlan = unittest.mock.Mock()
+        wlan.isconnected.return_value = True
+        wlan.ifconfig.return_value = ("192.0.2.1",)
+        capture = unittest.mock.Mock()
+        capture.stopped = False
+        client = unittest.mock.Mock()
+        client.post.side_effect = Stop
+        config = {"interval_seconds": 15, "runtime": json.loads(init_pico.STREAM_SETTINGS.read_text())}
+        with patch.dict(sys.modules, {"ntptime": ntp}), \
+                patch.object(firmware.time, "ticks_ms", return_value=0, create=True), \
+                patch.object(firmware.time, "ticks_add", side_effect=lambda a,b:a+b, create=True), \
+                patch.object(firmware.time, "ticks_diff", side_effect=lambda a,b:a-b, create=True), \
+                patch.object(firmware.time, "sleep", side_effect=Stop), \
+                patch.object(firmware.gc, "mem_free", return_value=100000, create=True), \
+                self.assertRaises(Stop):
+            firmware.send_loop(config, capture, None, wlan, client)
+        ntp.settime.assert_called_once()
+        client.post.assert_called_once()
+        self.assertEqual(client.post.call_args.args[1], "health")
+
     def test_cert_failure_never_sends_credential_and_http_errors_are_retried(self):
         stream = self.stream(b"")
         with self.assertRaises(ssl.SSLCertVerificationError):
@@ -152,7 +197,7 @@ class FirmwareProtocolTests(unittest.TestCase):
                 self.send(self.stream(response))
 
     def test_esp_transport_still_verifies_hostname_and_closes_on_bad_certificate(self):
-        config = {"hub_host": "hub.example", "hub_port": 443, "id": "pico-test", "token": "a" * 64}
+        config = {"hub_host": "hub.example", "hub_port": 443, "id": "pico-test", "token": "a" * 64, "runtime": json.loads(init_pico.STREAM_SETTINGS.read_text())}
         radio = unittest.mock.Mock()
         tls = unittest.mock.Mock()
         tls.wrap_socket.side_effect = ssl.SSLCertVerificationError("untrusted certificate")
@@ -171,6 +216,7 @@ class FirmwareProtocolTests(unittest.TestCase):
             spec.loader.exec_module(transport)
         radio = unittest.mock.Mock()
         radio.uart.readinto.side_effect = [None, 3]
+        radio.config = {"runtime": json.loads(init_pico.STREAM_SETTINGS.read_text())}
         with patch.object(transport.time, "ticks_add", side_effect=lambda a, b: a+b, create=True), \
                 patch.object(transport.time, "ticks_diff", side_effect=lambda a, b: a-b, create=True), \
                 patch.object(transport.time, "ticks_ms", return_value=0, create=True), \
@@ -182,6 +228,10 @@ class FirmwareProtocolTests(unittest.TestCase):
                 with self.assertRaises(OSError) as error:
                     stream.readinto(bytearray(3))
                 self.assertEqual(error.exception.args[0], 110)
+                stream.start_request()
+                radio.uart.readinto.side_effect = None
+                radio.uart.readinto.return_value = 1
+                self.assertEqual(stream.readinto(bytearray(3)), 1)
             stream.close()
         radio.close_tcp.assert_called_once()
 
