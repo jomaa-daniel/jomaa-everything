@@ -92,9 +92,13 @@ Following a same-origin link, by click or middle click, sends
 paths from same-origin requests.
 
 Pages and their files are served with `Cache-Control: no-cache` and a content
-`ETag`. Chrome opens a prefetched copy for five minutes without asking the hub
-again; other browsers revalidate it, and the hub answers `304 Not Modified`
-while the file is unchanged.
+`ETag`, and the hub answers `304 Not Modified` while a file is unchanged.
+The hub rewrites every stylesheet, script and module reference in the pages and
+their scripts to carry the file's content version, such as
+`/home/prefetch.js?v=<version>`, and `/api/prefetch` lists those URLs. A
+changed file gets a new URL, so a browser that keeps scripts and styles in its
+cache never pairs a new page with an old file. Chrome opens a prefetched copy
+for five minutes without asking the hub again.
 
 The locally managed Cloudflare tunnel also routes hostname `jomaa.org`, paths `/`,
 `/home`, `/manage`, `/lights`, `/invite`, `/join`, `/permissions`, `/secrets` (including assets), and the pages' API requests to the hub on port 8080. Its proxied DNS record

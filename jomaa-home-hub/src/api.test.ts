@@ -683,7 +683,8 @@ test("the prefetch list names every page with the files it loads, most-clicked f
     "/permissions",
     "/secrets",
   ]);
-  const assets = (path: string) => pages.find((page) => page.path === path)?.assets;
+  const assets = (path: string) =>
+    pages.find((page) => page.path === path)?.assets.map((url) => url.replace(/\?v=[\w-]+$/, ""));
   assert.deepEqual(assets("/home"), [
     "/home/base.css",
     "/home/style.css",
@@ -702,7 +703,20 @@ test("the prefetch list names every page with the files it loads, most-clicked f
   ]);
   assert.deepEqual(assets("/lights"), ["/lights/style.css", "/home/ui.css", "/home/ui.js", "/lights/app.js"]);
   for (const page of pages) {
-    for (const url of [page.path, ...page.assets]) assert.equal((await fetch(env.url + url)).status, 200, url);
+    const bodies = [
+      await (await fetch(env.url + page.path)).text(),
+      ...(await Promise.all(page.assets.map(async (url) => (await fetch(env.url + url)).text()))),
+    ];
+    for (const url of page.assets) {
+      assert.match(url, /\?v=[\w-]+$/, "asset URLs carry their content version");
+      const response = await fetch(env.url + url);
+      assert.equal(response.status, 200, url);
+      assert.equal(response.headers.get("etag"), `"${url.split("?v=")[1] ?? ""}"`, url);
+      assert.ok(
+        bodies.some((body) => body.includes(`"${url}"`)),
+        `${page.path} or its files reference ${url}`,
+      );
+    }
   }
 
   const click = (path: unknown, headers: Record<string, string> = {}) =>
