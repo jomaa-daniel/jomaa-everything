@@ -1,6 +1,7 @@
 # Raw I²C capture settings
 
 `stream.json` configures active reads of attached I²C devices. Sampling runs on the Pico's second core while the first core sends captures and health reports over verified HTTPS. Each bus has a bounded pending buffer. A full buffer counts discarded samples in `dropped`; empty intervals need no data buffer. Uploads reuse their sequence until acknowledged.
+Health and capture uploads share one verified TLS connection. Each response is fully consumed before the next request; errors close the connection and trigger a retry.
 
 | Setting                   | Meaning                                                                                                                                              |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -22,6 +23,7 @@
 | `joinPollMilliseconds`    | Native Wi-Fi connection check interval.                                                                                                              |
 | `lowHeapBytes`            | Free heap threshold that marks a health report degraded.                                                                                             |
 | `socketTimeoutSeconds`    | Native socket request timeout.                                                                                                                       |
+| `requestTimeoutSeconds`   | Deadline for each request on the external radio TCP stream, including the initial TLS handshake.                                                     |
 | `maxResponseBytes`        | Maximum response body and HTTP headers accepted by the Pico.                                                                                         |
 | `maxStatusLineBytes`      | Maximum HTTP status line accepted by the Pico.                                                                                                       |
 

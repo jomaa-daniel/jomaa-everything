@@ -7,7 +7,7 @@ import socket
 import ssl
 import time
 
-FIRMWARE = "jomaa-pico-health/1.1.0"
+FIRMWARE = "jomaa-pico-health/1.1.1"
 STREAM_SETTINGS_FILE = "stream.json"
 MIN_HEALTH_INTERVAL_SECONDS = 15
 MAX_HEALTH_INTERVAL_SECONDS = 3600
@@ -23,35 +23,61 @@ def _read_exact(stream, count):
     return data
 
 
-def post_json(config, tls, payload, action, radio=None):
-    """No redirects and no unverified TLS fallback; credentials go only to the configured host."""
-    host = config["hub_host"]
-    port = config["hub_port"]
-    limits = config["runtime"]
-    max_response = limits["maxResponseBytes"]
-    raw = radio.open_tcp(host, port) if radio else socket.socket()
-    stream = None
-    try:
-        if radio is None:
-            raw.settimeout(limits["socketTimeoutSeconds"])
-            raw.connect(socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)[0][-1])
-        stream = tls.wrap_socket(raw, server_hostname=host)
-        encoded = json.dumps(payload).encode()
-        authority = host if port == 443 else "%s:%d" % (host, port)
-        headers = ("POST /api/devices/%s/%s HTTP/1.1\r\n"
-                   "Host: %s\r\nAuthorization: Bearer %s\r\n"
-                   "User-Agent: %s\r\n"
-                   "Content-Type: application/json\r\nContent-Length: %d\r\n"
-                   "Connection: close\r\n\r\n") % (
-                       config["id"], action, authority, config["token"], FIRMWARE, len(encoded))
-        # MicroPython streams may return short writes.
-        data = headers.encode() + encoded
-        offset = 0
-        while offset < len(data):
-            written = stream.write(data[offset:])
-            if not written:
-                raise OSError("incomplete HTTP write")
-            offset += written
+class HTTPSClient:
+    """Verified TLS connection shared by length-framed health and capture requests."""
+    def __init__(self, config, tls, radio=None):
+        self.config = config
+        self.tls = tls
+        self.radio = radio
+        self.raw = None
+        self.stream = None
+
+    def _connect(self):
+        host, port = self.config["hub_host"], self.config["hub_port"]
+        self.raw = self.radio.open_tcp(host, port) if self.radio else socket.socket()
+        if self.radio is None:
+            self.raw.settimeout(self.config["runtime"]["socketTimeoutSeconds"])
+            self.raw.connect(socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)[0][-1])
+        self.stream = self.tls.wrap_socket(self.raw, server_hostname=host)
+
+    def post(self, payload, action):
+        try:
+            if self.stream is None:
+                self._connect()
+            if self.radio is not None:
+                self.raw.start_request()
+            encoded = json.dumps(payload).encode()
+            host, port = self.config["hub_host"], self.config["hub_port"]
+            authority = host if port == 443 else "%s:%d" % (host, port)
+            headers = ("POST /api/devices/%s/%s HTTP/1.1\r\n"
+                       "Host: %s\r\nAuthorization: Bearer %s\r\nUser-Agent: %s\r\n"
+                       "Content-Type: application/json\r\nContent-Length: %d\r\n"
+                       "Connection: keep-alive\r\n\r\n") % (
+                           self.config["id"], action, authority, self.config["token"], FIRMWARE, len(encoded))
+            data = headers.encode() + encoded
+            offset = 0
+            while offset < len(data):
+                written = self.stream.write(data[offset:])
+                if not written:
+                    raise OSError("incomplete HTTP write")
+                offset += written
+            status, response_headers, response = self._response()
+            if status not in (200, 201):
+                raise OSError("hub rejected report (%d)" % status)
+            result = json.loads(response)
+            if result.get("ok") is not True:
+                raise OSError("hub did not acknowledge report")
+            if response_headers.get("connection", "").lower() == "close":
+                self.close()
+            return result
+        except Exception:
+            self.close()
+            raise
+
+    def _response(self):
+        stream = self.stream
+        limits = self.config["runtime"]
+        maximum = limits["maxResponseBytes"]
         line = stream.readline()
         if not line or len(line) > limits["maxStatusLineBytes"]:
             raise OSError("invalid HTTP status")
@@ -61,7 +87,7 @@ def post_json(config, tls, payload, action, radio=None):
         while True:
             line = stream.readline()
             total += len(line)
-            if total > max_response or not line:
+            if not line or total > maximum:
                 raise OSError("invalid HTTP headers")
             if line == b"\r\n":
                 break
@@ -70,35 +96,51 @@ def post_json(config, tls, payload, action, radio=None):
         if headers.get("transfer-encoding", "").lower() == "chunked":
             response = b""
             while True:
-                size = int(stream.readline().split(b";", 1)[0], 16)
+                line = stream.readline()
+                if not line or len(line) > limits["maxStatusLineBytes"]:
+                    raise OSError("invalid HTTP chunk")
+                size = int(line.split(b";", 1)[0], 16)
                 if not size:
+                    while True:
+                        line = stream.readline()
+                        total += len(line)
+                        if not line or total > maximum:
+                            raise OSError("invalid HTTP trailers")
+                        if line == b"\r\n":
+                            break
                     break
-                if size < 0 or len(response) + size > max_response:
+                if size < 0 or len(response) + size > maximum:
                     raise OSError("HTTP response too large")
                 response += _read_exact(stream, size)
                 if _read_exact(stream, 2) != b"\r\n":
                     raise OSError("invalid HTTP chunk")
         elif "content-length" in headers:
             size = int(headers["content-length"])
-            if size < 0 or size > max_response:
+            if size < 0 or size > maximum:
                 raise OSError("HTTP response too large")
             response = _read_exact(stream, size)
         else:
-            response = stream.read(max_response + 1)
-            if len(response) > max_response:
-                raise OSError("HTTP response too large")
-        if status not in (200, 201):
-            raise OSError("hub rejected report (%d)" % status)
-        result = json.loads(response)
-        if result.get("ok") is not True:
-            raise OSError("hub did not acknowledge report")
-        return result
-    finally:
+            raise OSError("HTTP response requires length framing")
+        return status, headers, response
+
+    def close(self):
+        raw, stream = self.raw, self.stream
+        self.raw = None
+        self.stream = None
         try:
             if stream is not None:
                 stream.close()
         finally:
-            raw.close()
+            if raw is not None:
+                raw.close()
+
+
+def post_json(config, tls, payload, action, radio=None):
+    client = HTTPSClient(config, tls, radio)
+    try:
+        return client.post(payload, action)
+    finally:
+        client.close()
 
 
 def post_health(config, tls, payload, radio=None):
@@ -130,7 +172,6 @@ def run():
 
 
 def report_loop(config, tls, capture):
-    runtime = config["runtime"]
     radio = None
     transport = config["wifi_transport"]
     if transport == "esp8285":
@@ -139,11 +180,19 @@ def report_loop(config, tls, capture):
         wlan = radio
     elif transport == "native":
         import network
-        import ntptime
         wlan = network.WLAN(network.STA_IF)
         wlan.active(True)
     else:
         raise ValueError("unsupported Wi-Fi transport")
+    client = HTTPSClient(config, tls, radio)
+    try:
+        send_loop(config, capture, radio, wlan, client)
+    finally:
+        client.close()
+
+
+def send_loop(config, capture, radio, wlan, client):
+    runtime = config["runtime"]
     boot_id = binascii.hexlify(os.urandom(16)).decode()
     sequence = 0
     interval = config["interval_seconds"]
@@ -158,6 +207,7 @@ def report_loop(config, tls, capture):
     bus_ids = [bus["id"] for bus in runtime["buses"]]
     next_bus = 0
     connected = False
+    ip = None
     while True:
         now = time.ticks_ms()
         uptime_ms += time.ticks_diff(now, last_tick)
@@ -175,11 +225,13 @@ def report_loop(config, tls, capture):
                             if time.ticks_diff(time.ticks_ms(), start) > runtime["joinTimeoutMilliseconds"]:
                                 raise OSError("Wi-Fi connection timed out")
                             time.sleep_ms(runtime["joinPollMilliseconds"])
+                ip = wlan.ifconfig()[0]
                 connected = True
             if not clock_ready:
                 if radio:
                     radio.sync_clock()
                 else:
+                    import ntptime
                     ntptime.host = config.get("ntp_host", "pool.ntp.org")
                     ntptime.settime()
                 clock_ready = True
@@ -191,7 +243,7 @@ def report_loop(config, tls, capture):
                 heap = gc.mem_free()
                 pending = {"bootId": boot_id, "sequence": sequence, "firmware": FIRMWARE,
                            "uptimeSeconds": uptime_ms // 1000, "freeHeapBytes": heap,
-                           "ip": wlan.ifconfig()[0],
+                           "ip": ip,
                            "status": "degraded" if heap < runtime["lowHeapBytes"] or capture.stopped else "healthy"}
                 try:
                     pending["rssi"] = wlan.status("rssi")
@@ -202,7 +254,7 @@ def report_loop(config, tls, capture):
                 elif capture.stopped:
                     pending["message"] = "I2C capture stopped"
             if pending is not None:
-                result = post_health(config, tls, pending, radio)
+                result = client.post(pending, "health")
                 interval = max(MIN_HEALTH_INTERVAL_SECONDS,
                                min(MAX_HEALTH_INTERVAL_SECONDS, int(result["nextIntervalSeconds"])))
                 pending = None
@@ -219,7 +271,7 @@ def report_loop(config, tls, capture):
                         if pending_capture is not None:
                             break
                 if pending_capture is not None:
-                    post_json(config, tls, pending_capture, "i2c", radio)
+                    client.post(pending_capture, "i2c")
                     pending_capture = None
                     upload_due = time.ticks_add(time.ticks_ms(), runtime["uploadMilliseconds"])
                     retry = runtime["retrySeconds"]
@@ -230,6 +282,10 @@ def report_loop(config, tls, capture):
         except Exception as error:
             # Never print config, tokens, network credentials, or HTTP headers.
             print("Report failed (%s); retrying in %ds" % (type(error).__name__, retry))
+            try:
+                client.close()
+            except OSError:
+                pass
             connected = False
             time.sleep(retry)
             retry = min(runtime["retryMaxSeconds"], retry * 2)
