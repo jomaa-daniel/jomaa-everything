@@ -13,6 +13,7 @@ import { Accounts } from "../accounts.js";
 import { silentLog } from "../log.js";
 import type { MatterAdmin, NodeSummary } from "../matter/nodes.js";
 import { HealthStore } from "./store.js";
+import { settings } from "../settings.js";
 
 const matter: MatterAdmin = {
   ready: false,
@@ -193,6 +194,16 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     assert.equal((await call(capturePath, "GET", undefined, token)).status, 401);
     assert.equal((await call(capturePath, "GET", undefined, admin)).status, 200);
     assert.equal(store.i2c.logs("pico-api").logs[0]?.data, capture.data);
+    const largeCaptures = 8;
+    for (let sequence = 1; sequence <= largeCaptures; sequence++) {
+      store.i2c.record("pico-api", {
+        ...capture,
+        sequence,
+        startUs: sequence * 1000000,
+        endUs: (sequence + 1) * 1000000,
+        data: "aa".repeat(settings.i2c.maxDataBytes),
+      });
+    }
     let liveText = "";
     let snapshotReady: () => void = () => {};
     const snapshot = new Promise<void>((resolve) => {
@@ -212,7 +223,8 @@ await test("HTTPS API separates admin and device auth and persists authenticated
           assert.equal(res.statusCode, 200);
           res.on("data", (chunk: Buffer) => {
             liveText += chunk.toString();
-            if (liveText.includes("event: snapshot")) snapshotReady();
+            const start = liveText.indexOf("event: snapshot");
+            if (start >= 0 && liveText.indexOf("\n\n", start) >= 0) snapshotReady();
           });
           res.on("end", resolve);
           res.on("error", reject);
@@ -227,7 +239,13 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     await call(
       capturePath,
       "POST",
-      { ...capture, sequence: 1, startUs: 1000000, endUs: 2000000, data: "ffeedd" },
+      {
+        ...capture,
+        sequence: largeCaptures + 1,
+        startUs: (largeCaptures + 1) * 1000000,
+        endUs: (largeCaptures + 2) * 1000000,
+        data: "ffeedd",
+      },
       token,
     );
     await liveDone;

@@ -37,12 +37,12 @@ reruns the deployment workflow.
 
 `i2c` controls raw capture storage and the live device view. Capture rows share the health database and its retention period.
 
-| Setting                     | Meaning                                                                                  |
-| --------------------------- | ---------------------------------------------------------------------------------------- |
-| `i2c.maxDataBytes`          | Maximum decoded raw bytes accepted in one capture.                                       |
-| `i2c.maxRequestBytes`       | Maximum JSON request size for a capture, including hexadecimal data and metadata.        |
-| `i2c.historyLimit`          | Default and maximum number of capture records in a history request.                      |
-| `i2c.liveRows`              | Maximum recent capture records sent when a live view connects and retained by that view. |
-| `i2c.keepaliveSeconds`      | Interval between live connection keepalives and session access checks.                   |
-| `i2c.reconnectMilliseconds` | Delay before a disconnected live view reconnects.                                        |
-| `i2c.maxLiveClients`        | Maximum simultaneous live capture viewers on the hub.                                    |
+| Setting                     | Meaning                                                                                                                       |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `i2c.maxDataBytes`          | Maximum decoded raw bytes accepted in one capture.                                                                            |
+| `i2c.maxRequestBytes`       | Maximum JSON request size for a capture, including hexadecimal data and metadata.                                             |
+| `i2c.historyLimit`          | Default and maximum number of capture records in a history request.                                                           |
+| `i2c.liveRows`              | Maximum recent capture records sent when a live view connects, retained by that view, and queued while its connection drains. |
+| `i2c.keepaliveSeconds`      | Interval between live connection keepalives and session access checks.                                                        |
+| `i2c.reconnectMilliseconds` | Delay before a disconnected live view reconnects.                                                                             |
+| `i2c.maxLiveClients`        | Maximum simultaneous live capture viewers on the hub.                                                                         |

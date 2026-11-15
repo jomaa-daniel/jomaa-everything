@@ -159,12 +159,26 @@ export class HealthHttp {
   private live(req: IncomingMessage, res: ServerResponse, id: string, currentAccess: () => Access): void {
     const snapshot = this.store.i2c.logs(id, settings.i2c.liveRows);
     let closed = false;
+    let blocked = false;
+    const pending: [string, unknown][] = [];
     const close = () => {
       if (closed) return;
       closed = true;
+      pending.length = 0;
       clearInterval(timer);
       unsubscribe();
       res.end();
+    };
+    const flush = () => {
+      while (!closed && !blocked && pending.length) {
+        if (currentAccess() !== "allowed") {
+          res.write("event: denied\ndata: {}\n\n");
+          close();
+          return;
+        }
+        const next = pending.shift();
+        if (next) blocked = !res.write(`event: ${next[0]}\ndata: ${JSON.stringify(next[1])}\n\n`);
+      }
     };
     const send = (event: string, value: unknown) => {
       if (closed) return;
@@ -173,13 +187,19 @@ export class HealthHttp {
         close();
         return;
       }
-      if (!res.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`)) close();
+      pending.push([event, value]);
+      if (pending.length > settings.i2c.liveRows) close();
+      else flush();
     };
     const unsubscribe = this.store.i2c.subscribe(id, (entry) => {
       send("capture", entry);
     });
     res.on("close", close);
     res.on("error", close);
+    res.on("drain", () => {
+      blocked = false;
+      flush();
+    });
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-store",
