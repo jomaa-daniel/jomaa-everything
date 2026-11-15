@@ -675,7 +675,6 @@ test("the prefetch list names every page with the files it loads, most-clicked f
   };
   const pages = await listed(anon);
   assert.deepEqual(pages.map((page) => page.path).sort(), [
-    "/devices",
     "/home",
     "/invite",
     "/join",
@@ -686,15 +685,23 @@ test("the prefetch list names every page with the files it loads, most-clicked f
   ]);
   const assets = (path: string) =>
     pages.find((page) => page.path === path)?.assets.map((url) => url.replace(/\?v=[\w-]+$/, ""));
-  assert.deepEqual(assets("/home"), ["/home/base.css", "/home/style.css", "/home/prefetch.js"]);
+  assert.deepEqual(assets("/home"), [
+    "/home/base.css",
+    "/home/style.css",
+    "/home/ui.css",
+    "/home/ui.js",
+    "/home/prefetch.js",
+  ]);
   assert.deepEqual(assets("/permissions"), [
     "/home/base.css",
     "/home/accounts.css",
     "/permissions/app.js",
+    "/home/ui.css",
+    "/home/ui.js",
     "/home/prefetch.js",
     "/home/accounts.js",
   ]);
-  assert.deepEqual(assets("/lights"), ["/lights/style.css", "/lights/app.js"]);
+  assert.deepEqual(assets("/lights"), ["/lights/style.css", "/home/ui.css", "/home/ui.js", "/lights/app.js"]);
   for (const page of pages) {
     const bodies = [
       await (await fetch(env.url + page.path)).text(),
@@ -742,5 +749,14 @@ test("the prefetch list names every page with the files it loads, most-clicked f
     (await listed(guest)).map((page) => page.path),
     ["/lights", "/home", "/join"],
   );
+  await call(env, "PUT", "/api/accounts/visitor/scopes", JSON.stringify({ scopes: ["devices"] }));
+  assert.ok(
+    (await listed(guest)).some((page) => page.path === "/manage"),
+    "health-only accounts discover the unified page",
+  );
+  assert.equal((await call(guest, "GET", "/api/manage")).status, 403, "health scope does not grant organization edits");
+  for (const retired of ["/devices", "/devices/", "/devices/app.js", "/devices/style.css"]) {
+    assert.equal((await fetch(env.url + retired)).status, 404, retired);
+  }
   assert.equal((await listed(env)).length, pages.length, "the owner gets every page");
 });

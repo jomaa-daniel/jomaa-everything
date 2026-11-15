@@ -26,8 +26,16 @@ const noMatter: MatterAdmin = {
   removeNode: () => Promise.reject(new MatterNotReadyError()),
 };
 
-const homeFiles = new Set(["/home", "/home/base.css", "/home/style.css", "/home/prefetch.js", "/api/prefetch"]);
-const linkedPages = ["/lights", "/devices", "/manage", "/permissions", "/secrets"];
+const homeFiles = new Set([
+  "/home/ui.css",
+  "/home/ui.js",
+  "/home",
+  "/home/base.css",
+  "/home/style.css",
+  "/home/prefetch.js",
+  "/api/prefetch",
+]);
+const linkedPages = ["/lights", "/manage", "/permissions", "/secrets", "/invite"];
 
 const clicks = new Clicks(":memory:");
 for (const path of ["/secrets", "/secrets", "/secrets", "/lights", "/lights"]) clicks.record(path);
@@ -81,13 +89,13 @@ test("the home page prefetches linked pages by popularity and opens them from th
   await until(() => [...linkedPages, "/lights/app.js", "/home/accounts.js"].every((path) => fetched().has(path)));
   await until(() => inFlight === 0);
   const documents = requests.map((request) => request.path).filter((path) => linkedPages.includes(path));
-  assert.deepEqual(documents, ["/secrets", "/lights", "/permissions", "/manage", "/devices"]);
+  assert.deepEqual(documents, ["/secrets", "/lights", "/invite", "/permissions", "/manage"]);
   assert.ok(mostInFlight <= settings.prefetch.concurrency, `${mostInFlight} prefetches ran at once`);
   assert.ok(!fetched().has("/home/base.css"), "files the page already loaded are not fetched again");
   assert.equal(new Set(requests.map((request) => request.path)).size, requests.length, "each file is fetched once");
 
   const prefetched = requests.length;
-  await page.locator('a[href="/lights"]').click();
+  await page.locator('.home-links a[href="/lights"]').click();
   await page.waitForURL(origin + "/lights");
   await until(() => requests.some((request) => request.path === "/api/clicks" && request.status !== null));
   assert.deepEqual(

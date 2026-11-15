@@ -113,6 +113,7 @@ export class HealthHttp {
           : [],
         matterConnected: this.matter.ready,
         retentionDays: this.store.retentionDays,
+        health: settings.health,
         i2c: {
           historyLimit: settings.i2c.historyLimit,
           liveRows: settings.i2c.liveRows,

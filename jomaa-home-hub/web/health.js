@@ -1,5 +1,8 @@
+import { sessionEndEvent } from "/home/ui.js";
 const $ = (id) => document.getElementById(id);
 let devices = [];
+let healthSettings = null;
+let pollTimer = null;
 let matterNodes = [];
 let selected = null;
 let selectedMatter = null;
@@ -10,6 +13,7 @@ let groups = [];
 let dirty = false;
 let cursor = null;
 let credential = null;
+let credentialUrl = null;
 let refreshing = null;
 let refreshGeneration = 0;
 let inventoryGeneration = 0;
@@ -156,9 +160,11 @@ function renderColumnFilters() {
 
 function signedIn(value) {
   $("login-section").hidden = value;
-  for (const id of ["inventory", "add", "logout"]) $(id).hidden = !value;
+  for (const id of ["inventory", "add"]) $(id).hidden = !value;
   if (!value) {
     stopCaptures();
+    clearInterval(pollTimer);
+    pollTimer = null;
     sessionGeneration += 1;
     selected = null;
     devices = [];
@@ -183,18 +189,13 @@ async function api(path, method = "GET", data, signal) {
     body: data === undefined ? undefined : JSON.stringify(data),
   });
   const result = await response.json();
-  if (response.status === 401 || response.status === 403) signedIn(false);
+  if (response.status === 401 || response.status === 403) document.dispatchEvent(new Event(sessionEndEvent));
   if (!response.ok) throw Object.assign(new Error(result.error || "Request failed"), { status: response.status });
   return result;
 }
 
-function credentials() {
-  const username = $("username").value.trim();
-  return { password: $("password").value, ...(username ? { username } : {}) };
-}
-
 function error(reason) {
-  $("notice").className = "";
+  $("notice").className = "error";
   $("notice").textContent = reason.message || "Request failed";
 }
 function duration(seconds) {
@@ -240,11 +241,13 @@ function render() {
       (filter === null || d.status === filter) &&
       matchesColumns(displayedType(d, "Health reporter"), ["Health reporting"], d.groups),
   );
+  const focused = document.activeElement?.id;
   $("device-rows").replaceChildren();
   for (const device of visible) {
     const row = node("tr", undefined, device.id === selected ? "selected" : "");
     const cell = node("td");
     const button = node("button", device.name, "device-link");
+    button.id = "health:" + device.id + ":open";
     button.addEventListener("click", () => select(device.id));
     cell.append(button, node("span", device.id, "device-id"));
     const stateCell = node("td");
@@ -270,6 +273,7 @@ function render() {
     const row = node("tr", undefined, device.nodeId === selectedMatter ? "selected" : "");
     const cell = node("td");
     const button = node("button", matterName(device), "device-link");
+    button.id = "matter:" + device.nodeId + ":open";
     button.addEventListener("click", () => selectMatter(device.nodeId));
     cell.append(button, node("span", `Matter · Node ${device.nodeId}`, "device-id"));
     const stateCell = node("td");
@@ -295,6 +299,7 @@ function render() {
       : "No devices yet. Add a device to get started.";
   renderDetail();
   renderMatterDetail();
+  if (focused) document.getElementById(focused)?.focus({ preventScroll: true });
 }
 
 function matterName(device) {
@@ -411,17 +416,20 @@ async function refreshInventory() {
   matterNodes = result.matterNodes;
   groups = result.groups;
   captureSettings = result.i2c;
+  healthSettings = result.health;
+  if (pollTimer === null) pollTimer = setInterval(poll, healthSettings.refreshSeconds * 1000);
   signedIn(true);
   $("retention").textContent =
-    `Updates every 15 seconds. Offline after three missed reports (minimum 90 seconds). History retained for ${result.retentionDays} days.`;
+    `Updates every ${healthSettings.refreshSeconds} seconds. History retained for ${result.retentionDays} days.`;
   render();
+  document.dispatchEvent(new CustomEvent("health-data", { detail: { devices, matterNodes } }));
 }
 
 async function logs(append = false) {
   const id = selected;
   if (!id) return;
   const result = await api(
-    `/api/devices/${encodeURIComponent(id)}/logs?limit=50${append && cursor ? `&before=${cursor}` : ""}`,
+    `/api/devices/${encodeURIComponent(id)}/logs?limit=${healthSettings.historyLimit}${append && cursor ? `&before=${cursor}` : ""}`,
   );
   if (selected !== id) return;
   showingOlder = append;
@@ -577,7 +585,7 @@ async function scan(generation) {
     if (generation !== scanGeneration || !$("discover-dialog").open) return;
     renderDiscovered(result.devices);
     $("scan-error").hidden = true;
-    scanTimer = setTimeout(() => scan(generation), 2000);
+    scanTimer = setTimeout(() => scan(generation), healthSettings.discoveryRefreshSeconds * 1000);
   } catch (reason) {
     if (generation !== scanGeneration || controller.signal.aborted || !$("discover-dialog").open) return;
     $("scan-status").textContent = "Scan unavailable";
@@ -665,30 +673,6 @@ $("matter-pair-form").addEventListener("submit", async (event) => {
   }
 });
 
-$("login-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const button = event.submitter;
-  button.disabled = true;
-  try {
-    await api("/api/login", "POST", credentials());
-    $("notice").textContent = "";
-    await refresh();
-  } catch (reason) {
-    error(reason);
-  } finally {
-    $("password").value = "";
-    button.disabled = false;
-  }
-});
-$("logout").addEventListener("click", async () => {
-  sessionGeneration += 1;
-  try {
-    await api("/api/logout", "POST", {});
-    signedIn(false);
-  } catch (reason) {
-    error(reason);
-  }
-});
 for (const column of filterColumns) {
   $("select-filter-" + column).addEventListener("change", () =>
     selectColumn(column, JSON.parse($("select-filter-" + column).value)),
@@ -699,7 +683,7 @@ $("clear-filters").addEventListener("click", () => {
   statusFilter = null;
   render();
 });
-$("refresh").addEventListener("click", () => {
+$("health-refresh").addEventListener("click", () => {
   $("notice").textContent = "";
   refresh()
     .then(() => logs())
@@ -873,24 +857,40 @@ $("more").addEventListener("click", () => logs(true).catch(error));
 $("close-credential").addEventListener("click", () => $("credential-dialog").close());
 $("credential-dialog").addEventListener("close", () => {
   credential = null;
+  if (credentialUrl) URL.revokeObjectURL(credentialUrl);
+  credentialUrl = null;
   $("credential-value").value = "";
 });
 $("download-credential").addEventListener("click", () => {
   if (!credential) return;
-  const url = URL.createObjectURL(new Blob([JSON.stringify(credential, null, 2) + "\n"], { type: "application/json" }));
+  if (credentialUrl) URL.revokeObjectURL(credentialUrl);
+  credentialUrl = URL.createObjectURL(
+    new Blob([JSON.stringify(credential, null, 2) + "\n"], { type: "application/json" }),
+  );
   const link = node("a");
-  link.href = url;
+  link.href = credentialUrl;
   link.download = `${credential.id}-credential.json`;
   link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
-refresh().catch((reason) => {
-  if (reason.status === 401) $("notice").textContent = "";
-  else error(reason);
-});
-setInterval(() => {
+export async function loadHealth() {
+  await refresh();
+  if (selected && !capturePaused && !$("health-panel").hidden) startCaptures();
+}
+export function resetHealth() {
+  signedIn(false);
+}
+export function closeHealth() {
+  stopCaptures();
+}
+export async function selectHealth(key) {
+  await refresh();
+  if (key.startsWith("health:")) await select(key.slice("health:".length));
+  else if (key.startsWith("matter:")) selectMatter(Number(key.slice("matter:".length)));
+}
+function poll() {
   if (
     !$("inventory").hidden &&
+    (!$("health-panel").hidden || !$("devices-panel").hidden) &&
     !$("discover-dialog").open &&
     !$("matter-pair-dialog").open &&
     !$("enroll-dialog").open &&
@@ -898,7 +898,7 @@ setInterval(() => {
   )
     refresh()
       .then(() => {
-        if (!showingOlder) return logs();
+        if (!showingOlder && !$("health-panel").hidden) return logs();
       })
       .catch(error);
-}, 15000);
+}

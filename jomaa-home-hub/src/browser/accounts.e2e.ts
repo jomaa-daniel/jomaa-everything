@@ -135,15 +135,10 @@ await test("a new account signs in but can't open any page", async () => {
   assert.ok(await lights.locator("#login-section").isVisible(), "the panel offers sign-in as someone else");
   await lights.close();
 
-  for (const [path, page] of [
-    ["/devices", "Device health"],
-    ["/manage", "Device organization"],
-  ] as const) {
-    const tab = await open(guest, path);
-    await tab.locator("#notice", { hasText: `does not have access to ${page}` }).waitFor();
-    assert.ok(await tab.locator("#login-section").isVisible(), `${path} offers sign-in as someone else`);
-    await tab.close();
-  }
+  const tab = await open(guest, "/manage");
+  await tab.locator("#notice", { hasText: "no device access" }).waitFor();
+  assert.ok(await tab.locator("#login-section").isVisible());
+  await tab.close();
 
   for (const path of ["/permissions", "/invite"]) {
     const tab = await open(guest, path);
@@ -169,8 +164,8 @@ await test("the owner grants Lights and the account controls the room", async ()
   await lights.locator('#power-toggle[aria-checked="true"]').waitFor();
   assert.equal(lamp.current.on, true, "the command reached the light");
 
-  const devices = await open(guest, "/devices");
-  await devices.locator("#notice", { hasText: "does not have access to Device health" }).waitFor();
+  const devices = await open(guest, "/manage");
+  await devices.locator("#notice", { hasText: "no device access" }).waitFor();
   await devices.close();
 
   const revoke = await open(owner, "/permissions");
@@ -191,7 +186,7 @@ await test("deleting the account signs it out", async () => {
   await permissions.locator("#accounts-empty").waitFor();
   await permissions.close();
 
-  const devices = await open(guest, "/devices");
+  const devices = await open(guest, "/manage");
   await devices.locator("#login-section").waitFor();
   await devices.close();
 });

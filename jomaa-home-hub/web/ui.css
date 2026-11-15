@@ -1,0 +1,676 @@
+body.tui-page {
+  --border: #75829a;
+  --border-quiet: #434c5e;
+  --muted: #b5becd;
+  --accent: #88c0d0;
+  --accent-hover: #a4d0dc;
+  --success: #a3be8c;
+  --warning: #ebcb8b;
+  --error: #eea1a9;
+  --error-surface: #493943;
+  --field: #292f3a;
+  --raised: #3b4252;
+  --selected: #434c5e;
+  --on-accent: #2e3440;
+  --gutter: 2ch;
+  --ink: #eceff4;
+  --surface: #2e3440;
+  color-scheme: dark;
+  color: var(--ink);
+  background: var(--surface);
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 14px;
+  line-height: 1.5;
+}
+body.tui-page {
+  margin: 0;
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.tui-page * {
+  box-sizing: border-box;
+}
+.tui-page > header {
+  height: auto;
+  min-height: 54px;
+  padding: 10px max(20px, calc((100vw - 1280px) / 2));
+  display: flex;
+  align-items: center;
+  gap: 2ch;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border-quiet);
+  background: var(--surface);
+}
+.tui-page > header > a {
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--ink);
+  text-decoration: none;
+}
+.tui-page .hub-nav {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 1ch;
+}
+.tui-page .hub-nav a {
+  font-size: 12px;
+  text-decoration: none;
+  color: var(--muted);
+  padding: 5px 7px;
+}
+.tui-page .hub-nav a[aria-current="page"],
+.tui-page .hub-nav a:focus-visible {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+.tui-page main {
+  max-width: 1320px;
+  margin: 28px auto 0;
+  padding: 0 20px 140px;
+}
+.tui-page h1 {
+  font-size: 16px;
+  letter-spacing: 0;
+  line-height: 1.5;
+}
+.tui-page h2 {
+  font-size: 15px;
+  letter-spacing: 0;
+}
+.tui-page h3 {
+  font-size: 14px;
+}
+.tui-page p {
+  overflow-wrap: anywhere;
+}
+.tui-page a {
+  color: var(--accent);
+}
+.tui-page button,
+.tui-page input,
+.tui-page select,
+.tui-page textarea {
+  font: inherit;
+  color: var(--ink);
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 7px 10px;
+  min-height: 36px;
+}
+.tui-page button {
+  cursor: pointer;
+}
+.tui-page button:hover {
+  background: var(--raised);
+}
+.tui-page button.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+.tui-page button.primary:hover {
+  background: var(--accent-hover);
+}
+.tui-page button.danger {
+  color: var(--error);
+}
+.tui-page .quiet {
+  background: transparent;
+  border-color: transparent;
+}
+.tui-page input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.tui-page :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.tui-page .muted {
+  color: var(--muted);
+}
+.tui-page input[type="checkbox"],
+.tui-page input[type="radio"] {
+  appearance: none;
+  position: relative;
+  width: 3ch;
+  height: 1.5em;
+  min-height: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.tui-page input[type="checkbox"]::before {
+  content: "[ ]";
+  color: var(--muted);
+}
+.tui-page input[type="checkbox"]:checked::before {
+  content: "[x]";
+  color: var(--accent);
+}
+.tui-page input[type="radio"]::before {
+  content: "( )";
+  color: var(--muted);
+}
+.tui-page input[type="radio"]:checked::before {
+  content: "(●)";
+  color: var(--accent);
+}
+.tui-page button:disabled,
+.tui-page input:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+.tui-page table {
+  font-size: 13px;
+  text-align: left;
+  border-collapse: collapse;
+  width: 100%;
+}
+.tui-page th {
+  background: var(--raised);
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  padding: 10px 12px;
+}
+.tui-page td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-quiet);
+  overflow-wrap: anywhere;
+}
+.tui-page .table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+}
+.tui-page tr.selected {
+  background: var(--selected);
+}
+.tui-page .management-list {
+  list-style: none;
+  padding: 0;
+  margin: 1lh 0;
+  border-top: 1px solid var(--border);
+}
+.tui-page .management-list li {
+  display: flex;
+  align-items: center;
+  gap: 1ch;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-quiet);
+}
+.tui-page .management-list li:focus-within,
+.tui-page tr:focus-within {
+  background: var(--raised);
+}
+.tui-page .management-list li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.tui-page .create-form,
+.tui-page .actions,
+.tui-page .row-actions,
+.tui-page .dialog-actions {
+  display: flex;
+  gap: 1ch;
+  flex-wrap: wrap;
+}
+.tui-page .create-form {
+  margin: 1lh 0;
+}
+.tui-page .create-form input {
+  flex: 1;
+  min-width: 0;
+}
+.tui-page .login,
+.tui-page .tui-pane {
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 1lh var(--gutter);
+  background: var(--surface);
+}
+.tui-page .login {
+  max-width: 400px;
+}
+.tui-page .login input {
+  width: 100%;
+}
+.tui-page .login label {
+  display: block;
+  margin-bottom: 6px;
+}
+.tui-page dialog {
+  border: 1px solid var(--accent);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 2ch;
+  max-height: calc(100dvh - 32px);
+  max-width: calc(100vw - 32px);
+  overflow: auto;
+}
+.tui-page dialog::backdrop {
+  background: rgb(0 0 0 / 65%);
+}
+.tui-page .command-bar {
+  position: fixed;
+  inset: auto 0 0;
+  z-index: 10;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding: 12px 20px max(12px, env(safe-area-inset-bottom));
+}
+.tui-page .command-content {
+  max-width: 1280px;
+  margin: auto;
+  display: flex;
+  justify-content: space-between;
+  gap: 1ch;
+  align-items: baseline;
+}
+.tui-page #notice {
+  font-size: 12px;
+  min-height: 0;
+  margin: 0;
+  color: var(--muted);
+}
+.tui-page #notice.success {
+  color: var(--success);
+}
+.tui-page #notice.error,
+.tui-page #notice:not(.success):not(:empty) {
+  color: var(--ink);
+}
+.tui-page #notice::before {
+  content: "● ";
+  color: var(--accent);
+}
+.tui-page #notice.success::before {
+  content: "✓ ";
+  color: var(--success);
+}
+.tui-page #notice.error::before {
+  content: "! ";
+  color: var(--error);
+}
+.tui-page #command-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5ch;
+  font-size: 12px;
+  color: var(--muted);
+}
+.tui-page .key-command {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.75ch;
+  white-space: nowrap;
+}
+.tui-page kbd {
+  font: inherit;
+  color: var(--accent);
+  font-weight: 700;
+}
+.tui-page .chip {
+  background: var(--raised);
+  color: var(--ink);
+  border-color: var(--border-quiet);
+  border-radius: 0;
+}
+.tui-page .status.online::before,
+.tui-page .status.healthy::before {
+  background: var(--success);
+}
+.tui-page .status.offline::before {
+  background: var(--error);
+}
+.tui-page .status.degraded::before {
+  background: var(--warning);
+}
+.tui-page .i2c-live {
+  background: var(--field);
+  color: var(--ink);
+  border-radius: 0;
+}
+@media (max-width: 700px) {
+  .tui-page > header {
+    padding: 10px 16px;
+  }
+  .tui-page .hub-nav {
+    flex-basis: 100%;
+    order: 3;
+  }
+  .tui-page main {
+    padding: 0 16px 150px;
+  }
+  .tui-page .command-content {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .tui-page #command-hints {
+    font-size: 11px;
+  }
+  .tui-page .management-list li {
+    flex-wrap: wrap;
+  }
+  .tui-page .row-actions {
+    flex-wrap: wrap;
+  }
+  .tui-page dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.tui-page .home-links a {
+  border-radius: 0;
+  padding: 1lh 2ch;
+  margin: 0;
+}
+.tui-page .home-links a:hover,
+.tui-page .home-links a:focus-visible {
+  background: var(--raised);
+}
+.tui-page .home-links h2 {
+  font-size: 14px;
+}
+.tui-page .home-links p {
+  font-size: 12px;
+}
+.tui-page .secret-file {
+  border: 1px solid var(--border);
+  padding: 1lh 2ch;
+}
+.tui-page #redeploy {
+  border: 1px solid var(--border);
+  padding: 1lh 2ch;
+}
+.tui-page #run-status.failure {
+  color: var(--error);
+}
+.tui-page .column-filter-select {
+  opacity: 1;
+  position: static;
+  min-height: 32px;
+  padding: 2px 5px;
+  max-width: 140px;
+  width: auto;
+  height: auto;
+}
+.tui-page .filter-control {
+  width: auto;
+  height: auto;
+}
+.tui-page .filter-control svg {
+  display: none;
+}
+.tui-page .column-filter-value {
+  display: none;
+}
+.tui-page .scope-cell label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tui-page .scope-cell input {
+  width: 3ch;
+  height: 1.5em;
+}
+.tui-page .alert {
+  color: var(--warning);
+  background: var(--raised);
+  border-color: var(--warning);
+}
+.organization-page #health-panel {
+  padding-top: 1lh;
+  min-width: 0;
+}
+.organization-page #health-panel table {
+  table-layout: auto;
+}
+.organization-page #health-panel #detail,
+.organization-page #health-panel #matter-detail {
+  border: 1px solid var(--border);
+  padding: 1lh 2ch;
+  margin-top: 1lh;
+}
+.organization-page #health-panel dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1lh 2ch;
+}
+.organization-page #health-panel .table-wrap {
+  max-width: 100%;
+}
+.organization-page .health-state.online {
+  color: var(--success);
+}
+.organization-page .health-state.degraded {
+  color: var(--warning);
+}
+.organization-page .health-state.offline,
+.organization-page .health-state.revoked {
+  color: var(--error);
+}
+.organization-page #assignment-table-wrap th:first-child {
+  width: 34%;
+}
+.organization-page #assignment-table-wrap th:nth-child(2) {
+  width: 25%;
+}
+.organization-page #assignment-table-wrap th:nth-child(3) {
+  width: 25%;
+}
+.organization-page #assignment-table-wrap th:nth-child(4) {
+  width: 16%;
+}
+@media (max-width: 700px) {
+  .organization-page #health-panel dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .organization-page #assignment-rows td:nth-child(4) {
+    grid-column: 1/-1;
+  }
+  .organization-page #assignment-rows td:nth-child(4)::before {
+    content: "Status: ";
+    color: var(--muted);
+  }
+  .organization-page .tabs .count {
+    margin-left: 2px;
+  }
+  .organization-page .tabs button {
+    font-size: 11px;
+    padding: 9px 4px;
+  }
+}
+.tui-page.lights-page {
+  --bg: var(--surface);
+  --card: var(--surface);
+  --line: var(--border-quiet);
+  --line-strong: var(--border);
+  --text: var(--ink);
+  --accent-ink: var(--on-accent);
+  --accent-text: var(--accent);
+  --danger-text: var(--error);
+  --online: var(--success);
+  --offline: var(--error);
+  --pending: var(--warning);
+  --radius: 0px;
+  --radius-lg: 0px;
+  --radius-sm: 0px;
+  --stack: 1lh;
+  --pad: 2ch;
+}
+.tui-page.lights-page .panel {
+  width: 100%;
+  max-width: 1000px;
+  height: auto;
+  min-height: 0;
+  padding-bottom: 150px;
+}
+.tui-page.lights-page .controller {
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--surface);
+  padding: 1lh 2ch;
+}
+.tui-page.lights-page .rooms {
+  position: static;
+  background: var(--surface);
+  padding: 1lh 0;
+  border-radius: 0;
+}
+.tui-page.lights-page .room-btn {
+  border-radius: 0;
+  font-size: 13px;
+}
+.tui-page.lights-page .room-btn[aria-current="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.tui-page.lights-page .band {
+  border: 1px solid var(--border-quiet);
+  border-radius: 0;
+  background: var(--field);
+}
+.tui-page.lights-page .power {
+  width: 80px;
+  height: 60px;
+  border-radius: 0;
+}
+.tui-page.lights-page .swatch,
+.tui-page.lights-page .swatch-cell {
+  border-radius: 0;
+}
+.tui-page.lights-page .room-title {
+  font-size: 15px;
+  letter-spacing: 0;
+}
+.tui-page.lights-page input[type="range"] {
+  min-height: 36px;
+  padding: 0;
+  background: transparent;
+}
+.tui-page.lights-page .login-icon {
+  display: none;
+}
+.tui-page.lights-page .login-section {
+  border: 1px solid var(--border);
+  border-radius: 0;
+  background: var(--surface);
+}
+.tui-page #notice.error:not(.success) {
+  color: var(--error);
+}
+.tui-page.lights-page .swatch,
+.tui-page.lights-page [data-pick] {
+  background: var(--swatch);
+}
+@media (max-width: 700px) {
+  .tui-page > header {
+    gap: 0.5lh 1ch;
+  }
+  .tui-page .hub-nav {
+    gap: 4px;
+  }
+  .tui-page .hub-nav a {
+    font-size: 11px;
+    padding: 4px 5px;
+  }
+  .tui-page main {
+    margin-top: 20px;
+  }
+}
+.tui-page.lights-page .controls {
+  flex: none;
+}
+.tui-page.lights-page .band {
+  flex: none;
+  padding: 1lh 2ch;
+  min-height: 100px;
+}
+.tui-page.lights-page .slider-wrap {
+  flex: none;
+  height: 64px;
+}
+.tui-page.lights-page .swatches {
+  flex: none;
+  container-type: normal;
+  min-height: 48px;
+  align-items: center;
+}
+.tui-page.lights-page .swatch-cell {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  aspect-ratio: 1;
+}
+.tui-page.lights-page .swatch {
+  padding: 0;
+  min-height: 0;
+}
+.tui-page.lights-page .room-btn {
+  min-height: 40px;
+}
+.tui-page.lights-page .power.on {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+  box-shadow: none;
+}
+.tui-page.lights-page button,
+.tui-page.lights-page .dot {
+  transition: none;
+}
+@media (max-width: 700px) {
+  .organization-page .device-toolbar {
+    padding: 0.5lh 0;
+    gap: 4px;
+  }
+}
+.organization-page .tabs button {
+  font-size: 13px;
+  padding: 9px 16px;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+}
+.organization-page .tabs button[aria-selected="true"] {
+  background: var(--accent);
+  border-bottom-color: var(--accent);
+  color: var(--on-accent);
+}
+.organization-page #assignment-rows .device-select {
+  font: inherit;
+  font-weight: 700;
+  padding: 0 0 0 16px;
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+.organization-page #device-rows .device-link {
+  font: inherit;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  color: var(--accent);
+}
+@media (max-width: 700px) {
+  .organization-page .tabs button {
+    font-size: 11px;
+    padding: 9px 4px;
+    flex: 1;
+    min-width: 0;
+  }
+}
+.tui-page :is(a, button, input, select, textarea, [tabindex]) {
+  scroll-margin-top: 1lh;
+  scroll-margin-bottom: 110px;
+}

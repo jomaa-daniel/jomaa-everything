@@ -7,9 +7,11 @@
     <title>Home · Jomaa</title>
     <link rel="stylesheet" href="/home/base.css" />
     <link rel="stylesheet" href="/home/style.css" />
+    <link rel="stylesheet" href="/home/ui.css" />
+    <script type="module" src="/home/ui.js"></script>
     <script type="module" src="/home/prefetch.js"></script>
   </head>
-  <body class="home-page">
+  <body class="tui-page home-page">
     <header><a href="/home">Jomaa Home</a></header>
     <main>
       <div class="home-intro">
@@ -17,7 +19,7 @@
         <p>Your devices and home tools, in one place.</p>
       </div>
       <nav aria-label="Home pages">
-        <ul class="home-links">
+        <ul class="home-links" data-tui-nav="vertical">
           <li>
             <a href="/lights" aria-labelledby="lights-title" aria-describedby="lights-description">
               <div>
@@ -28,19 +30,10 @@
             </a>
           </li>
           <li>
-            <a href="/devices" aria-labelledby="devices-title" aria-describedby="devices-description">
-              <div>
-                <h2 id="devices-title">Device health</h2>
-                <p id="devices-description">Track your Picos, review health reports, and manage device access.</p>
-              </div>
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
-            </a>
-          </li>
-          <li>
             <a href="/manage" aria-labelledby="manage-title" aria-describedby="manage-description">
               <div>
-                <h2 id="manage-title">Device organization</h2>
-                <p id="manage-description">Manage types, groups, and device assignments.</p>
+                <h2 id="manage-title">Devices</h2>
+                <p id="manage-description">Organize devices, inspect health reports, and manage access.</p>
               </div>
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>
             </a>

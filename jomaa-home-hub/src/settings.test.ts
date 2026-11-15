@@ -31,21 +31,39 @@ test("invalid settings name the setting", () => {
   };
   const prefetch = { databaseFile: "clicks.sqlite", concurrency: 1 };
   assert.equal(
-    parseSettings(JSON.stringify({ accounts: valid, prefetch, secrets, i2c: settings.i2c })).accounts
-      .sessionsPerAccount,
+    parseSettings(JSON.stringify({ accounts: valid, prefetch, secrets, i2c: settings.i2c, health: settings.health }))
+      .accounts.sessionsPerAccount,
     1,
   );
   const broken = (change: Record<string, unknown>) =>
-    JSON.stringify({ accounts: { ...valid, ...change }, prefetch, secrets, i2c: settings.i2c });
+    JSON.stringify({
+      accounts: { ...valid, ...change },
+      prefetch,
+      secrets,
+      i2c: settings.i2c,
+      health: settings.health,
+    });
   assert.throws(() => parseSettings(broken({ sessionLifetimeDays: 0 })), /accounts\.sessionLifetimeDays/);
   assert.throws(() => parseSettings(broken({ passwordLength: { min: 20, max: 10 } })), /passwordLength\.max/);
   assert.throws(() => parseSettings(broken({ extra: 1 })), /unknown field "extra"/);
   const badPrefetch = (change: Record<string, unknown>) =>
-    JSON.stringify({ accounts: valid, prefetch: { ...prefetch, ...change }, secrets, i2c: settings.i2c });
+    JSON.stringify({
+      accounts: valid,
+      prefetch: { ...prefetch, ...change },
+      secrets,
+      i2c: settings.i2c,
+      health: settings.health,
+    });
   assert.throws(() => parseSettings(badPrefetch({ concurrency: 0 })), /prefetch\.concurrency/);
   assert.throws(() => parseSettings(badPrefetch({ databaseFile: "" })), /prefetch\.databaseFile/);
   const badSecrets = (change: Record<string, unknown>) =>
-    JSON.stringify({ accounts: valid, prefetch, secrets: { ...secrets, ...change }, i2c: settings.i2c });
+    JSON.stringify({
+      accounts: valid,
+      prefetch,
+      secrets: { ...secrets, ...change },
+      i2c: settings.i2c,
+      health: settings.health,
+    });
   assert.throws(() => parseSettings(badSecrets({ envFiles: ["../outside/.env"] })), /secrets\.envFiles/);
   assert.throws(() => parseSettings(badSecrets({ envFiles: ["/etc/.env"] })), /secrets\.envFiles/);
   assert.throws(() => parseSettings(badSecrets({ envFiles: [] })), /secrets\.envFiles/);
