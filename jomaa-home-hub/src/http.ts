@@ -2,7 +2,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Fields, JsonShapeError, parseJson } from "./json.js";
 import type { Principal } from "./principal.js";
-import type { Requirement } from "./authorization.js";
+import type { AuthorizationService, Requirement } from "./authorization.js";
 
 const maxBodyBytes = 64 << 10;
 
@@ -42,6 +42,45 @@ export interface FeatureModule {
 /** A route whose {name} path segments become params. */
 export function route(method: string, path: string, requires: Requirement, handler: Handler): Route {
   return { method, pattern: new RegExp("^" + path.replace(/\{\w+\}/g, "([^/]+)") + "$"), handler, requires };
+}
+
+/** A request on its way to a route: the caller is resolved and the path is parsed. */
+export interface RouteRequest {
+  req: IncomingMessage;
+  res: ServerResponse;
+  path: string;
+  signal: AbortSignal;
+  principal: Principal | null;
+}
+
+/**
+ * Runs the route matching the request's method and path once the principal
+ * meets its requirement; false when no route's path matches. A path served
+ * under another method is a 405 when strict.
+ */
+export async function serveRoutes(
+  routes: Route[],
+  authorization: AuthorizationService,
+  { req, res, path, signal, principal }: RouteRequest,
+  strict: boolean,
+): Promise<boolean> {
+  let pathMatched = false;
+  for (const r of routes) {
+    const m = r.pattern.exec(path);
+    if (!m) {
+      continue;
+    }
+    pathMatched = true;
+    if (r.method === req.method) {
+      authorization.require(principal, r.requires);
+      await r.handler({ req, res, params: m.slice(1).map(decodeParam), signal, principal });
+      return true;
+    }
+  }
+  if (strict && pathMatched) {
+    throw new HttpError(405, "method not allowed");
+  }
+  return false;
 }
 
 /** Refuses browser requests from another site; scripts with an Authorization header send no Origin. */

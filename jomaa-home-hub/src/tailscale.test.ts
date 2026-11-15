@@ -7,10 +7,10 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { mock, test } from "node:test";
 import { Accounts } from "./accounts.js";
-import { Api } from "./api.js";
 import { allFeatures, type Command, type Device, type Features, type State } from "./device.js";
 import { Group } from "./group.js";
 import { HealthStore } from "./health/store.js";
+import { hubApi } from "./hub-api.js";
 import { Hub } from "./hub.js";
 import { silentLog } from "./log.js";
 import { MatterNotReadyError, type MatterAdmin } from "./matter/nodes.js";
@@ -20,7 +20,7 @@ import { settings } from "./settings.js";
 import { TailscaleService } from "./tailscale.js";
 import { schemaText, type SyncOutcome, type TailscaleGateway } from "./tailscale-gateway.js";
 import { TailscaleStore } from "./tailscale-store.js";
-import { FakeTailnet } from "./tailscale-testing.js";
+import { FakeTailnet, tailnetScript } from "./tailscale-testing.js";
 import { serve } from "./testing.js";
 import { UserService } from "./users.js";
 
@@ -77,7 +77,7 @@ class World {
   /** A hub with a fake provider whose policy lists family; managed access is on unless enabled is false. */
   static async create(family: string[] = [], enabled = true): Promise<World> {
     const database = join(mkdtempSync(join(tmpdir(), "hub-tailscale-")), "accounts.sqlite");
-    const world = new World(database, new Accounts(database), await FakeTailnet.create(family));
+    const world = new World(database, new Accounts(database, settings.accounts), await FakeTailnet.create(family));
     world.service = world.newService();
     await world.listen();
     if (enabled) {
@@ -89,7 +89,7 @@ class World {
 
   newService(gateway?: TailscaleGateway): TailscaleService {
     return new TailscaleService(
-      new TailscaleStore(this.accounts.database, schemaText(), () => this.clock.now),
+      new TailscaleStore(this.accounts.database, schemaText(tailnetScript), () => this.clock.now),
       gateway ?? this.fake.gateway(this.database),
       this.accounts,
       settings.tailscale,
@@ -102,18 +102,18 @@ class World {
     const hub = new Hub();
     hub.addDevice("test", this.lamp);
     hub.addRoom(new Group("room", "Room", [this.lamp]));
-    const api = new Api(
+    const api = hubApi({
       hub,
-      noMatter,
-      ownerPassword,
-      this.accounts,
-      silentLog,
-      new HealthStore(":memory:"),
-      undefined,
-      undefined,
-      undefined,
-      this.service,
-    );
+      matter: noMatter,
+      password: ownerPassword,
+      accounts: this.accounts,
+      log: silentLog,
+      health: { store: new HealthStore(":memory:", settings.i2c), i2c: settings.i2c },
+      layoutPath: null,
+      organization: null,
+      secrets: null,
+      tailscale: { service: this.service, settings: settings.tailscale },
+    });
     this.url = await serve(api.handle);
     this.ownerToken = String((await this.call("POST", "/api/login", { password: ownerPassword })).body["token"]);
   }
@@ -535,7 +535,7 @@ await test("jerry's connection, advertised routes and approved routes stay separ
 
 await test("existing account rows survive the Tailscale tables being created", async () => {
   const file = join(mkdtempSync(join(tmpdir(), "hub-accounts-")), "accounts.sqlite");
-  const accounts = new Accounts(file);
+  const accounts = new Accounts(file, settings.accounts);
   await accounts.join(accounts.createInvite().token, "olduser", "an old password here");
   accounts.setScopes("olduser", ["lights"]);
   const session = accounts.createSession("olduser");
@@ -545,8 +545,8 @@ await test("existing account rows survive the Tailscale tables being created", a
     );
   const before = dump(accounts.database);
   accounts.close();
-  const reopened = new Accounts(file);
-  new TailscaleStore(reopened.database, schemaText(), Date.now);
+  const reopened = new Accounts(file, settings.accounts);
+  new TailscaleStore(reopened.database, schemaText(tailnetScript), Date.now);
   assert.equal(dump(reopened.database), before);
   assert.ok(await reopened.verify("olduser", "an old password here"));
   const users = new UserService(reopened, ownerPassword);
@@ -562,7 +562,10 @@ await test("existing account rows survive the Tailscale tables being created", a
 await test("the hub syncs at startup and then every interval until it closes", async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
-    const accounts = new Accounts(join(mkdtempSync(join(tmpdir(), "hub-interval-")), "accounts.sqlite"));
+    const accounts = new Accounts(
+      join(mkdtempSync(join(tmpdir(), "hub-interval-")), "accounts.sqlite"),
+      settings.accounts,
+    );
     let syncs = 0;
     const gateway: TailscaleGateway = {
       observe: () => Promise.reject(new Error("not observed in this test")),
@@ -573,7 +576,7 @@ await test("the hub syncs at startup and then every interval until it closes", a
     };
     const clock = { now: 1_000_000 };
     const service = new TailscaleService(
-      new TailscaleStore(accounts.database, schemaText(), () => clock.now),
+      new TailscaleStore(accounts.database, schemaText(tailnetScript), () => clock.now),
       gateway,
       accounts,
       settings.tailscale,

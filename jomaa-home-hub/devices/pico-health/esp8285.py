@@ -15,7 +15,10 @@ class TCPStream(io.IOBase):
     def __init__(self, radio):
         self.radio = radio
         self._closed = False
-        self.deadline = time.ticks_add(time.ticks_ms(), 30000)
+        self.start_request()
+
+    def start_request(self):
+        self.deadline = time.ticks_add(time.ticks_ms(), self.radio.config["runtime"]["requestTimeoutSeconds"] * 1000)
 
     def _check(self):
         if self._closed:

@@ -3,34 +3,44 @@
 // module lists its routes; the API resolves the caller once and checks every
 // route's requirement through the authorization service before it runs.
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Hub } from "./hub.js";
 import { JsonShapeError } from "./json.js";
 import type { Log } from "./log.js";
-import { HealthHttp } from "./health/http.js";
-import { HealthError, type HealthStore } from "./health/store.js";
+import type { HealthHttp } from "./health/http.js";
+import { HealthError } from "./health/store.js";
 import type { MatterAdmin } from "./matter/nodes.js";
 import { serveWeb } from "./web.js";
-import type { Organization } from "./organization.js";
-import { AccountError, type Accounts } from "./accounts.js";
+import { AccountError } from "./accounts.js";
 import { AuthorizationService } from "./authorization.js";
-import { decodeParam, HttpError, route, writeError, writeJSON, type RequestContext, type Route } from "./http.js";
-import type { Principal } from "./principal.js";
-import { UserService } from "./users.js";
-import { UsersModule } from "./users-module.js";
-import { LightsModule } from "./lights-module.js";
-import { DevicesModule } from "./devices-module.js";
-import { OrganizationModule } from "./organization-module.js";
-import { TailscaleModule } from "./tailscale-module.js";
-import { LayoutChanges } from "./layout-changes.js";
-import { AccountOnboarding, OnboardingError, TailscaleOnboarding } from "./onboarding.js";
-import type { TailscaleService } from "./tailscale.js";
-import { SecretsModule, type SecretsAdmin } from "./secrets-module.js";
+import {
+  HttpError,
+  route,
+  serveRoutes,
+  writeError,
+  writeJSON,
+  type FeatureModule,
+  type RequestContext,
+  type Route,
+} from "./http.js";
+import { OnboardingError } from "./onboarding.js";
 import { SecretsError } from "./secrets.js";
-import { LoginLimiter } from "./limiter.js";
-import { settings } from "./settings.js";
+import type { UserService } from "./users.js";
 
 export { sessionToken } from "./users.js";
-export type { SecretsAdmin } from "./secrets-module.js";
+
+/** What the API serves; the caller builds each part. */
+export interface ApiParts {
+  /** Resolves the caller of each request. */
+  users: UserService;
+  /** Routes that need no session, such as signing in. */
+  publicRoutes: Route[];
+  /** Feature modules; their routes need a session and each route's own requirement. */
+  modules: FeatureModule[];
+  /** Device health and device pings, or null when the hub keeps no health store. */
+  health: HealthHttp | null;
+  /** Whether Matter is connected, reported at /healthz. */
+  matter: Pick<MatterAdmin, "ready">;
+  log: Log;
+}
 
 /** Serves the hub API. */
 export class Api {
@@ -38,45 +48,17 @@ export class Api {
   readonly #users: UserService;
   readonly #public: Route[];
   readonly #authed: Route[];
-  readonly #healthHttp: HealthHttp | undefined;
+  readonly #healthHttp: HealthHttp | null;
+  readonly #matter: Pick<MatterAdmin, "ready">;
+  readonly #log: Log;
 
-  /**
-   * password must be non-empty; the owner exchanges it for a session token at
-   * POST /api/login. Invited accounts sign in with a username and password.
-   */
-  constructor(
-    hub: Hub,
-    private readonly matter: MatterAdmin,
-    password: string,
-    accounts: Accounts,
-    private readonly log: Log,
-    health?: HealthStore,
-    layoutPath?: string,
-    organization?: Organization,
-    secrets?: SecretsAdmin,
-    tailscale?: TailscaleService,
-  ) {
-    // An account's link is deleted with it; the sync then removes its access.
-    this.#users = new UserService(accounts, password, () => tailscale?.sync());
-    this.#healthHttp = health
-      ? new HealthHttp(health, log.with({ component: "device-health" }), matter, hub, organization)
-      : undefined;
-    const layout = new LayoutChanges(hub, log);
-    // Owner sign-ins and Secrets password checks share one failure limit.
-    const ownerLimiter = new LoginLimiter();
-    const users = new UsersModule(this.#users, new AccountOnboarding(this.#users), ownerLimiter, log);
-    const modules = [
-      users,
-      new SecretsModule(this.#users, ownerLimiter, log, secrets),
-      new LightsModule(hub, log),
-      new DevicesModule(hub, matter, layout, log, layoutPath, organization),
-      new OrganizationModule(hub, matter, layout, log, health, layoutPath, organization),
-      ...(tailscale
-        ? [new TailscaleModule(accounts, tailscale, new TailscaleOnboarding(accounts, tailscale), settings.tailscale)]
-        : []),
-    ];
-    this.#public = [route("GET", "/healthz", null, (ctx) => this.#health(ctx)), ...users.publicRoutes()];
-    this.#authed = modules.flatMap((module) => module.routes());
+  constructor(parts: ApiParts) {
+    this.#users = parts.users;
+    this.#healthHttp = parts.health;
+    this.#matter = parts.matter;
+    this.#log = parts.log;
+    this.#public = [route("GET", "/healthz", null, (ctx) => this.#health(ctx)), ...parts.publicRoutes];
+    this.#authed = parts.modules.flatMap((module) => module.routes());
   }
 
   /** Handles one request; pass it to http.createServer. Everything under /api/ except login needs auth. */
@@ -103,7 +85,7 @@ export class Api {
         writeError(res, 400, `bad request body: ${err.message}`);
         return;
       }
-      this.log.error("request failed", { method: req.method, path: req.url, err });
+      this.#log.error("request failed", { method: req.method, path: req.url, err });
       writeError(res, 500, err instanceof Error ? err.message : String(err));
     });
   };
@@ -112,8 +94,14 @@ export class Api {
     const path = new URL(req.url ?? "/", "http://hub").pathname;
     if (serveWeb(req, res)) return;
     const principal = this.#users.resolve(req);
-    if (await this.#healthHttp?.handle(req, res, this.#authorization.access(principal, "devices"))) return;
-    if (await this.#serve(this.#public, req, res, path, signal, false, principal)) {
+    if (
+      await this.#healthHttp?.handle(req, res, this.#authorization.access(principal, "devices"), () =>
+        this.#authorization.access(this.#users.resolve(req), "devices"),
+      )
+    )
+      return;
+    const request = { req, res, path, signal, principal };
+    if (await serveRoutes(this.#public, this.#authorization, request, false)) {
       return;
     }
     if (!path.startsWith("/api/")) {
@@ -122,45 +110,13 @@ export class Api {
     if (principal === null) {
       throw new HttpError(401, "sign in first");
     }
-    if (!(await this.#serve(this.#authed, req, res, path, signal, true, principal))) {
+    if (!(await serveRoutes(this.#authed, this.#authorization, request, true))) {
       throw new HttpError(404, "not found");
     }
   }
 
-  /**
-   * Runs the matching route once the principal meets its requirement. A path
-   * served under another method is a 405 when strict.
-   */
-  async #serve(
-    routes: Route[],
-    req: IncomingMessage,
-    res: ServerResponse,
-    path: string,
-    signal: AbortSignal,
-    strict: boolean,
-    principal: Principal | null,
-  ): Promise<boolean> {
-    let pathMatched = false;
-    for (const r of routes) {
-      const m = r.pattern.exec(path);
-      if (!m) {
-        continue;
-      }
-      pathMatched = true;
-      if (r.method === req.method) {
-        this.#authorization.require(principal, r.requires);
-        await r.handler({ req, res, params: m.slice(1).map(decodeParam), signal, principal });
-        return true;
-      }
-    }
-    if (strict && pathMatched) {
-      throw new HttpError(405, "method not allowed");
-    }
-    return false;
-  }
-
   async #health({ res }: RequestContext): Promise<void> {
-    writeJSON(res, 200, { ok: true, matterConnected: this.matter.ready });
+    writeJSON(res, 200, { ok: true, matterConnected: this.#matter.ready });
     return Promise.resolve();
   }
 }

@@ -9,12 +9,14 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import types
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import engine
+from cloudflare_api import CloudflareError
 import settings
 from fixtures import APP, BENCH, SHELL, TOOL, WEB, ModuleTestCase
 from modules import KINDS, VERIFY_JOB, Checks, Command, Context, External, Module, Service, StaticSite
@@ -152,6 +154,17 @@ class FingerprintTest(ModuleTestCase):
         entry.write_text(entry.read_text() + "# app, second version\n")
         self.assertNotEqual(app.fingerprint(ctx), changed_shared)
         self.assertEqual(Service("app", APP).code(ctx.release), {})
+
+    def test_counts_engine_classes_by_their_copy_in_the_release(self):
+        self.add_all()
+        ctx = self.context(self.commit())
+        copies = {}
+        for name in ("jomaa-deploy/modules/service.py", "jomaa-deploy/modules/base.py"):
+            copy = ctx.release / name
+            copy.parent.mkdir(parents=True, exist_ok=True)
+            copy.write_text(f"# the release's {name}\n")
+            copies[name] = hashlib.sha256(copy.read_bytes()).hexdigest()
+        self.assertEqual(Service("app", APP).code(ctx.release), copies)
 
 
 class ServiceTest(ModuleTestCase):
@@ -330,6 +343,40 @@ class ContextRequestTest(unittest.TestCase):
         self.assertEqual(ctx.fetch({"url": origin + "/", "host": "site.example.org"}), b"site.example.org")
         self.assertIsNone(ctx.fetch({"url": origin + "/missing", "host": "site.example.org"}))
         self.assertTrue(ctx.healthy({"url": origin + "/"}))
+
+    def test_cloudflare_requests_stop_when_the_module_budget_runs_out(self):
+        requests = []
+        released = threading.Event()
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                requests.append(self.path)
+                released.wait(10)
+
+            def log_message(self, *args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.addCleanup(server.server_close)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        self.addCleanup(released.set)
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        folder = Path(temp.name)
+        config = {**settings.CONFIG, "moduleTimeoutSeconds": 1,
+                  "cloudflare": {**settings.CONFIG["cloudflare"], "api": f"http://127.0.0.1:{server.server_port}",
+                                 "timeoutSeconds": 30}}
+        ctx = Context(folder, folder, folder, "", folder, config=config, unit_dir=folder)
+        ctx.begin()
+        cf = ctx.cloudflare("token")
+        started = time.monotonic()
+        with self.assertRaises(CloudflareError):
+            cf.call("GET", "/zones")
+        self.assertLess(time.monotonic() - started, 5)
+        with self.assertRaises(TimeoutError):
+            cf.call("GET", "/zones")
+        self.assertEqual(requests, ["/zones"])
 
 
 class CommandExternalChecksTest(ModuleTestCase):

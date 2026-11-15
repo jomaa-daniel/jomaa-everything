@@ -1,6 +1,6 @@
 // Sign-in, invites, and account management.
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { isScope, passwordLength, scopes, sessionLifetimeMs } from "./accounts.js";
+import { isScope, scopes } from "./accounts.js";
 import { clientIP, isHTTPS, LoginLimiter } from "./limiter.js";
 import type { Log } from "./log.js";
 import {
@@ -75,7 +75,7 @@ export class UsersModule implements FeatureModule {
     }
     limiter.succeed(client);
     this.users.endSession(req);
-    signIn(req, res, token);
+    signIn(req, res, token, this.users.accounts.sessionLifetimeMs);
     writeJSON(res, 200, { token });
   }
 
@@ -101,7 +101,10 @@ export class UsersModule implements FeatureModule {
 
   async #inviteCheck({ req, res }: RequestContext): Promise<void> {
     const token = (await readBody(req)).only("token").string("token") ?? "";
-    writeJSON(res, 200, { expiresAt: this.users.accounts.checkInvite(token).expiresAt, passwordLength });
+    writeJSON(res, 200, {
+      expiresAt: this.users.accounts.checkInvite(token).expiresAt,
+      passwordLength: this.users.accounts.passwordLength,
+    });
   }
 
   /** Creates an account from an invite; the caller's session is unchanged. */
@@ -173,8 +176,8 @@ export class UsersModule implements FeatureModule {
  * the tunnel): on the home network the hub is often plain HTTP, and a Secure
  * cookie would never be sent back.
  */
-function signIn(req: IncomingMessage, res: ServerResponse, token: string): void {
-  res.setHeader("Set-Cookie", cookie(token, sessionLifetimeMs / 1000, isHTTPS(req)));
+function signIn(req: IncomingMessage, res: ServerResponse, token: string, lifetimeMs: number): void {
+  res.setHeader("Set-Cookie", cookie(token, lifetimeMs / 1000, isHTTPS(req)));
 }
 
 function cookie(value: string, maxAge: number, secure: boolean): string {

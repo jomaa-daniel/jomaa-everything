@@ -511,3 +511,27 @@ dialog input {
     flex-wrap: wrap;
   }
 }
+.i2c-live {
+  max-height: 24rem;
+  overflow: auto;
+  background: #101820;
+  color: #e4edf5;
+  border-radius: 0.6rem;
+}
+.i2c-entry {
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid #33414d;
+  display: grid;
+  gap: 0.35rem;
+}
+.i2c-entry .muted {
+  color: #aebdca;
+}
+.i2c-bytes,
+.i2c-encoding {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.i2c-gap {
+  color: #ffc37d;
+}

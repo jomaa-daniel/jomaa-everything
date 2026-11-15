@@ -14,13 +14,30 @@ import {
 import type { TailscaleOnboarding } from "./onboarding.js";
 import type { TailscaleSettings } from "./settings.js";
 import type { TailscaleService } from "./tailscale.js";
+import type { TailscaleStore } from "./tailscale-store.js";
 
 const providerIdPattern = /^[A-Za-z0-9._:-]{1,128}$/;
+
+/** What the module reads and calls on the Tailscale service. */
+export type TailscaleOverview = Pick<
+  TailscaleService,
+  | "observed"
+  | "state"
+  | "syncing"
+  | "nextSyncAt"
+  | "removing"
+  | "providerUsers"
+  | "profile"
+  | "profiles"
+  | "refresh"
+  | "sync"
+  | "enable"
+> & { readonly store: Pick<TailscaleStore, "links"> };
 
 export class TailscaleModule implements FeatureModule {
   constructor(
     private readonly accounts: Accounts,
-    private readonly tailscale: TailscaleService,
+    private readonly tailscale: TailscaleOverview,
     private readonly onboarding: TailscaleOnboarding,
     private readonly settings: TailscaleSettings,
   ) {}

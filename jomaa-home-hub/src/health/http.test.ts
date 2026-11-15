@@ -7,12 +7,14 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { Api, sessionToken } from "../api.js";
+import { sessionToken } from "../api.js";
+import { hubApi } from "../hub-api.js";
 import { Hub } from "../hub.js";
 import { Accounts } from "../accounts.js";
 import { silentLog } from "../log.js";
 import type { MatterAdmin, NodeSummary } from "../matter/nodes.js";
 import { HealthStore } from "./store.js";
+import { settings } from "../settings.js";
 
 const matter: MatterAdmin = {
   ready: false,
@@ -57,9 +59,20 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     { stdio: "ignore" },
   );
   const ca = readFileSync(join(dir, "cert.pem"));
-  const store = new HealthStore(join(dir, "health.sqlite"));
-  const accounts = new Accounts(":memory:");
-  const api = new Api(new Hub(), matter, "test-hub-password", accounts, silentLog, store);
+  const store = new HealthStore(join(dir, "health.sqlite"), settings.i2c);
+  const accounts = new Accounts(":memory:", settings.accounts);
+  const api = hubApi({
+    hub: new Hub(),
+    matter,
+    password: "test-hub-password",
+    accounts,
+    log: silentLog,
+    health: { store, i2c: settings.i2c },
+    layoutPath: null,
+    organization: null,
+    secrets: null,
+    tailscale: null,
+  });
   const secure = createServer({ cert: ca, key: readFileSync(join(dir, "key.pem")) }, api.handle);
   const insecure = httpServer(api.handle);
   await Promise.all([
@@ -176,6 +189,80 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     assert.equal((await call(path, "POST", ping, token)).status, 201);
     assert.equal((await call(path, "POST", ping, token)).body["duplicate"], true);
     assert.equal(store.logs("pico-api").logs.length, 1);
+    const capture = {
+      bootId: ping.bootId,
+      sequence: 0,
+      bus: 0,
+      startUs: 0,
+      endUs: 1000000,
+      data: "a632001122",
+      dropped: 0,
+    };
+    const capturePath = "/api/devices/pico-api/i2c";
+    assert.equal((await call(capturePath, "POST", capture, admin)).status, 401);
+    assert.equal((await call(capturePath, "POST", capture, token, true)).status, 426);
+    assert.equal((await call(capturePath, "POST", capture, token)).status, 200);
+    assert.equal((await call(capturePath, "POST", capture, token)).body["duplicate"], true);
+    assert.equal((await call(capturePath, "GET", undefined, token)).status, 401);
+    assert.equal((await call(capturePath, "GET", undefined, admin)).status, 200);
+    assert.equal(store.i2c.logs("pico-api").logs[0]?.data, capture.data);
+    const largeCaptures = 8;
+    for (let sequence = 1; sequence <= largeCaptures; sequence++) {
+      store.i2c.record("pico-api", {
+        ...capture,
+        sequence,
+        startUs: sequence * 1000000,
+        endUs: (sequence + 1) * 1000000,
+        data: "aa".repeat(settings.i2c.maxDataBytes),
+      });
+    }
+    let liveText = "";
+    let snapshotReady: () => void = () => {};
+    const snapshot = new Promise<void>((resolve) => {
+      snapshotReady = resolve;
+    });
+    const liveDone = new Promise<void>((resolve, reject) => {
+      const req = request(
+        {
+          hostname: "127.0.0.1",
+          servername: "localhost",
+          ca,
+          port,
+          path: capturePath + "/events",
+          headers: { Authorization: "Bearer " + guest },
+        },
+        (res) => {
+          assert.equal(res.statusCode, 200);
+          res.on("data", (chunk: Buffer) => {
+            liveText += chunk.toString();
+            const start = liveText.indexOf("event: snapshot");
+            if (start >= 0 && liveText.indexOf("\n\n", start) >= 0) snapshotReady();
+          });
+          res.on("end", resolve);
+          res.on("error", reject);
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+    await snapshot;
+    assert.match(liveText, /a632001122/);
+    accounts.setScopes("guest", []);
+    await call(
+      capturePath,
+      "POST",
+      {
+        ...capture,
+        sequence: largeCaptures + 1,
+        startUs: (largeCaptures + 1) * 1000000,
+        endUs: (largeCaptures + 2) * 1000000,
+        data: "ffeedd",
+      },
+      token,
+    );
+    await liveDone;
+    assert.match(liveText, /event: denied/);
+    assert.ok(!liveText.includes("ffeedd"), "revoked viewers receive no new raw bytes");
     assert.equal((await call("/api/devices/pico-api", "PATCH", { name: "Updated" }, admin)).status, 200);
     assert.equal(store.get("pico-api").name, "Updated");
     assert.equal(
@@ -189,6 +276,7 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     assert.equal((await call("/api/devices/pico-api/logs?limit=500", "GET", undefined, admin)).status, 400);
     assert.equal((await call("/api/devices/pico-api/revoke", "POST", {}, admin)).status, 200);
     assert.equal((await call(path, "POST", ping, token)).status, 401);
+    assert.equal((await call(capturePath, "POST", { ...capture, sequence: 1 }, token)).status, 401);
     assert.equal(store.logs("pico-api").logs.length, 1);
     await assert.rejects(
       new Promise<void>((resolve, reject) => {
@@ -231,9 +319,20 @@ await test("device inventory includes registered Matter nodes without issuing Pi
       return Promise.resolve({ node_id: 42, available: true, is_bridge: false });
     },
   };
-  const store = new HealthStore(":memory:");
+  const store = new HealthStore(":memory:", settings.i2c);
   const server = httpServer(
-    new Api(new Hub(), controller, "inventory-test-password", new Accounts(":memory:"), silentLog, store).handle,
+    hubApi({
+      hub: new Hub(),
+      matter: controller,
+      password: "inventory-test-password",
+      accounts: new Accounts(":memory:", settings.accounts),
+      log: silentLog,
+      health: { store, i2c: settings.i2c },
+      layoutPath: null,
+      organization: null,
+      secrets: null,
+      tailscale: null,
+    }).handle,
   );
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

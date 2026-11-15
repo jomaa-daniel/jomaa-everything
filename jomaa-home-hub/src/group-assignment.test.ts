@@ -1,9 +1,11 @@
+import { settings } from "./settings.js";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { Api, sessionToken } from "./api.js";
+import { sessionToken } from "./api.js";
+import { hubApi } from "./hub-api.js";
 import { parseConfig } from "./config.js";
 import { GoveeClient } from "./govee.js";
 import { Hub } from "./hub.js";
@@ -60,10 +62,21 @@ test("group edits persist room membership and update the running fan-out", async
     setThreadDataset: () => Promise.resolve(),
     removeNode: () => Promise.resolve(),
   };
-  const store = new HealthStore(":memory:");
+  const store = new HealthStore(":memory:", settings.i2c);
   const hub = Hub.build(parseConfig(JSON.stringify(cfg)), new GoveeClient("test", "http://127.0.0.1:1"), controller);
   const origin = await serve(
-    new Api(hub, controller, "test-password", new Accounts(":memory:"), silentLog, store, path).handle,
+    hubApi({
+      hub,
+      matter: controller,
+      password: "test-password",
+      accounts: new Accounts(":memory:", settings.accounts),
+      log: silentLog,
+      health: { store, i2c: settings.i2c },
+      layoutPath: path,
+      organization: null,
+      secrets: null,
+      tailscale: null,
+    }).handle,
   );
   const headers = { Authorization: `Bearer ${sessionToken("test-password")}`, "Content-Type": "application/json" };
   const save = (body: unknown) =>

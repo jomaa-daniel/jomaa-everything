@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { chromium, type BrowserContext, type Page } from "playwright-core";
 import { Accounts } from "../accounts.js";
-import { Api } from "../api.js";
+import { hubApi } from "../hub-api.js";
 import { allFeatures, type Device, type Features, type State } from "../device.js";
 import { Group } from "../group.js";
 import { HealthStore } from "../health/store.js";
@@ -20,7 +20,7 @@ import { settings } from "../settings.js";
 import { TailscaleService } from "../tailscale.js";
 import { schemaText } from "../tailscale-gateway.js";
 import { TailscaleStore } from "../tailscale-store.js";
-import { FakeTailnet } from "../tailscale-testing.js";
+import { FakeTailnet, tailnetScript } from "../tailscale-testing.js";
 import { serve } from "../testing.js";
 
 const ownerPassword = "owner password for the tailscale browser test";
@@ -53,10 +53,10 @@ const noMatter: MatterAdmin = {
 };
 
 const database = join(mkdtempSync(join(tmpdir(), "hub-tailscale-e2e-")), "accounts.sqlite");
-const accounts = new Accounts(database);
+const accounts = new Accounts(database, settings.accounts);
 const fake = await FakeTailnet.create(["old@example.com"]);
 const service = new TailscaleService(
-  new TailscaleStore(accounts.database, schemaText(), Date.now),
+  new TailscaleStore(accounts.database, schemaText(tailnetScript), Date.now),
   fake.gateway(database),
   accounts,
   settings.tailscale,
@@ -66,18 +66,18 @@ const hub = new Hub();
 const lamp = new Lamp();
 hub.addDevice("test", lamp);
 hub.addRoom(new Group("living-room", "Living room", [lamp]));
-const api = new Api(
+const api = hubApi({
   hub,
-  noMatter,
-  ownerPassword,
+  matter: noMatter,
+  password: ownerPassword,
   accounts,
-  silentLog,
-  new HealthStore(":memory:"),
-  undefined,
-  undefined,
-  undefined,
-  service,
-);
+  log: silentLog,
+  health: { store: new HealthStore(":memory:", settings.i2c), i2c: settings.i2c },
+  layoutPath: null,
+  organization: null,
+  secrets: null,
+  tailscale: { service, settings: settings.tailscale },
+});
 const origin = await serve(api.handle);
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const owner = await browser.newContext();

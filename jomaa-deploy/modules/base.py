@@ -25,6 +25,7 @@ VERIFY_JOB = "verify"
 HOSTNAME = re.compile(r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}")
 NAME = re.compile(r"[a-z0-9][a-z0-9.-]*")
 PLACEHOLDER = re.compile(r"\{(release|python|home)\}")
+ENGINE_ROOT = Path(__file__).resolve().parents[2]
 
 
 class DeployError(Exception):
@@ -192,7 +193,9 @@ class Context:
         return self.deploy_dir / "modules" / name / "current"
 
     def cloudflare(self, token: str) -> Cloudflare:
-        return Cloudflare(token, self.config["cloudflare"]["api"], self.config["cloudflare"]["timeoutSeconds"])
+        """A Cloudflare client whose requests count against the current module budget."""
+        return Cloudflare(token, self.config["cloudflare"]["api"],
+                          lambda: self.timeout(self.config["cloudflare"]["timeoutSeconds"]))
 
     def request(self, check: dict):
         """Open check["url"] without a proxy, with the deployment's User-Agent and check["host"] as Host if given."""
@@ -344,7 +347,11 @@ class Module(abc.ABC):
         return ids
 
     def code(self, release: Path) -> dict[str, str]:
-        """SHA-256 of each source file inside the release that defines a class of this module, by path."""
+        """SHA-256 of the release's copy of each repository file that defines a class of this module, by path.
+
+        A class loaded from the repository the engine runs from, such as the checkout during installation,
+        counts by the same path in the release.
+        """
         root = release.resolve()
         found = {}
         for cls in type(self).__mro__:
@@ -352,9 +359,16 @@ class Module(abc.ABC):
                 source = inspect.getsourcefile(cls)
             except TypeError:
                 continue
-            path = Path(source).resolve() if source is not None else None
-            if path is not None and path.is_relative_to(root):
-                found[path.relative_to(root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+            if source is None:
+                continue
+            path = Path(source).resolve()
+            base = next((r for r in (root, ENGINE_ROOT) if path.is_relative_to(r)), None)
+            if base is None:
+                continue
+            name = path.relative_to(base).as_posix()
+            copy = root / name
+            if copy.is_file():
+                found[name] = hashlib.sha256(copy.read_bytes()).hexdigest()
         return found
 
     def state_files(self, source: Path) -> dict[str, str]:

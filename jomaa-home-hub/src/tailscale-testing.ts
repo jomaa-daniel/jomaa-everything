@@ -5,10 +5,13 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { settings, settingsFile } from "./settings.js";
 import { CommandGateway, scriptPath } from "./tailscale-gateway.js";
 
 const run = promisify(execFile);
-const script = join(dirname(scriptPath()), "fake_tailnet.py");
+/** tailnet.py from the hub's settings. */
+export const tailnetScript = scriptPath(settings.tailscale, settingsFile);
+const script = join(dirname(tailnetScript), "fake_tailnet.py");
 
 export interface FakeUser {
   id: string;

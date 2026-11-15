@@ -3,6 +3,8 @@ import { chmodSync, mkdirSync } from "node:fs";
 import { isIP } from "node:net";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { I2CStore } from "./i2c.js";
+import type { I2CSettings } from "../settings.js";
 
 export class HealthError extends Error {
   constructor(
@@ -54,10 +56,11 @@ const hash = (token: string) => createHash("sha256").update(token).digest();
 /** Credentials are issued by an administrator; registration happens on the first ping. */
 export class HealthStore {
   readonly #db: DatabaseSync;
+  readonly i2c: I2CStore;
   readonly retentionDays: number;
   now: () => number = Date.now;
 
-  constructor(path: string, retentionDays = 30) {
+  constructor(path: string, i2c: I2CSettings, retentionDays = 30) {
     if (!Number.isInteger(retentionDays) || retentionDays < 1 || retentionDays > 3650) {
       throw new Error("HEALTH_RETENTION_DAYS must be a whole number from 1 to 3650");
     }
@@ -100,6 +103,12 @@ export class HealthStore {
       PRAGMA user_version=1;
       COMMIT;
     `);
+    this.i2c = new I2CStore(
+      this.#db,
+      i2c,
+      (id) => this.get(id),
+      () => this.now(),
+    );
     this.prune();
   }
 
@@ -234,7 +243,9 @@ export class HealthStore {
   }
 
   prune(): void {
-    this.#db.prepare("DELETE FROM health_logs WHERE received_at<?").run(this.now() - this.retentionDays * 86400_000);
+    const cutoff = this.now() - this.retentionDays * 86400_000;
+    this.#db.prepare("DELETE FROM health_logs WHERE received_at<?").run(cutoff);
+    this.i2c.prune(cutoff);
   }
 
   close(): void {

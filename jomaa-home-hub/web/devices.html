@@ -137,6 +137,17 @@
         <div class="actions">
           <button id="rotate">Replace credential</button><button id="revoke" class="danger">Revoke access</button>
         </div>
+        <section id="i2c-section" aria-labelledby="i2c-title">
+          <div class="detail-heading">
+            <h3 id="i2c-title">Raw I²C stream</h3>
+            <button id="i2c-pause" type="button">Pause live view</button>
+          </div>
+          <p id="i2c-status" role="status" aria-live="polite">Connecting…</p>
+          <p class="muted">Empty captures are condensed. Raw bytes are shown in hexadecimal.</p>
+          <div id="i2c-live" class="i2c-live" tabindex="0" aria-label="Raw I²C logs"></div>
+          <p id="i2c-empty">No captures received yet.</p>
+          <button id="i2c-more" type="button" hidden>Load older captures</button>
+        </section>
         <h3>Health history</h3>
         <div class="table-wrap">
           <table>

@@ -441,6 +441,12 @@ class FirstRunTest(ModuleTestCase):
         for directory in self.REAL:
             for name in ("deploy_module.py", "deploy.json"):
                 self.write(f"{directory}/{name}", (checkout / directory / name).read_text())
+            declaration = json.loads((checkout / directory / "deploy.json").read_text())
+            for dependency in declaration["inputs"]:
+                source = checkout / dependency
+                self.assertTrue(source.exists(), f"declared input missing: {dependency}")
+                fixture = dependency if source.is_file() else f"{dependency}/fixture.txt"
+                self.write(fixture, "fixture\n")
         for path in ("jomaa-deploy/boot.py", "jomaa-deploy/settings.py", "jomaa-deploy/config.json",
                      "jomaa-static-pages/device-panel/index.html", "jomaa-static-pages/serve.py",
                      "jomaa-static-pages/sarah.jomaa.org/index.html"):
