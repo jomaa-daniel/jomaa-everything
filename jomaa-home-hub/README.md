@@ -81,7 +81,15 @@ the hub subdomain's `/` continues to open device health.
 
 `https://jomaa.org/manage` manages custom device types, groups, and assignments
 for configured Govee lights, paired Matter devices, and health reporters. It
-needs the owner or an account with the `manage` scope. Types have distinct colors; assigning a
+needs the owner or an account with the `manage` scope. The Devices tab opens a
+compact inventory with an editor for the selected device. Category and group
+changes save immediately. The Types and Groups tabs create, rename, and delete
+categories and groups. Arrow keys select device rows, Enter opens the editor,
+`/` focuses search, and Escape returns to the list or cancels a rename.
+On phones, selecting a device opens its editor with a button to return to the
+inventory. The bottom bar shows keyboard commands and save results.
+
+Types have distinct colors; assigning a
 custom type changes the inventory category while hardware types and capabilities
 stay device-reported. Deleting a type clears its assignments.
 
