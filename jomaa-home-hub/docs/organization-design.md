@@ -1,12 +1,12 @@
 # Device organization design
 
-The `/manage` page uses two titled panes: Devices and Assignments. Devices
-opens first; Types and Groups have their own tabs. At narrow widths, opening
+The `/manage` page combines device organization and health. Its organization view uses two titled panes: Devices and Assignments. Devices
+opens first; Types, Groups, and Health have their own tabs. At narrow widths, opening
 a device replaces the inventory with its editor and provides a return button.
 
 ## Color and focus
 
-`web/manage.css` defines the colors as semantic CSS variables. The surface and
+`web/ui.css` defines the shared colors as semantic CSS variables. The surface and
 accent use Nord's dark slate and frost cyan. Muted text and error text use
 lighter colors to maintain readable contrast on the dark surface.
 
@@ -42,3 +42,12 @@ The page adapts terminal design ideas to HTML controls and responsive CSS:
 - [Diego Marino TUI Design](https://github.com/diegomarino/tui-design): semantic
   color roles, contrast measurements, and checking rendered layouts at several
   sizes. Its terminal cell-grid audit is not a browser compliance test.
+
+## Shared hub controls
+
+Home, Lights, Invites, Join, Permissions, Secrets, and Devices use the shared
+stylesheet and keyboard controller. Lists and grids support arrow navigation
+without activating actions. Text inputs, selects, ranges, and scrollable logs
+keep native keys. Alt+Up/Down moves between fields and actions. Native modal
+dialogs keep focus inside the open dialog. Dynamic lists restore focus to the
+same object or a remaining action after updates.

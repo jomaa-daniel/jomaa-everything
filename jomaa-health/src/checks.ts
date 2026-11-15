@@ -54,7 +54,7 @@ const discoverTimeoutMs = config.discoveryTimeoutSeconds * 1000;
 /** The hub's answer to an unauthenticated API request. */
 const signInRefusal = "sign in first";
 /** Where the hub's whole-host route redirects its root. */
-const inventoryPath = "/devices";
+const inventoryPath = "/manage";
 /** The deployment receiver's path, WEBHOOK_PATH in jomaa-deploy/settings.py. */
 const receiverPath = "/deploy";
 

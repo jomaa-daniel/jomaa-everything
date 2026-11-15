@@ -7,9 +7,11 @@
     <link rel="stylesheet" href="/home/base.css" />
     <link rel="stylesheet" href="/home/accounts.css" />
     <script type="module" src="/permissions/app.js"></script>
+    <link rel="stylesheet" href="/home/ui.css" />
+    <script type="module" src="/home/ui.js"></script>
     <script type="module" src="/home/prefetch.js"></script>
   </head>
-  <body>
+  <body class="tui-page">
     <header><a href="/home">Jomaa Home</a><button id="logout" hidden>Sign out</button></header>
     <main>
       <h1>Permissions</h1>
@@ -30,7 +32,7 @@
             <thead>
               <tr id="scope-head"></tr>
             </thead>
-            <tbody id="account-rows"></tbody>
+            <tbody id="account-rows" data-tui-nav="grid"></tbody>
           </table>
         </div>
         <p id="accounts-empty" class="muted" hidden>No accounts yet.</p>

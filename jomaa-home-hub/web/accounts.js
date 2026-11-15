@@ -33,7 +33,7 @@ export function element(tag, text, className) {
 }
 
 export function notify(text, success = false) {
-  $("notice").className = success ? "success" : "";
+  $("notice").className = text ? (success ? "success" : "error") : "";
   $("notice").textContent = text;
 }
 

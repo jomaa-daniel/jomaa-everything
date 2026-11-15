@@ -8,7 +8,7 @@ const css = "text/css; charset=utf-8";
 const js = "text/javascript; charset=utf-8";
 
 /** Who can open a page: anyone, an account with the scope, or only the owner. */
-export type PageAccess = Scope | "owner" | null;
+export type PageAccess = Scope | "owner" | null | readonly Scope[];
 
 /** The hub's pages by path, each with its file and who can open it. Each page is also served with a trailing slash. */
 const pageFiles: Record<string, [string, PageAccess]> = {
@@ -17,14 +17,15 @@ const pageFiles: Record<string, [string, PageAccess]> = {
   "/join": ["join.html", null],
   "/permissions": ["permissions.html", "owner"],
   "/secrets": ["secrets.html", "owner"],
-  "/manage": ["manage.html", "manage"],
-  "/devices": ["devices.html", "devices"],
+  "/manage": ["manage.html", ["manage", "devices"]],
   "/lights": ["lights.html", "lights"],
 };
 
 /** The pages' scripts and styles by path. */
 const assetFiles: Record<string, [string, string]> = {
   "/home/base.css": ["style.css", css],
+  "/home/ui.css": ["ui.css", css],
+  "/home/ui.js": ["ui.js", js],
   "/home/style.css": ["home.css", css],
   "/home/accounts.css": ["accounts.css", css],
   "/home/accounts.js": ["accounts.js", js],
@@ -35,9 +36,8 @@ const assetFiles: Record<string, [string, string]> = {
   "/secrets/app.js": ["secrets.js", js],
   "/secrets/style.css": ["secrets.css", css],
   "/manage/app.js": ["manage.js", js],
+  "/manage/health.js": ["health.js", js],
   "/manage/style.css": ["manage.css", css],
-  "/devices/app.js": ["app.js", js],
-  "/devices/style.css": ["style.css", css],
   "/lights/app.js": ["lights.js", js],
   "/lights/style.css": ["lights.css", css],
 };
@@ -107,7 +107,7 @@ function matches(header: string | undefined, etag: string): boolean {
 export function serveWeb(req: IncomingMessage, res: ServerResponse): boolean {
   const path = new URL(req.url ?? "/", "http://hub").pathname;
   if (path === "/" && (req.method === "GET" || req.method === "HEAD")) {
-    const destination = req.headers.host?.split(":")[0] === "jomaa.org" ? "/home" : "/devices";
+    const destination = req.headers.host?.split(":")[0] === "jomaa.org" ? "/home" : "/manage";
     res.writeHead(302, { Location: destination, "Cache-Control": "no-store" });
     res.end();
     return true;

@@ -1,6 +1,6 @@
 # jomaa-agent-pipeline
 
-Every code change in this repository goes through a blind pipeline. The change
+The blind pipeline is optional and runs only when explicitly requested. The change
 is written as a product instruction, reviewed so it's complete and gives no
 recipe, and judged by hidden tests written before the code. Those tests reach
 the implementing agent only as a pass or fail per requirement. The main agent

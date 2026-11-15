@@ -33,6 +33,7 @@ export interface Settings {
   prefetch: PrefetchSettings;
   secrets: SecretSettings;
   i2c: I2CSettings;
+  health: { refreshSeconds: number; historyLimit: number; discoveryRefreshSeconds: number };
 }
 
 export interface I2CSettings {
@@ -162,8 +163,13 @@ export function parseDeploySettings(text: string): DeploySettings {
 /** Parses settings.json; throws naming the first missing or invalid setting. */
 export function parseSettings(text: string): Settings {
   const root = new Fields(parseJson(text), "settings.json")
-    .only("accounts", "prefetch", "secrets", "i2c")
-    .required("accounts", "prefetch", "secrets", "i2c");
+    .only("accounts", "prefetch", "secrets", "i2c", "health")
+    .required("accounts", "prefetch", "secrets", "i2c", "health");
+  const health = new Fields(root.value("health"), "settings.json health").only(
+    "refreshSeconds",
+    "historyLimit",
+    "discoveryRefreshSeconds",
+  );
   const accounts = new Fields(root.value("accounts"), "settings.json accounts")
     .only("databaseFile", "sessionLifetimeDays", "sessionsPerAccount", "inviteLifetimeDays", "passwordLength")
     .required("databaseFile", "passwordLength");
@@ -187,6 +193,11 @@ export function parseSettings(text: string): Settings {
     prefetch: parsePrefetch(root.value("prefetch")),
     secrets: parseSecrets(root.value("secrets")),
     i2c: parseI2C(root.value("i2c")),
+    health: {
+      refreshSeconds: positive(health, "refreshSeconds", "health"),
+      historyLimit: positive(health, "historyLimit", "health"),
+      discoveryRefreshSeconds: positive(health, "discoveryRefreshSeconds", "health"),
+    },
   };
 }
 

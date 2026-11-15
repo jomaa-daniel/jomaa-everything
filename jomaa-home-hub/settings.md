@@ -57,3 +57,14 @@ reruns the deployment workflow.
 | `i2c.keepaliveSeconds`      | Interval between live connection keepalives and session access checks.                                                        |
 | `i2c.reconnectMilliseconds` | Delay before a disconnected live view reconnects.                                                                             |
 | `i2c.maxLiveClients`        | Maximum simultaneous live capture viewers on the hub.                                                                         |
+
+## Health view
+
+`health` controls the unified device health view.
+
+| Setting                 | Meaning                                                       |
+| ----------------------- | ------------------------------------------------------------- |
+| `health.refreshSeconds` | Interval between inventory refreshes while Health is visible. |
+| `health.historyLimit`   | Number of health reports requested per history page.          |
+
+`health.discoveryRefreshSeconds` is the interval between Matter discovery requests while the discovery dialog is open.

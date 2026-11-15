@@ -27,5 +27,10 @@
     "ghCommand": "/snap/bin/gh",
     "deployConfig": "jomaa-deploy/config.json",
     "redeployPollSeconds": 5
+  },
+  "health": {
+    "refreshSeconds": 15,
+    "historyLimit": 50,
+    "discoveryRefreshSeconds": 2
   }
 }

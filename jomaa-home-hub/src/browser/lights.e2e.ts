@@ -2,6 +2,7 @@
 // lamps that keep reporting their old state after taking a command, and one
 // lamp that rejects every command.
 import assert from "node:assert/strict";
+import { isFocused } from "./dom.js";
 import { after, test } from "node:test";
 import { chromium, type Page } from "playwright-core";
 import { Accounts } from "../accounts.js";
@@ -163,5 +164,37 @@ test("pressing a button gives a haptic tap", async () => {
   await page.locator("#status-toggle").click();
   await page.locator("#power-toggle").click();
   assert.equal(Number(await page.evaluate("window.vibrations.length")), before + 2);
+  await page.close();
+});
+
+test("room and swatch arrows move focus without sending commands, and sliders keep native keys", async () => {
+  const page = await openPanel();
+  const rooms = page.locator(".room-btn");
+  const commands: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() === "POST" && request.url().endsWith("/command")) commands.push(request.url());
+  });
+  await rooms.first().focus();
+  await page.keyboard.press("ArrowRight");
+  assert.ok(await rooms.nth(1).evaluate(isFocused));
+  assert.equal(await page.locator("#target-title").textContent(), "Living room");
+  const colors = page.locator(".swatch");
+  await colors.first().focus();
+  await page.keyboard.press("ArrowRight");
+  assert.ok(await colors.nth(1).evaluate(isFocused));
+  assert.deepEqual(commands, []);
+  await page.getByRole("button", { name: "Edit custom color 1", exact: true }).click();
+  await page.locator("#color-grid [data-pick]").first().focus();
+  await page.keyboard.press("ArrowRight");
+  const right = await page.locator("#color-grid [data-pick]:focus").getAttribute("data-pick");
+  assert.equal(right, await page.locator("#color-grid [data-pick]").nth(1).getAttribute("data-pick"));
+  await page.keyboard.press("ArrowDown");
+  assert.notEqual(await page.locator("#color-grid [data-pick]:focus").getAttribute("data-pick"), right);
+  await page.keyboard.press("Escape");
+  const brightness = page.locator("#brightness");
+  await brightness.focus();
+  const value = Number(await brightness.inputValue());
+  await page.keyboard.press(value < 100 ? "ArrowRight" : "ArrowLeft");
+  assert.notEqual(Number(await brightness.inputValue()), value);
   await page.close();
 });

@@ -351,7 +351,13 @@ export class Api {
   async #prefetch({ res, principal }: RequestContext): Promise<void> {
     const counts = this.clicks.counts();
     const open = pages
-      .filter((page) => principal === null || access(principal, page.access) === "allowed")
+      .filter(
+        (page) =>
+          principal === null ||
+          (page.access !== null && typeof page.access === "object"
+            ? page.access.some((scope) => access(principal, scope) === "allowed")
+            : access(principal, page.access) === "allowed"),
+      )
       .map((page) => ({ path: page.path, clicks: counts.get(page.path) ?? 0, assets: page.assets }))
       .sort((a, b) => b.clicks - a.clicks);
     writeJSON(res, 200, { concurrency: settings.prefetch.concurrency, pages: open });

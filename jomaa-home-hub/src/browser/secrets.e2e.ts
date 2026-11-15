@@ -4,6 +4,7 @@
 // edits and saves keys, and once the CLI is logged in follows a redeploy while
 // the hub is briefly away.
 import assert from "node:assert/strict";
+import { isFocused } from "./dom.js";
 import {
   chmodSync,
   lstatSync,
@@ -158,6 +159,17 @@ await test("the owner signs in and sees every file's keys with masked values", a
   for (const secret of [hubSecret, tailnetSecret, ownerPassword])
     assert.ok(!text.includes(secret), "values are masked");
   assert.ok(await page.locator("#redeploy").isHidden(), "redeploy is offered after a save");
+});
+
+await test("arrow navigation across secret actions does not reveal or change values", async () => {
+  const reveal = page.getByRole("button", { name: "Reveal HUB_SECRET in app/.env" });
+  await reveal.focus();
+  await page.keyboard.press("ArrowRight");
+  assert.ok(!(await reveal.evaluate(isFocused)));
+  await page.keyboard.press("ArrowDown");
+  assert.ok(await page.locator("#confirm").isHidden());
+  assert.equal(await page.locator(".secret-value.revealed").count(), 0);
+  assert.equal(readFileSync(join(checkout, "app/.env"), "utf8"), contents["app/.env"]);
 });
 
 await test("revealing a value needs the hub password", async () => {

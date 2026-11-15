@@ -1,9 +1,11 @@
+import { sessionEndEvent, updateUIHints } from "/home/ui.js";
+import { loadHealth, resetHealth, closeHealth, selectHealth } from "/manage/health.js";
 const $ = (id) => document.getElementById(id);
-const tabs = ["devices", "types", "groups"];
+const tabs = ["devices", "types", "groups", "health"];
 const sourceLabels = { matter: "Matter", govee: "Govee", health: "Health reporter" };
 let catalog = { types: [], groups: [], devices: [] };
 let generation = 0;
-let activeTab = "devices";
+let activeTab = location.hash === "#health" ? "health" : "devices";
 let searchQuery = "";
 let selectedKey = null;
 let editorOpen = false;
@@ -11,6 +13,9 @@ let editingKey = null;
 let pending = false;
 let catalogStale = false;
 const drafts = new Map();
+let canManage = false;
+let canHealth = false;
+const healthStates = new Map();
 
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -25,6 +30,10 @@ function notice(text, state = "") {
 }
 
 function updateCommands() {
+  if (activeTab === "health") {
+    updateUIHints();
+    return;
+  }
   const target = document.activeElement;
   let commands;
   if (target.closest(".tabs")) {
@@ -86,6 +95,7 @@ function signedIn(value) {
   $("login-section").hidden = value;
   for (const id of ["management", "logout", "refresh", "command-hints"]) $(id).hidden = !value;
   if (!value) {
+    resetHealth();
     generation++;
     catalog = { types: [], groups: [], devices: [] };
     drafts.clear();
@@ -93,7 +103,7 @@ function signedIn(value) {
     editorOpen = pending = catalogStale = false;
     searchQuery = "";
     $("device-search").value = "";
-    showTab("devices");
+    showTab(location.hash === "#health" ? "health" : "devices");
   }
 }
 
@@ -135,12 +145,22 @@ function restoreFocus(id) {
 async function load() {
   const current = generation;
   const focused = document.activeElement?.id;
-  const result = await api("/api/manage");
+  const session = await api("/api/session");
+  canManage = session.owner || session.scopes.includes("manage");
+  canHealth = session.owner || session.scopes.includes("devices");
+  for (const tab of tabs) $(tab + "-tab").hidden = tab === "health" ? !canHealth : !canManage;
+  if (!canManage && !canHealth) {
+    signedIn(false);
+    throw new Error("Your account has no device access. Ask the hub owner to grant it.");
+  }
+  const result = canManage ? await api("/api/manage") : { types: [], groups: [], devices: [] };
   if (current !== generation) return;
   catalog = result;
   catalogStale = false;
   signedIn(true);
+  if (canHealth) await loadHealth();
   render();
+  showTab(canManage ? (activeTab === "health" && !canHealth ? "devices" : activeTab) : "health");
   restoreFocus(focused);
 }
 
@@ -192,6 +212,7 @@ function plural(count, singular) {
 }
 
 function showTab(tab, focus = false) {
+  if (tab !== "health") closeHealth();
   activeTab = tab;
   for (const name of tabs) {
     const button = $(name + "-tab");
@@ -201,6 +222,7 @@ function showTab(tab, focus = false) {
   }
   updateCommands();
   if (focus) $(tab + "-tab").focus();
+  if (tab === "health" && canHealth && !$("management").hidden) loadHealth().catch(error);
 }
 
 function renderList(kind, values) {
@@ -320,6 +342,7 @@ function renderEditor() {
   if (!device) return;
   $("selected-name").textContent = device.name;
   $("selected-source").textContent = sourceLabels[device.source] || device.source;
+  $("health-open").hidden = !canHealth || (!device.key.startsWith("health:") && !device.key.startsWith("matter:"));
   $("reported-type").textContent = device.reportedType;
   const type = $("assigned-type");
   type.replaceChildren();
@@ -411,6 +434,8 @@ function renderDevices() {
     category.append(categoryName);
     const groups = catalog.groups.filter((group) => device.groupIds.includes(group.id)).map((group) => group.name);
     row.append(name, category, element("td", groups.join(", ") || "—", groups.length ? undefined : "unassigned"));
+    const state = healthStates.get(device.key);
+    row.append(element("td", state || "Not reported", state ? "health-state " + state : "unassigned"));
     rows.append(row);
   }
   $("assignment-table-wrap").hidden = !visible.length;
@@ -443,6 +468,20 @@ async function saveAssignment() {
 }
 
 $("assigned-type").addEventListener("change", saveAssignment);
+$("health-open").addEventListener("click", () => {
+  const key = selectedKey;
+  showTab("health", true);
+  selectHealth(key).catch(error);
+});
+document.addEventListener(sessionEndEvent, () => signedIn(false));
+document.addEventListener("health-data", (event) => {
+  healthStates.clear();
+  for (const device of event.detail.devices) healthStates.set("health:" + device.id, device.status);
+  for (const device of event.detail.matterNodes)
+    healthStates.set("matter:" + device.nodeId, device.available ? "online" : "offline");
+  $("health-count").textContent = event.detail.devices.length + event.detail.matterNodes.length;
+  if (canManage) renderDevices();
+});
 document.addEventListener("focusin", updateCommands);
 $("editor-back").addEventListener("click", closeEditor);
 $("login-form").addEventListener("submit", async (event) => {
@@ -454,7 +493,7 @@ $("login-form").addEventListener("submit", async (event) => {
     await api("/api/login", { password: $("password").value, ...(username ? { username } : {}) });
     await load();
     notice("Ready.");
-    $("devices-tab").focus();
+    $(activeTab + "-tab").focus();
   } catch (reason) {
     error(reason);
   } finally {
@@ -497,14 +536,15 @@ $("device-search").addEventListener("keydown", (event) => {
 for (const tab of tabs) {
   $(tab + "-tab").addEventListener("click", () => showTab(tab));
   $(tab + "-tab").addEventListener("keydown", (event) => {
-    let index = tabs.indexOf(tab);
-    if (event.key === "ArrowRight") index = (index + 1) % tabs.length;
-    else if (event.key === "ArrowLeft") index = (index + tabs.length - 1) % tabs.length;
+    const available = tabs.filter((name) => !$(name + "-tab").hidden);
+    let index = available.indexOf(tab);
+    if (event.key === "ArrowRight") index = (index + 1) % available.length;
+    else if (event.key === "ArrowLeft") index = (index + available.length - 1) % available.length;
     else if (event.key === "Home") index = 0;
-    else if (event.key === "End") index = tabs.length - 1;
+    else if (event.key === "End") index = available.length - 1;
     else return;
     event.preventDefault();
-    showTab(tabs[index], true);
+    showTab(available[index], true);
   });
 }
 document.addEventListener("keydown", (event) => {

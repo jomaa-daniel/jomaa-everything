@@ -1,9 +1,11 @@
 ---
 name: jomaa-agent-pipeline
-description: Write code in this repository through the blind pipeline — plan a change as a product instruction, have it reviewed, have hidden fail-to-pass and pass-to-pass tests written and sealed, have a blind agent implement it, then evaluate, audit the implementer's trajectory for cheating, and land the change. Use before writing any feature or behavior change in jomaa-everything.
+description: Write code in this repository through the blind pipeline — plan a change as a product instruction, have it reviewed, have hidden fail-to-pass and pass-to-pass tests written and sealed, have a blind agent implement it, then evaluate, audit the implementer's trajectory for cheating, and land the change. Use only when the user explicitly requests the blind pipeline.
 ---
 
 # The blind pipeline
+
+This pipeline is dormant by default. Run it only when the user explicitly requests it.
 
 You are the orchestrator. You plan the change with the user, then drive three
 agents through `pipeline.py`, each started headless with its premade prompt

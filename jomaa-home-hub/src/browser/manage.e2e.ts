@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { chromium, type Browser } from "playwright-core";
 import { Accounts } from "../accounts.js";
+import { Clicks } from "../clicks.js";
 import { Api, sessionToken } from "../api.js";
 import { parseConfig } from "../config.js";
 import { GoveeClient } from "../govee.js";
@@ -69,7 +70,17 @@ const health = new HealthStore(":memory:");
 health.enroll({ id: "pico-test", name: "Pico" });
 const hub = Hub.build(parseConfig(JSON.stringify(cfg)), new GoveeClient("test", "http://127.0.0.1:1"), matter);
 const origin = await serve(
-  new Api(hub, matter, password, new Accounts(":memory:"), silentLog, health, path, organization).handle,
+  new Api(
+    hub,
+    matter,
+    password,
+    new Accounts(":memory:"),
+    new Clicks(":memory:"),
+    silentLog,
+    health,
+    path,
+    organization,
+  ).handle,
 );
 const setupHeaders = { Authorization: `Bearer ${sessionToken(password)}`, "Content-Type": "application/json" };
 for (const body of [

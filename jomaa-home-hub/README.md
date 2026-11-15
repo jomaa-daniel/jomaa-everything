@@ -97,7 +97,7 @@ again; other browsers revalidate it, and the hub answers `304 Not Modified`
 while the file is unchanged.
 
 The locally managed Cloudflare tunnel also routes hostname `jomaa.org`, paths `/`,
-`/home`, `/devices`, `/manage`, `/lights`, `/invite`, `/join`, `/permissions`, `/secrets` (including assets), and the pages' API requests to the hub on port 8080. Its proxied DNS record
+`/home`, `/manage`, `/lights`, `/invite`, `/join`, `/permissions`, `/secrets` (including assets), and the pages' API requests to the hub on port 8080. Its proxied DNS record
 points to the same tunnel as `hub.jomaa.org`. The apex `/` redirects to `/home`;
 the hub subdomain's `/` continues to open device health.
 
@@ -105,10 +105,13 @@ the hub subdomain's `/` continues to open device health.
 
 `https://jomaa.org/manage` manages custom device types, groups, and assignments
 for configured Govee lights, paired Matter devices, and health reporters. It
-needs the owner or an account with the `manage` scope. The Devices tab opens a
+needs the owner or an account with the `manage` or `devices` scope. Organization
+actions require `manage`; health and diagnostics require `devices`. The Devices tab opens a
 compact inventory with an editor for the selected device. Category and group
 changes save immediately. The Types and Groups tabs create, rename, and delete
-categories and groups. Arrow keys select device rows, Enter opens the editor,
+categories and groups. The Health tab preserves enrollment, Matter discovery,
+health history, and live I2C captures. The standalone `/devices` page is not served.
+Arrow keys select device rows, Enter opens the editor,
 `/` focuses search, and Escape returns to the list or cancels a rename.
 On phones, selecting a device opens its editor with a button to return to the
 inventory. The bottom bar shows commands for the focused control and save results.
@@ -441,7 +444,7 @@ for Govee-only homes and tests.
 
 ## Wi-Fi device health
 
-The hub includes a device inventory, SQLite health history, and a management page at `https://jomaa.org/devices`.
+The hub includes a device inventory, SQLite health history, and a management page at `https://jomaa.org/manage#health`.
 Add device opens a network discovery window for Matter devices advertising for
 pairing or sharing. It scans while open, lists device names, addresses and
 pairing availability, and stops when closed. Scan again retries discovery.
