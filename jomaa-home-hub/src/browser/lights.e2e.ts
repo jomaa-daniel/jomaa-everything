@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { after, test } from "node:test";
 import { chromium, type Page } from "playwright-core";
 import { Accounts } from "../accounts.js";
+import { Clicks } from "../clicks.js";
 import { Api } from "../api.js";
 import { allFeatures, type Command, type Device, type Features, type State } from "../device.js";
 import { Group } from "../group.js";
@@ -62,7 +63,15 @@ const hub = new Hub();
 for (const lamp of [...lamps, kitchen, desk]) hub.addDevice("test", lamp);
 hub.addRoom(new Group("living-room", "Living room", [...lamps, kitchen]));
 hub.addRoom(new Group("office", "Office", [desk]));
-const api = new Api(hub, noMatter, password, new Accounts(":memory:"), silentLog, new HealthStore(":memory:"));
+const api = new Api(
+  hub,
+  noMatter,
+  password,
+  new Accounts(":memory:"),
+  new Clicks(":memory:"),
+  silentLog,
+  new HealthStore(":memory:"),
+);
 const origin = await serve(api.handle);
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 after(() => browser.close());

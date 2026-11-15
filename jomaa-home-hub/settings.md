@@ -20,6 +20,17 @@ Invited accounts, their sessions, and invite links.
 | `accounts.passwordLength.min`  | whole number | Fewest characters in an account password.                                                                                 |
 | `accounts.passwordLength.max`  | whole number | Most characters in an account password.                                                                                   |
 
+## prefetch
+
+Every hub page prefetches the hub pages it links to, with their scripts and
+styles, once the browser is idle. Pages whose links are followed most go first.
+
+| Key                     | Type         | Meaning                                                                                                                    |
+| ----------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `prefetch`              | object       | Settings for link prefetching.                                                                                             |
+| `prefetch.databaseFile` | string       | SQLite file for how often each page's links are followed, in the same directory as the health database (`HEALTH_DB_PATH`). |
+| `prefetch.concurrency`  | whole number | Prefetch requests a page keeps in flight at once.                                                                          |
+
 ## secrets
 
 The owner-only Secrets page at `/secrets`, which edits environment files and

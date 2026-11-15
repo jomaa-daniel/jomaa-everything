@@ -10,7 +10,8 @@ import type { Log } from "./log.js";
 import { HealthHttp } from "./health/http.js";
 import { HealthError, type HealthStore } from "./health/store.js";
 import { MatterError, MatterNotReadyError, type MatterAdmin } from "./matter/nodes.js";
-import { serveWeb } from "./web.js";
+import { pages, serveWeb } from "./web.js";
+import type { Clicks } from "./clicks.js";
 import { assignMatterGroup, editLayout } from "./group-assignment.js";
 import { OrganizationError, type Organization } from "./organization.js";
 import type { EnvChange } from "./envfile.js";
@@ -129,6 +130,7 @@ export class Api {
     private readonly matter: MatterAdmin,
     password: string,
     private readonly accounts: Accounts,
+    private readonly clicks: Clicks,
     private readonly log: Log,
     private readonly health?: HealthStore,
     private readonly layoutPath?: string,
@@ -151,6 +153,8 @@ export class Api {
       route("POST", "/api/logout", null, this.#logout),
       route("POST", "/api/invites/check", null, this.#inviteCheck),
       route("POST", "/api/join", null, this.#join),
+      route("GET", "/api/prefetch", null, this.#prefetch),
+      route("POST", "/api/clicks", null, this.#click),
     ];
     this.#authed = [
       route("GET", "/api/session", null, this.#session),
@@ -337,6 +341,31 @@ export class Api {
         : { owner: false, username: principal.account.username, scopes: principal.account.scopes },
     );
     return Promise.resolve();
+  }
+
+  /**
+   * The pages the requester can open, most-clicked first, with the files each
+   * loads and how many prefetches a page runs at once. Signed-out requesters
+   * get every page, since each offers its sign-in.
+   */
+  async #prefetch({ res, principal }: RequestContext): Promise<void> {
+    const counts = this.clicks.counts();
+    const open = pages
+      .filter((page) => principal === null || access(principal, page.access) === "allowed")
+      .map((page) => ({ path: page.path, clicks: counts.get(page.path) ?? 0, assets: page.assets }))
+      .sort((a, b) => b.clicks - a.clicks);
+    writeJSON(res, 200, { concurrency: settings.prefetch.concurrency, pages: open });
+    return Promise.resolve();
+  }
+
+  /** Counts a followed link to a hub page. */
+  async #click({ req, res }: RequestContext): Promise<void> {
+    requireSameOrigin(req);
+    const path = (await readBody(req)).only("path").required("path").string("path");
+    const page = pages.find((candidate) => candidate.path === path);
+    if (page === undefined) throw new HttpError(404, "unknown page");
+    this.clicks.record(page.path);
+    writeJSON(res, 200, { ok: true });
   }
 
   async #inviteCheck({ req, res }: RequestContext): Promise<void> {

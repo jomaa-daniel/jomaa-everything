@@ -20,8 +20,17 @@ export interface SecretSettings {
   redeployPollSeconds: number;
 }
 
+/** Link prefetching on the hub's pages. */
+export interface PrefetchSettings {
+  /** SQLite file for page click counts, beside the health database. */
+  databaseFile: string;
+  /** Prefetch requests a page keeps in flight at once. */
+  concurrency: number;
+}
+
 export interface Settings {
   accounts: AccountSettings;
+  prefetch: PrefetchSettings;
   secrets: SecretSettings;
   i2c: I2CSettings;
 }
@@ -113,6 +122,15 @@ function parseSecrets(value: unknown): SecretSettings {
   };
 }
 
+function parsePrefetch(value: unknown): PrefetchSettings {
+  const fields = new Fields(value, "settings.json prefetch")
+    .only("databaseFile", "concurrency")
+    .required("databaseFile");
+  const databaseFile = fields.string("databaseFile") ?? "";
+  if (databaseFile === "") throw new Error("prefetch.databaseFile must be a file name");
+  return { databaseFile, concurrency: positive(fields, "concurrency", "prefetch") };
+}
+
 /** Reads the hub's deployment settings from the deployment's config.json. */
 export function parseDeploySettings(text: string): DeploySettings {
   const config = new Fields(parseJson(text), "deployment config.json").required(
@@ -144,8 +162,8 @@ export function parseDeploySettings(text: string): DeploySettings {
 /** Parses settings.json; throws naming the first missing or invalid setting. */
 export function parseSettings(text: string): Settings {
   const root = new Fields(parseJson(text), "settings.json")
-    .only("accounts", "secrets", "i2c")
-    .required("accounts", "secrets", "i2c");
+    .only("accounts", "prefetch", "secrets", "i2c")
+    .required("accounts", "prefetch", "secrets", "i2c");
   const accounts = new Fields(root.value("accounts"), "settings.json accounts")
     .only("databaseFile", "sessionLifetimeDays", "sessionsPerAccount", "inviteLifetimeDays", "passwordLength")
     .required("databaseFile", "passwordLength");
@@ -166,6 +184,7 @@ export function parseSettings(text: string): Settings {
       inviteLifetimeDays: positive(accounts, "inviteLifetimeDays", "accounts"),
       passwordLength: { min, max },
     },
+    prefetch: parsePrefetch(root.value("prefetch")),
     secrets: parseSecrets(root.value("secrets")),
     i2c: parseI2C(root.value("i2c")),
   };

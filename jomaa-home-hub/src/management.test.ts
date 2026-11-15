@@ -11,6 +11,7 @@ import { HealthStore } from "./health/store.js";
 import type { MatterAdmin, MatterNodes, NodeSummary } from "./matter/nodes.js";
 import { Organization } from "./organization.js";
 import { Accounts } from "./accounts.js";
+import { Clicks } from "./clicks.js";
 import { silentLog } from "./log.js";
 import { serve } from "./testing.js";
 
@@ -66,7 +67,17 @@ test("management edits categories, rooms and assignments without changing report
   health.enroll({ id: "pico-test", name: "Pico" });
   const hub = Hub.build(parseConfig(JSON.stringify(cfg)), new GoveeClient("test", "http://127.0.0.1:1"), matter);
   const origin = await serve(
-    new Api(hub, matter, "management-test", new Accounts(":memory:"), silentLog, health, path, organization).handle,
+    new Api(
+      hub,
+      matter,
+      "management-test",
+      new Accounts(":memory:"),
+      new Clicks(":memory:"),
+      silentLog,
+      health,
+      path,
+      organization,
+    ).handle,
   );
   const headers = { Authorization: `Bearer ${sessionToken("management-test")}`, "Content-Type": "application/json" };
   const read = async () =>
