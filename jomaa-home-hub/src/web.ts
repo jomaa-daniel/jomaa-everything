@@ -48,37 +48,66 @@ interface Resource {
   etag: string;
 }
 
-function load(file: string, type: string): Resource {
-  const body = readFileSync(new URL("./web/" + file, import.meta.url));
+function read(file: string): string {
+  return readFileSync(new URL("./web/" + file, import.meta.url), "utf8");
+}
+
+function resource(text: string, type: string): Resource {
+  const body = Buffer.from(text);
   return { body, type, etag: `"${createHash("sha256").update(body).digest("base64url").slice(0, 27)}"` };
 }
 
-const resources = new Map<string, Resource>();
-for (const [path, [file]] of Object.entries(pageFiles)) {
-  const resource = load(file, html);
-  resources.set(path, resource);
-  resources.set(path + "/", resource);
+/** Stylesheets and scripts a file loads, and the modules a script imports. */
+const reference = /(<(?:link|script)\b[^>]*?\b(?:href|src)="|\b(?:from|import)\s*")(\/[^"]*)"/g;
+
+/** The asset paths a file references, in order. */
+function references(text: string): string[] {
+  return [...text.matchAll(reference)].map((match) => match[2] ?? "").filter((path) => assetFiles[path] !== undefined);
 }
-for (const [path, [file, type]] of Object.entries(assetFiles)) resources.set(path, load(file, type));
 
-/** Stylesheets and scripts a page loads, and the modules those scripts import. */
-const reference = /<(?:link|script)\b[^>]*?\b(?:href|src)="(\/[^"]*)"|\b(?:from|import)\s*"(\/[^"]*)"/g;
+const assets = new Map<string, Resource>();
+/** Each asset's URL with its content version, so a changed file gets a new URL. */
+const versions = new Map<string, string>();
 
-/** The served files a page loads, directly or through imports, in the order it references them. */
-function assetsOf(path: string): string[] {
+/** Replaces each asset reference with its versioned URL. */
+function withVersions(text: string): string {
+  return text.replace(reference, (match: string, prefix: string, path: string) => {
+    const asset = assetFiles[path];
+    if (asset === undefined) return match;
+    return `${prefix}${versioned(path, asset)}"`;
+  });
+}
+
+function versioned(path: string, [file, type]: [string, string]): string {
+  const known = versions.get(path);
+  if (known !== undefined) return known;
+  const loaded = resource(withVersions(read(file)), type);
+  const url = `${path}?v=${loaded.etag.slice(1, -1)}`;
+  assets.set(path, loaded);
+  versions.set(path, url);
+  return url;
+}
+
+for (const [path, asset] of Object.entries(assetFiles)) versioned(path, asset);
+
+const pageResources = new Map<string, Resource>();
+for (const [path, [file]] of Object.entries(pageFiles)) {
+  const loaded = resource(withVersions(read(file)), html);
+  pageResources.set(path, loaded);
+  pageResources.set(path + "/", loaded);
+}
+
+/** The versioned URLs of the files a page loads, directly or through imports, in the order it references them. */
+function assetsOf(file: string): string[] {
   const found: string[] = [];
-  const pending = [path];
-  for (let current = pending.shift(); current !== undefined; current = pending.shift()) {
-    const text = resources.get(current)?.body.toString("utf8") ?? "";
-    for (const match of text.matchAll(reference)) {
-      const url = match[1] ?? match[2] ?? "";
-      if (assetFiles[url] !== undefined && !found.includes(url)) {
-        found.push(url);
-        pending.push(url);
-      }
-    }
+  const pending = references(read(file));
+  for (let path = pending.shift(); path !== undefined; path = pending.shift()) {
+    if (found.includes(path)) continue;
+    found.push(path);
+    const asset = assetFiles[path];
+    if (asset !== undefined) pending.push(...references(read(asset[0])));
   }
-  return found;
+  return found.map((path) => versions.get(path) ?? path);
 }
 
 /** A hub page, who can open it, and the files it loads. */
@@ -88,10 +117,10 @@ export interface Page {
   assets: string[];
 }
 
-export const pages: readonly Page[] = Object.entries(pageFiles).map(([path, [, access]]) => ({
+export const pages: readonly Page[] = Object.entries(pageFiles).map(([path, [file, access]]) => ({
   path,
   access,
-  assets: assetsOf(path),
+  assets: assetsOf(file),
 }));
 
 /** Whether an If-None-Match header names the entity tag, comparing weakly. */
@@ -103,7 +132,7 @@ function matches(header: string | undefined, etag: string): boolean {
   });
 }
 
-/** Serves the hub's public pages and their assets, revalidated by entity tag. */
+/** Serves the hub's public pages and their assets by path, revalidated by entity tag. */
 export function serveWeb(req: IncomingMessage, res: ServerResponse): boolean {
   const path = new URL(req.url ?? "/", "http://hub").pathname;
   if (path === "/" && (req.method === "GET" || req.method === "HEAD")) {
@@ -112,7 +141,7 @@ export function serveWeb(req: IncomingMessage, res: ServerResponse): boolean {
     res.end();
     return true;
   }
-  const resource = resources.get(path);
+  const resource = pageResources.get(path) ?? assets.get(path);
   if (!resource) return false;
   if (req.method !== "GET" && req.method !== "HEAD") {
     res.writeHead(405, { Allow: "GET, HEAD" });
