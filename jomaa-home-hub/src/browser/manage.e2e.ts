@@ -68,7 +68,23 @@ const matter: MatterAdmin & MatterNodes = {
 const organization = new Organization(":memory:");
 const health = new HealthStore(":memory:");
 health.enroll({ id: "pico-test", name: "Pico" });
-const hub = Hub.build(parseConfig(JSON.stringify(cfg)), new GoveeClient("test", "http://127.0.0.1:1"), matter);
+const cloudCalls: string[] = [];
+const cloud = await serve((req, res) => {
+  cloudCalls.push(req.url ?? "");
+  res.writeHead(200).end(
+    JSON.stringify({
+      code: 200,
+      payload: {
+        capabilities: [
+          { instance: "online", state: { value: true } },
+          { instance: "powerSwitch", state: { value: 0 } },
+          { instance: "brightness", state: { value: 50 } },
+        ],
+      },
+    }),
+  );
+});
+const hub = Hub.build(parseConfig(JSON.stringify(cfg)), new GoveeClient("test", cloud), matter);
 const origin = await serve(
   new Api(
     hub,
@@ -360,5 +376,19 @@ test("keyboard hints follow focus through search, assignments, and renaming", as
   await page.getByRole("button", { name: "Rename type Light strips", exact: true }).click();
   assert.ok((await page.locator("#command-hints").innerText()).includes("Save"));
   assert.ok((await page.locator("#command-hints").innerText()).includes("Cancel"));
+  await page.close();
+});
+
+test("Govee status is checked through its cloud and never uses Pico enrollment controls", async () => {
+  const page = await openManage();
+  const row = page.locator("#assignment-rows tr", { hasText: "Lamp" });
+  assert.ok((await row.innerText()).includes("online"));
+  assert.ok(cloudCalls.every((path) => path === "/router/api/v1/device/state"));
+  await page.getByRole("button", { name: "Edit Lamp", exact: true }).click();
+  await page.locator("#health-open").click();
+  await page.locator("#govee-detail:not([hidden])").waitFor();
+  assert.ok((await page.locator("#govee-facts").innerText()).includes("Govee cloud"));
+  assert.ok(await page.locator("#edit-form").isHidden());
+  assert.ok(await page.locator("#rotate").isHidden());
   await page.close();
 });

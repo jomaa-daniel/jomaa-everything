@@ -4,6 +4,8 @@ let devices = [];
 let healthSettings = null;
 let pollTimer = null;
 let matterNodes = [];
+let goveeDevices = [];
+let selectedGovee = null;
 let selected = null;
 let selectedMatter = null;
 let matterNameDirty = false;
@@ -116,6 +118,12 @@ function columnChoices(column) {
     else if (column === "group") values.push(...(device.groups.length ? device.groups : ["No group"]));
     else values.push(device.available ? "online" : "offline");
   }
+  for (const device of goveeDevices) {
+    if (column === "type") values.push(displayedType(device, device.type));
+    else if (column === "capabilities") values.push(...device.capabilities);
+    else if (column === "group") values.push(...(device.groups.length ? device.groups : ["No group"]));
+    else values.push(device.status);
+  }
   return [null, ...[...new Set(values.flat())].sort((a, b) => a.localeCompare(b))];
 }
 
@@ -169,6 +177,9 @@ function signedIn(value) {
     selected = null;
     devices = [];
     matterNodes = [];
+    goveeDevices = [];
+    selectedGovee = null;
+    $("govee-detail").hidden = true;
     selectedMatter = null;
     $("detail").hidden = true;
     $("matter-detail").hidden = true;
@@ -217,7 +228,7 @@ function status(value) {
 
 function render() {
   assignedTypeHues.clear();
-  for (const device of [...devices, ...matterNodes]) {
+  for (const device of [...devices, ...matterNodes, ...goveeDevices]) {
     if (device.assignedType) assignedTypeHues.add(device.assignedType.hue);
   }
   for (const [label, hue] of typeHues) {
@@ -233,8 +244,9 @@ function render() {
     const state = device.available ? "online" : "offline";
     counts[state] = (counts[state] || 0) + 1;
   }
+  for (const device of goveeDevices) counts[device.status] = (counts[device.status] || 0) + 1;
   $("summary").textContent =
-    `${devices.length + matterNodes.length} devices · ${counts.online || 0} online · ${counts.offline || 0} offline · ${counts.degraded || 0} degraded`;
+    `${devices.length + matterNodes.length + goveeDevices.length} devices · ${counts.online || 0} online · ${counts.offline || 0} offline · ${counts.degraded || 0} degraded · ${counts.unknown || 0} unknown`;
   const filter = statusFilter;
   const visible = devices.filter(
     (d) =>
@@ -292,13 +304,40 @@ function render() {
     );
     $("device-rows").append(row);
   }
-  $("empty").hidden = visible.length + visibleMatter.length > 0;
+  const visibleGovee = goveeDevices.filter(
+    (device) =>
+      (filter === null || device.status === filter) &&
+      matchesColumns(displayedType(device, device.type), device.capabilities, device.groups),
+  );
+  for (const device of visibleGovee) {
+    const row = node("tr", undefined, device.id === selectedGovee ? "selected" : "");
+    const name = node("td");
+    const button = node("button", device.name, "device-link");
+    button.id = "target:" + device.id + ":open";
+    button.addEventListener("click", () => selectGovee(device.id));
+    name.append(button, node("span", "Govee cloud", "device-id"));
+    const state = node("td");
+    state.append(status(device.status));
+    row.append(
+      name,
+      typeCell(displayedType(device, device.type), device.assignedType?.hue),
+      chipCell(device.capabilities, "capabilities", "Not reported"),
+      chipCell(device.groups, "group", "No group"),
+      state,
+      node("td", "Checked " + lastSeen(device.checkedAt)),
+      node("td", "—"),
+      node("td", "—"),
+    );
+    $("device-rows").append(row);
+  }
+  $("empty").hidden = visible.length + visibleMatter.length + visibleGovee.length > 0;
   $("empty").textContent =
-    devices.length + matterNodes.length
+    devices.length + matterNodes.length + goveeDevices.length
       ? "No devices match your filters."
       : "No devices yet. Add a device to get started.";
   renderDetail();
   renderMatterDetail();
+  renderGoveeDetail();
   if (focused) document.getElementById(focused)?.focus({ preventScroll: true });
 }
 
@@ -358,6 +397,7 @@ function renderMatterDetail() {
 }
 
 function selectMatter(nodeId) {
+  selectedGovee = null;
   stopCaptures();
   selected = null;
   selectedMatter = nodeId;
@@ -414,6 +454,7 @@ async function refreshInventory() {
   if (generation !== sessionGeneration || inventoryRevision !== inventoryGeneration) return;
   devices = result.devices;
   matterNodes = result.matterNodes;
+  goveeDevices = result.goveeDevices;
   groups = result.groups;
   captureSettings = result.i2c;
   healthSettings = result.health;
@@ -422,7 +463,7 @@ async function refreshInventory() {
   $("retention").textContent =
     `Updates every ${healthSettings.refreshSeconds} seconds. History retained for ${result.retentionDays} days.`;
   render();
-  document.dispatchEvent(new CustomEvent("health-data", { detail: { devices, matterNodes } }));
+  document.dispatchEvent(new CustomEvent("health-data", { detail: { devices, matterNodes, goveeDevices } }));
 }
 
 async function logs(append = false) {
@@ -454,6 +495,7 @@ async function logs(append = false) {
 function select(id) {
   stopCaptures();
   selectedMatter = null;
+  selectedGovee = null;
   selected = id;
   dirty = false;
   cursor = null;
@@ -886,6 +928,7 @@ export async function selectHealth(key) {
   await refresh();
   if (key.startsWith("health:")) await select(key.slice("health:".length));
   else if (key.startsWith("matter:")) selectMatter(Number(key.slice("matter:".length)));
+  else if (key.startsWith("target:")) selectGovee(key.slice("target:".length));
 }
 function poll() {
   if (
@@ -902,3 +945,32 @@ function poll() {
       })
       .catch(error);
 }
+
+function selectGovee(id) {
+  stopCaptures();
+  selected = null;
+  selectedMatter = null;
+  selectedGovee = id;
+  render();
+}
+function renderGoveeDetail() {
+  const device = goveeDevices.find((device) => device.id === selectedGovee);
+  $("govee-detail").hidden = !device;
+  if (!device) return;
+  $("govee-detail-title").textContent = device.name;
+  $("govee-facts").replaceChildren();
+  for (const [label, value] of [
+    ["Status source", device.statusSource],
+    ["Connection", device.status],
+    ["Checked", stamp(device.checkedAt)],
+    ["Result", device.reason || "Cloud connection flag received"],
+  ]) {
+    const fact = node("div");
+    fact.append(node("dt", label), node("dd", value));
+    $("govee-facts").append(fact);
+  }
+}
+$("close-govee-detail").addEventListener("click", () => {
+  selectedGovee = null;
+  render();
+});

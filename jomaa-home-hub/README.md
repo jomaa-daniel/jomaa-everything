@@ -471,3 +471,10 @@ Pico W, Pico 2 W, and RP2040 boards with an ESP8285 UART radio report over verif
 Their first authenticated report registers them; missed reports mark them offline.
 See [Health monitoring](docs/health-monitoring.md) for setup, USB provisioning, API details, and tests.
 For imaging and checking a board from scratch, use [Pico imaging bench](../pico-imaging-bench/README.md).
+
+Device connection status uses each source: Govee cloud online flags, Matter
+controller availability, and Pico health reports. Govee checks read state and
+send no light commands. Results show their check time and are cached for
+`health.goveeStatusCacheSeconds`; failed checks remain unknown rather than
+claiming a light is offline. Govee health details do not offer Pico credentials
+or report intervals.

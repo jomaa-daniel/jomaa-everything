@@ -1,4 +1,12 @@
+html:has(> body.tui-page) {
+  --tui-surface: #2e3440;
+  background: var(--tui-surface);
+  color-scheme: dark;
+  min-height: 100%;
+}
 body.tui-page {
+  min-height: 100vh;
+  min-height: 100dvh;
   --border: #75829a;
   --border-quiet: #434c5e;
   --muted: #b5becd;
@@ -14,7 +22,7 @@ body.tui-page {
   --on-accent: #2e3440;
   --gutter: 2ch;
   --ink: #eceff4;
-  --surface: #2e3440;
+  --surface: var(--tui-surface);
   color-scheme: dark;
   color: var(--ink);
   background: var(--surface);
@@ -487,88 +495,8 @@ body.tui-page {
     padding: 9px 4px;
   }
 }
-.tui-page.lights-page {
-  --bg: var(--surface);
-  --card: var(--surface);
-  --line: var(--border-quiet);
-  --line-strong: var(--border);
-  --text: var(--ink);
-  --accent-ink: var(--on-accent);
-  --accent-text: var(--accent);
-  --danger-text: var(--error);
-  --online: var(--success);
-  --offline: var(--error);
-  --pending: var(--warning);
-  --radius: 0px;
-  --radius-lg: 0px;
-  --radius-sm: 0px;
-  --stack: 1lh;
-  --pad: 2ch;
-}
-.tui-page.lights-page .panel {
-  width: 100%;
-  max-width: 1000px;
-  height: auto;
-  min-height: 0;
-  padding-bottom: 150px;
-}
-.tui-page.lights-page .controller {
-  border: 1px solid var(--border);
-  border-radius: 0;
-  background: var(--surface);
-  padding: 1lh 2ch;
-}
-.tui-page.lights-page .rooms {
-  position: static;
-  background: var(--surface);
-  padding: 1lh 0;
-  border-radius: 0;
-}
-.tui-page.lights-page .room-btn {
-  border-radius: 0;
-  font-size: 13px;
-}
-.tui-page.lights-page .room-btn[aria-current="true"] {
-  background: var(--accent);
-  color: var(--on-accent);
-}
-.tui-page.lights-page .band {
-  border: 1px solid var(--border-quiet);
-  border-radius: 0;
-  background: var(--field);
-}
-.tui-page.lights-page .power {
-  width: 80px;
-  height: 60px;
-  border-radius: 0;
-}
-.tui-page.lights-page .swatch,
-.tui-page.lights-page .swatch-cell {
-  border-radius: 0;
-}
-.tui-page.lights-page .room-title {
-  font-size: 15px;
-  letter-spacing: 0;
-}
-.tui-page.lights-page input[type="range"] {
-  min-height: 36px;
-  padding: 0;
-  background: transparent;
-}
-.tui-page.lights-page .login-icon {
-  display: none;
-}
-.tui-page.lights-page .login-section {
-  border: 1px solid var(--border);
-  border-radius: 0;
-  background: var(--surface);
-}
 .tui-page #notice.error:not(.success) {
   color: var(--error);
-}
-.tui-page.lights-page .swatch,
-.tui-page.lights-page [data-pick] {
-  background: var(--swatch);
 }
 @media (max-width: 700px) {
   .tui-page > header {
@@ -584,47 +512,6 @@ body.tui-page {
   .tui-page main {
     margin-top: 20px;
   }
-}
-.tui-page.lights-page .controls {
-  flex: none;
-}
-.tui-page.lights-page .band {
-  flex: none;
-  padding: 1lh 2ch;
-  min-height: 100px;
-}
-.tui-page.lights-page .slider-wrap {
-  flex: none;
-  height: 64px;
-}
-.tui-page.lights-page .swatches {
-  flex: none;
-  container-type: normal;
-  min-height: 48px;
-  align-items: center;
-}
-.tui-page.lights-page .swatch-cell {
-  width: 100%;
-  min-width: 0;
-  min-height: 40px;
-  aspect-ratio: 1;
-}
-.tui-page.lights-page .swatch {
-  padding: 0;
-  min-height: 0;
-}
-.tui-page.lights-page .room-btn {
-  min-height: 40px;
-}
-.tui-page.lights-page .power.on {
-  background: var(--accent);
-  color: var(--on-accent);
-  border-color: var(--accent);
-  box-shadow: none;
-}
-.tui-page.lights-page button,
-.tui-page.lights-page .dot {
-  transition: none;
 }
 @media (max-width: 700px) {
   .organization-page .device-toolbar {
@@ -673,4 +560,10 @@ body.tui-page {
 .tui-page :is(a, button, input, select, textarea, [tabindex]) {
   scroll-margin-top: 1lh;
   scroll-margin-bottom: 110px;
+}
+.tui-page .status.unknown::before {
+  background: var(--muted);
+}
+.organization-page .health-state.unknown {
+  color: var(--muted);
 }

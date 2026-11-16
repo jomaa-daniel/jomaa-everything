@@ -10,14 +10,11 @@
       name="description"
       content="Control your Jomaa home lights and rooms."
     />
-    <title>Lights · Jomaa Home</title>
+    <title>Device Panel</title>
     <link rel="stylesheet" href="/lights/style.css" />
-    <link rel="stylesheet" href="/home/ui.css" />
-    <script type="module" src="/home/ui.js"></script>
     <script type="module" src="/lights/app.js"></script>
   </head>
-  <body class="tui-page lights-page">
-    <header><a href="/home">Jomaa Home</a></header>
+  <body>
     <main class="panel">
       <h1 class="sr-only">Device Panel</h1>
       <p id="announcer" class="sr-only" aria-live="polite"></p>
@@ -146,12 +143,7 @@
               <span class="band-name">Color</span>
               <span id="color-value" class="band-value"></span>
             </div>
-            <div
-              class="swatches"
-              data-tui-nav="grid"
-              role="group"
-              aria-label="Color"
-            >
+            <div class="swatches" role="group" aria-label="Color">
               <div class="swatch-cell">
                 <button
                   class="swatch"
@@ -224,14 +216,13 @@
       </section>
 
       <nav id="tabs" class="rooms" aria-label="Rooms" hidden>
-        <div id="tab-list" class="room-list" data-tui-nav="horizontal"></div>
+        <div id="tab-list" class="room-list"></div>
       </nav>
 
       <dialog id="color-dialog" aria-labelledby="custom-title">
         <h2 id="custom-title">Custom color</h2>
         <div
           id="color-grid"
-          data-tui-nav="grid"
           class="color-grid"
           role="group"
           aria-labelledby="custom-title"

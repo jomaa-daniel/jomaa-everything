@@ -68,3 +68,9 @@ reruns the deployment workflow.
 | `health.historyLimit`   | Number of health reports requested per history page.          |
 
 `health.discoveryRefreshSeconds` is the interval between Matter discovery requests while the discovery dialog is open.
+
+`health.goveeStatusCacheSeconds` is how long read-only Govee connection results are shared between inventory refreshes.
+
+`health.goveeStatusConcurrency` limits simultaneous Govee connection requests.
+
+`health.goveeStatusTimeoutSeconds` is the deadline for a Govee connection check. Failed checks show unknown status.

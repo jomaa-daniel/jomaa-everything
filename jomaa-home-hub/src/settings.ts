@@ -33,7 +33,14 @@ export interface Settings {
   prefetch: PrefetchSettings;
   secrets: SecretSettings;
   i2c: I2CSettings;
-  health: { refreshSeconds: number; historyLimit: number; discoveryRefreshSeconds: number };
+  health: {
+    refreshSeconds: number;
+    historyLimit: number;
+    discoveryRefreshSeconds: number;
+    goveeStatusCacheSeconds: number;
+    goveeStatusConcurrency: number;
+    goveeStatusTimeoutSeconds: number;
+  };
 }
 
 export interface I2CSettings {
@@ -169,6 +176,9 @@ export function parseSettings(text: string): Settings {
     "refreshSeconds",
     "historyLimit",
     "discoveryRefreshSeconds",
+    "goveeStatusCacheSeconds",
+    "goveeStatusConcurrency",
+    "goveeStatusTimeoutSeconds",
   );
   const accounts = new Fields(root.value("accounts"), "settings.json accounts")
     .only("databaseFile", "sessionLifetimeDays", "sessionsPerAccount", "inviteLifetimeDays", "passwordLength")
@@ -197,6 +207,9 @@ export function parseSettings(text: string): Settings {
       refreshSeconds: positive(health, "refreshSeconds", "health"),
       historyLimit: positive(health, "historyLimit", "health"),
       discoveryRefreshSeconds: positive(health, "discoveryRefreshSeconds", "health"),
+      goveeStatusCacheSeconds: positive(health, "goveeStatusCacheSeconds", "health"),
+      goveeStatusConcurrency: positive(health, "goveeStatusConcurrency", "health"),
+      goveeStatusTimeoutSeconds: positive(health, "goveeStatusTimeoutSeconds", "health"),
     },
   };
 }

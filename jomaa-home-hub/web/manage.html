@@ -273,6 +273,16 @@
               <button id="save-matter-group" class="primary">Save group</button>
             </form>
           </section>
+          <section id="govee-detail" class="tui-pane" hidden aria-label="Selected Govee device">
+            <div class="detail-heading">
+              <h2 id="govee-detail-title"></h2>
+              <button id="close-govee-detail">Close details</button>
+            </div>
+            <dl id="govee-facts"></dl>
+            <p class="muted">
+              Connection status is read from Govee's cloud. This check sends no commands to the light.
+            </p>
+          </section>
         </section>
         <section id="types-panel" class="collection-panel" role="tabpanel" aria-labelledby="types-tab" hidden>
           <div class="collection-heading">

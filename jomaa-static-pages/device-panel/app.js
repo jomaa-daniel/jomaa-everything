@@ -1068,15 +1068,11 @@ function haptic() {
   label.remove();
 }
 
-document.addEventListener(
-  "click",
-  (event) => {
-    const button =
-      event.target instanceof Element ? event.target.closest("button") : null;
-    if (button && !button.disabled) haptic();
-  },
-  { capture: true },
-);
+document.addEventListener("click", (event) => {
+  const button =
+    event.target instanceof Element ? event.target.closest("button") : null;
+  if (button && !button.disabled) haptic();
+});
 
 $("power-toggle").addEventListener("click", () =>
   command({ on: summarize().on === 0 }),

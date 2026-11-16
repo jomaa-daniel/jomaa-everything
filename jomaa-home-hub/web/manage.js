@@ -16,6 +16,7 @@ const drafts = new Map();
 let canManage = false;
 let canHealth = false;
 const healthStates = new Map();
+const statusDetails = new Map();
 
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -158,6 +159,7 @@ async function load() {
   catalog = result;
   catalogStale = false;
   signedIn(true);
+  render();
   if (canHealth) await loadHealth();
   render();
   showTab(canManage ? (activeTab === "health" && !canHealth ? "devices" : activeTab) : "health");
@@ -354,7 +356,7 @@ function renderEditor() {
   if (!device) return;
   $("selected-name").textContent = device.name;
   $("selected-source").textContent = sourceLabels[device.source] || device.source;
-  $("health-open").hidden = !canHealth || (!device.key.startsWith("health:") && !device.key.startsWith("matter:"));
+  $("health-open").hidden = !canHealth;
   $("reported-type").textContent = device.reportedType;
   const type = $("assigned-type");
   type.replaceChildren();
@@ -447,7 +449,15 @@ function renderDevices() {
     const groups = catalog.groups.filter((group) => device.groupIds.includes(group.id)).map((group) => group.name);
     row.append(name, category, element("td", groups.join(", ") || "—", groups.length ? undefined : "unassigned"));
     const state = healthStates.get(device.key);
-    row.append(element("td", state || "Not reported", state ? "health-state " + state : "unassigned"));
+    const stateCell = element(
+      "td",
+      state || (canHealth ? "Checking…" : "Health access required"),
+      state ? "health-state " + state : "unassigned",
+    );
+    const details = statusDetails.get(device.key);
+    if (details)
+      stateCell.title = `${details.statusSource} · Checked ${new Date(details.checkedAt).toLocaleString()}${details.reason ? " · " + details.reason : ""}`;
+    row.append(stateCell);
     rows.append(row);
   }
   $("assignment-table-wrap").hidden = !visible.length;
@@ -488,10 +498,16 @@ $("health-open").addEventListener("click", () => {
 document.addEventListener(sessionEndEvent, () => signedIn(false));
 document.addEventListener("health-data", (event) => {
   healthStates.clear();
+  statusDetails.clear();
+  for (const device of event.detail.goveeDevices) {
+    healthStates.set("target:" + device.id, device.status);
+    statusDetails.set("target:" + device.id, device);
+  }
   for (const device of event.detail.devices) healthStates.set("health:" + device.id, device.status);
   for (const device of event.detail.matterNodes)
     healthStates.set("matter:" + device.nodeId, device.available ? "online" : "offline");
-  $("health-count").textContent = event.detail.devices.length + event.detail.matterNodes.length;
+  $("health-count").textContent =
+    event.detail.devices.length + event.detail.matterNodes.length + event.detail.goveeDevices.length;
   if (canManage) renderDevices();
 });
 document.addEventListener("focusin", updateCommands);

@@ -7,17 +7,21 @@ import type { Hub } from "../hub.js";
 import type { Organization } from "../organization.js";
 import { HealthError, type HealthStore } from "./store.js";
 import { settings } from "../settings.js";
+import { Connectivity } from "./connectivity.js";
 
 /** Serves device health to sessions with the devices scope, while pings use only device credentials. */
 export class HealthHttp {
   readonly #limiter = new LoginLimiter();
+  readonly #connectivity: Connectivity;
   constructor(
     private readonly store: HealthStore,
     private readonly log: Log,
     private readonly matter: MatterAdmin,
     private readonly hub: Hub,
     private readonly organization?: Organization,
-  ) {}
+  ) {
+    this.#connectivity = new Connectivity(hub);
+  }
 
   /** access is the caller's access to the devices scope; device pings authenticate with their own credentials. */
   async handle(
@@ -93,6 +97,22 @@ export class HealthHttp {
     if (url.pathname === "/api/devices") {
       if (req.method !== "GET") throw new HealthError(405, "method not allowed");
       json(res, 200, {
+        goveeDevices: (await this.#connectivity.govee()).map((device) => {
+          const groupIds = this.hub.directGroupsForTarget(device.id);
+          return {
+            ...device,
+            assignedType: this.organization?.assignedType(`target:${device.id}`) ?? null,
+            groupIds,
+            groups: this.hub.groupNames(groupIds),
+            type: "Light",
+            capabilities: [
+              "Power",
+              ...(device.features.brightness ? ["Brightness"] : []),
+              ...(device.features.color ? ["Color"] : []),
+              ...(device.features.colorTemperature ? ["White temperature"] : []),
+            ],
+          };
+        }),
         devices: this.store.list().map((device) => ({
           ...device,
           assignedType: this.organization?.assignedType(`health:${device.id}`) ?? null,

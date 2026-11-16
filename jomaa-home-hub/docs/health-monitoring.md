@@ -221,3 +221,11 @@ The hub receives captures at `POST /api/devices/DEVICE_ID/i2c` over verified HTT
 `GET /api/devices/DEVICE_ID/i2c` returns capture history to sessions with Device health access. It accepts `limit` and `before` parameters. `GET /api/devices/DEVICE_ID/i2c/events` supplies a live event stream with snapshot and capture events. Live capture events replace an existing row when its empty interval grows. Access is checked during the connection.
 
 Captures occupy `i2c_logs` in the same SQLite connection and database as `health_logs`. Their retention uses the health retention setting. Consecutive, contiguous empty intervals from the same bus and boot occupy one `empty:<count>` string. Gaps, dropped captures, bus changes and reboots keep distinct records. Nonempty bytes use the shortest literal hexadecimal, zero run or deflate encoding; the API reconstructs every byte. Zero bytes are captured data, distinct from no activity. [Settings](../settings.md) describes request limits and live view settings.
+
+## Connection status for other devices
+
+The Health inventory also lists Govee lights and Matter devices. Govee aliveness
+comes from its cloud online flag, independently of the power setting. Matter
+uses the controller connection state. These devices do not send Pico health
+reports. Cloud errors or missing online flags produce unknown status; successful
+checks show their source and check time.

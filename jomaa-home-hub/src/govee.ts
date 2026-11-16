@@ -98,6 +98,23 @@ export class GoveeLight implements Device {
     return allFeatures;
   }
 
+  /** Reads the cloud's connection flag independently of the power setting. */
+  async connection(signal: AbortSignal): Promise<boolean | null> {
+    const payload = await this.#client.post("/router/api/v1/device/state", this.#target, signal);
+    if (payload === null) return null;
+    for (const raw of new Fields(payload, "payload").list("capabilities")) {
+      const capability = new Fields(raw, "capability");
+      if (capability.string("instance") !== "online") continue;
+      const state = capability.value("state");
+      if (state === null) return null;
+      const value = new Fields(state, "state").value("value");
+      if (value === true || value === 1) return true;
+      if (value === false || value === 0) return false;
+      return null;
+    }
+    return null;
+  }
+
   async #control(type: string, instance: string, value: number, signal: AbortSignal): Promise<void> {
     await this.#client.post(
       "/router/api/v1/device/control",
