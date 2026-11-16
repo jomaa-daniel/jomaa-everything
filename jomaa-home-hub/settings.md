@@ -73,4 +73,4 @@ reruns the deployment workflow.
 
 `health.goveeStatusConcurrency` limits simultaneous Govee connection requests.
 
-`health.goveeStatusTimeoutSeconds` is the deadline for a Govee connection check. Failed checks show unknown status.
+`health.goveeStatusTimeoutSeconds` is the shared deadline for the cloud checks in one inventory refresh. Failed checks show unknown status.

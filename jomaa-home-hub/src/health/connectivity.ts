@@ -18,6 +18,7 @@ export class Connectivity {
   ) {}
 
   async govee(): Promise<Array<DeviceTarget & ConnectionStatus>> {
+    const signal = AbortSignal.timeout(settings.health.goveeStatusTimeoutSeconds * 1000);
     const targets = this.hub.list().filter((target): target is DeviceTarget => target.kind === "govee");
     const results = new Map<string, ConnectionStatus>();
     let next = 0;
@@ -35,7 +36,7 @@ export class Connectivity {
           });
           continue;
         }
-        results.set(target.id, await this.check(device));
+        results.set(target.id, await this.check(device, signal));
       }
     };
     await Promise.all(Array.from({ length: Math.min(targets.length, settings.health.goveeStatusConcurrency) }, worker));
@@ -46,10 +47,10 @@ export class Connectivity {
     });
   }
 
-  private check(device: GoveeLight): Promise<ConnectionStatus> {
+  private check(device: GoveeLight, signal: AbortSignal): Promise<ConnectionStatus> {
     const cached = this.#cache.get(device);
     if (cached && cached.expiresAt > this.now()) return cached.result;
-    const entry = { expiresAt: Infinity, result: this.read(device) };
+    const entry = { expiresAt: Infinity, result: this.read(device, signal) };
     this.#cache.set(device, entry);
     void entry.result.then(() => {
       entry.expiresAt = this.now() + settings.health.goveeStatusCacheSeconds * 1000;
@@ -57,9 +58,9 @@ export class Connectivity {
     return entry.result;
   }
 
-  private async read(device: GoveeLight): Promise<ConnectionStatus> {
+  private async read(device: GoveeLight, signal: AbortSignal): Promise<ConnectionStatus> {
     try {
-      const online = await device.connection(AbortSignal.timeout(settings.health.goveeStatusTimeoutSeconds * 1000));
+      const online = await device.connection(signal);
       return {
         status: online === null ? "unknown" : online ? "online" : "offline",
         checkedAt: this.now(),

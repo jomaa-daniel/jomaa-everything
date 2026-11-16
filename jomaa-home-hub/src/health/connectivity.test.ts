@@ -93,3 +93,34 @@ test("cached switch state without an online flag is not proof of aliveness", asy
   env.setOnline("unavailable");
   assert.equal((await env.connectivity.govee())[0]?.status, "unknown");
 });
+
+test("one deadline bounds the whole inventory even when cloud requests hang", async () => {
+  const old = settings.health.goveeStatusTimeoutSeconds;
+  settings.health.goveeStatusTimeoutSeconds = 1;
+  let requests = 0;
+  const origin = await serve(() => {
+    requests++;
+  });
+  const hub = new Hub();
+  for (let i = 0; i < 5; i++)
+    hub.addDevice(
+      "govee",
+      new GoveeLight(new GoveeClient("test", origin), {
+        driver: "govee",
+        id: `lamp-${i}`,
+        name: "Lamp",
+        sku: "test",
+        device: `test-${i}`,
+        minKelvin: 2700,
+        maxKelvin: 6500,
+      }),
+    );
+  try {
+    const results = await new Connectivity(hub).govee();
+    assert.equal(results.length, 5);
+    assert.ok(results.every((result) => result.status === "unknown"));
+    assert.equal(requests, settings.health.goveeStatusConcurrency);
+  } finally {
+    settings.health.goveeStatusTimeoutSeconds = old;
+  }
+});
