@@ -37,6 +37,12 @@ export interface ApiReply {
 
 type Handler = (call: ApiCall) => ApiReply | Promise<ApiReply>;
 
+/** Background requests every page makes for link prefetching, answered with nothing to prefetch. */
+const prefetchReplies: Record<string, unknown> = {
+  "GET /api/prefetch": { concurrency: 1, pages: [] },
+  "POST /api/clicks": { ok: true },
+};
+
 /** A separate mock API for each browser context. Unregistered requests fail the test. */
 export class MockApi {
   readonly calls: ApiCall[] = [];
@@ -81,6 +87,11 @@ export class MockApi {
       }
       if (!url.pathname.startsWith("/api/")) {
         await route.continue();
+        return;
+      }
+      const background = prefetchReplies[`${request.method()} ${url.pathname}`];
+      if (background !== undefined) {
+        await route.fulfill({ status: 200, json: background });
         return;
       }
       const call = {
