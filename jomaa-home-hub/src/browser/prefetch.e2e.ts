@@ -6,9 +6,9 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { after, test } from "node:test";
 import { chromium } from "playwright-core";
 import { Accounts } from "../accounts.js";
-import { Api } from "../api.js";
 import { Clicks } from "../clicks.js";
 import { Hub } from "../hub.js";
+import { hubApi } from "../hub-api.js";
 import { silentLog } from "../log.js";
 import { MatterNotReadyError, type MatterAdmin } from "../matter/nodes.js";
 import { settings } from "../settings.js";
@@ -35,11 +35,23 @@ const homeFiles = new Set([
   "/home/prefetch.js",
   "/api/prefetch",
 ]);
-const linkedPages = ["/lights", "/manage", "/permissions", "/secrets", "/invite"];
+const linkedPages = ["/lights", "/manage", "/permissions", "/tailscale", "/secrets", "/invite"];
 
 const clicks = new Clicks(":memory:");
 for (const path of ["/secrets", "/secrets", "/secrets", "/lights", "/lights"]) clicks.record(path);
-const api = new Api(new Hub(), noMatter, "prefetch browser test password", new Accounts(":memory:"), clicks, silentLog);
+const api = hubApi({
+  hub: new Hub(),
+  matter: noMatter,
+  password: "prefetch browser test password",
+  accounts: new Accounts(":memory:", settings.accounts),
+  prefetch: { clicks, settings: settings.prefetch },
+  log: silentLog,
+  health: null,
+  layoutPath: null,
+  organization: null,
+  secrets: null,
+  tailscale: null,
+});
 
 /** Requests after the home page's own files in arrival order, with their response status once sent. */
 const requests: { path: string; status: number | null }[] = [];
@@ -89,7 +101,7 @@ test("the home page prefetches linked pages by popularity and opens them from th
   await until(() => [...linkedPages, "/lights/app.js", "/home/accounts.js"].every((path) => fetched().has(path)));
   await until(() => inFlight === 0);
   const documents = requests.map((request) => request.path).filter((path) => linkedPages.includes(path));
-  assert.deepEqual(documents, ["/secrets", "/lights", "/invite", "/permissions", "/manage"]);
+  assert.deepEqual(documents, ["/secrets", "/lights", "/invite", "/permissions", "/tailscale", "/manage"]);
   assert.ok(mostInFlight <= settings.prefetch.concurrency, `${mostInFlight} prefetches ran at once`);
   assert.ok(!fetched().has("/home/base.css"), "files the page already loaded are not fetched again");
   assert.equal(new Set(requests.map((request) => request.path)).size, requests.length, "each file is fetched once");

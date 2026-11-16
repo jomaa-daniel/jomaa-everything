@@ -4,15 +4,19 @@ import { cliOptions } from "./cli.js";
 import { createServer } from "node:http";
 import { createServer as createTLSServer } from "node:https";
 import { readFileSync } from "node:fs";
-import { Api } from "./api.js";
+import { resolve } from "node:path";
+import { hubApi } from "./hub-api.js";
 import { loadConfig, parseListen, usesDriver } from "./config.js";
 import { GoveeClient, defaultBaseURL } from "./govee.js";
 import { Hub } from "./hub.js";
 import { HealthStore } from "./health/store.js";
 import { Organization } from "./organization.js";
 import { Accounts } from "./accounts.js";
+import { TailscaleService } from "./tailscale.js";
+import { TailscaleStore } from "./tailscale-store.js";
+import { CommandGateway, schemaText, scriptPath } from "./tailscale-gateway.js";
 import { Clicks } from "./clicks.js";
-import { deploySettings, releaseRoot, settings } from "./settings.js";
+import { deploySettings, releaseRoot, settings, settingsFile } from "./settings.js";
 import { EnvFiles } from "./secrets.js";
 import { DeployWorkflow, GitHubCli } from "./redeploy.js";
 import { fileURLToPath } from "node:url";
@@ -73,12 +77,14 @@ async function run(log: Log): Promise<void> {
   let health: HealthStore | undefined;
   let organization: Organization | undefined;
   let accounts: Accounts | undefined;
+  let tailscale: TailscaleService | undefined;
   let clicks: Clicks | undefined;
   let cleanup: ReturnType<typeof setInterval> | undefined;
   try {
     const govee = new GoveeClient(goveeKey, process.env["GOVEE_BASE_URL"] || defaultBaseURL);
     const store = new HealthStore(
       process.env["HEALTH_DB_PATH"] ?? "data/health.sqlite",
+      settings.i2c,
       Number(process.env["HEALTH_RETENTION_DAYS"] ?? 30),
     );
     health = store;
@@ -87,21 +93,42 @@ async function run(log: Log): Promise<void> {
         ? ":memory:"
         : join(dirname(process.env["HEALTH_DB_PATH"] ?? "data/health.sqlite"), name);
     organization = new Organization(besideHealth("organization.sqlite"));
-    const people = new Accounts(besideHealth(settings.accounts.databaseFile));
+    const accountsFile = besideHealth(settings.accounts.databaseFile);
+    const people = new Accounts(accountsFile, settings.accounts);
     accounts = people;
+    if (accountsFile !== ":memory:") {
+      const env: Record<string, string> = {};
+      for (const key of ["PATH", "HOME", "LANG", "JOMAA_DEPLOY_HOME"]) {
+        const value = process.env[key];
+        if (value !== undefined) env[key] = value;
+      }
+      const script = scriptPath(settings.tailscale, settingsFile);
+      tailscale = new TailscaleService(
+        new TailscaleStore(people.database, schemaText(script), Date.now),
+        new CommandGateway(
+          [settings.tailscale.python, script],
+          resolve(accountsFile),
+          settings.tailscale.commandTimeoutSeconds * 1000,
+          env,
+        ),
+        people,
+        settings.tailscale,
+        log.with({ component: "tailscale" }),
+      );
+    }
     const followed = new Clicks(besideHealth(settings.prefetch.databaseFile));
     clicks = followed;
-    const api = new Api(
-      Hub.build(cfg, govee, matter),
+    const api = hubApi({
+      hub: Hub.build(cfg, govee, matter),
       matter,
       password,
-      people,
-      followed,
+      accounts: people,
+      prefetch: { clicks: followed, settings: settings.prefetch },
       log,
-      store,
-      cliOptions.config,
+      health: { store, i2c: settings.i2c, page: settings.health },
+      layoutPath: cliOptions.config,
       organization,
-      {
+      secrets: {
         files: new EnvFiles(fileURLToPath(releaseRoot), settings.secrets.envFiles, deploySettings.hubPasswordMinLength),
         workflow: new DeployWorkflow({
           api: deploySettings.githubApi,
@@ -110,8 +137,10 @@ async function run(log: Log): Promise<void> {
           timeoutMs: deploySettings.githubTimeoutSeconds * 1000,
         }),
         cli: new GitHubCli(settings.secrets.ghCommand, deploySettings.githubTimeoutSeconds * 1000),
+        redeployPollSeconds: settings.secrets.redeployPollSeconds,
       },
-    );
+      tailscale: tailscale ? { service: tailscale, settings: settings.tailscale } : null,
+    });
     const cert = process.env["HUB_TLS_CERT"];
     const key = process.env["HUB_TLS_KEY"];
     if (Boolean(cert) !== Boolean(key)) throw new Error("set both HUB_TLS_CERT and HUB_TLS_KEY");
@@ -128,6 +157,7 @@ async function run(log: Log): Promise<void> {
       server.listen(host === null ? { port } : { host, port }, resolve);
     });
     log.info("hub listening", { addr: cfg.listen, devices: cfg.devices.length, rooms: cfg.rooms.length });
+    tailscale?.start();
     cleanup = setInterval(() => {
       try {
         store.prune();
@@ -156,6 +186,7 @@ async function run(log: Log): Promise<void> {
   } finally {
     if (cleanup) clearInterval(cleanup);
     try {
+      await tailscale?.close();
       health?.close();
       organization?.close();
       accounts?.close();

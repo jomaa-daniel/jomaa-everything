@@ -10,6 +10,10 @@
   "queryTimeoutSeconds": 30,
   "commandTimeoutSeconds": 600,
   "routeProbeAddress": "1.1.1.1",
+  "policyLockFile": "tailnet.lock",
+  "lockTimeoutSeconds": 30,
+  "lockPollSeconds": 0.2,
+  "databaseTimeoutSeconds": 10,
   "apt": {
     "repository": "https://pkgs.tailscale.com/stable/ubuntu",
     "keyring": "/usr/share/keyrings/tailscale-archive-keyring.gpg",
@@ -19,6 +23,12 @@
   "gro": {
     "dispatcher": "/etc/NetworkManager/dispatcher.d/50-jomaa-tailscale-gro",
     "ethtool": "/usr/sbin/ethtool",
-    "skipInterfaces": ["lo", "tailscale*", "docker*", "veth*", "br-*"]
+    "skipInterfaces": [
+      "lo",
+      "tailscale*",
+      "docker*",
+      "veth*",
+      "br-*"
+    ]
   }
 }

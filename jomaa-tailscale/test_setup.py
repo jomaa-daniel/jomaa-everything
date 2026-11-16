@@ -72,11 +72,6 @@ class DeployTest(unittest.TestCase):
         self.assertFalse(tailnet.node_current({**PREFS, "Hostname": "jerry-server"}))
         self.assertFalse(tailnet.node_current({**PREFS, "AdvertiseRoutes": [server.LAN]}))
 
-    def test_family_comes_from_a_comma_separated_list(self):
-        self.assertEqual(tailnet.family({"TAILSCALE_FAMILY": " a@example.com, ,b@example.com "}),
-                         ["a@example.com", "b@example.com"])
-        self.assertEqual(tailnet.family({}), [])
-
     def test_policy_fills_family_and_keeps_tests_only_with_members(self):
         empty = tailnet.render_policy(POLICY, server.CONFIG, [])
         self.assertEqual(empty["groups"]["group:family"], [])

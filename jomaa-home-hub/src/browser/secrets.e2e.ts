@@ -21,14 +21,14 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { chromium, type BrowserContext, type Page } from "playwright-core";
 import { Accounts } from "../accounts.js";
+import { hubApi } from "../hub-api.js";
 import { Clicks } from "../clicks.js";
-import { Api } from "../api.js";
 import { Hub } from "../hub.js";
 import { silentLog } from "../log.js";
 import { MatterNotReadyError, type MatterAdmin } from "../matter/nodes.js";
 import { DeployWorkflow, GitHubCli } from "../redeploy.js";
 import { EnvFiles } from "../secrets.js";
-import { deploySettings } from "../settings.js";
+import { deploySettings, settings } from "../settings.js";
 import { serve } from "../testing.js";
 
 const ownerPassword = "owner password for the secrets browser test";
@@ -98,21 +98,21 @@ const noMatter: MatterAdmin = {
   removeNode: () => Promise.reject(new MatterNotReadyError()),
 };
 
-const accounts = new Accounts(":memory:");
+const accounts = new Accounts(":memory:", settings.accounts);
 const { token: invite } = accounts.createInvite();
 await accounts.join(invite, "guest", guestPassword);
 accounts.setScopes("guest", ["lights", "devices", "manage"]);
-const api = new Api(
-  new Hub(),
-  noMatter,
-  ownerPassword,
+const api = hubApi({
+  hub: new Hub(),
+  matter: noMatter,
+  password: ownerPassword,
   accounts,
-  new Clicks(":memory:"),
-  silentLog,
-  undefined,
-  undefined,
-  undefined,
-  {
+  prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
+  log: silentLog,
+  health: null,
+  layoutPath: null,
+  organization: null,
+  secrets: {
     files: new EnvFiles(root, Object.keys(contents), deploySettings.hubPasswordMinLength),
     workflow: new DeployWorkflow({
       api: fakeGitHub,
@@ -121,8 +121,10 @@ const api = new Api(
       timeoutMs: 5000,
     }),
     cli: new GitHubCli(ghCommand, deploySettings.githubTimeoutSeconds * 1000),
+    redeployPollSeconds: settings.secrets.redeployPollSeconds,
   },
-);
+  tailscale: null,
+});
 const origin = await serve(api.handle);
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const owner = await browser.newContext();

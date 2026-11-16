@@ -2,7 +2,7 @@ import { createHash, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { settings } from "./settings.js";
+import type { AccountSettings } from "./settings.js";
 
 /** The pages an account can be granted, by scope ID. */
 export const scopes = [
@@ -52,9 +52,6 @@ export interface Invite {
 }
 
 const dayMs = 24 * 60 * 60_000;
-export const sessionLifetimeMs = settings.accounts.sessionLifetimeDays * dayMs;
-export const inviteLifetimeMs = settings.accounts.inviteLifetimeDays * dayMs;
-export const passwordLength = settings.accounts.passwordLength;
 const keyLength = 64;
 const usernamePattern = /^[a-z0-9][a-z0-9._-]{2,31}$/;
 
@@ -93,9 +90,18 @@ const absentHash = `${"00".repeat(16)}:${"00".repeat(keyLength)}`;
 /** Accounts created from invite links, their granted scopes, and their sign-in sessions. */
 export class Accounts {
   readonly #db: DatabaseSync;
+  readonly sessionLifetimeMs: number;
+  readonly inviteLifetimeMs: number;
+  readonly passwordLength: { min: number; max: number };
   now: () => number = Date.now;
 
-  constructor(path: string) {
+  constructor(
+    path: string,
+    private readonly settings: AccountSettings,
+  ) {
+    this.sessionLifetimeMs = settings.sessionLifetimeDays * dayMs;
+    this.inviteLifetimeMs = settings.inviteLifetimeDays * dayMs;
+    this.passwordLength = settings.passwordLength;
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     const mask = process.umask(0o077);
     try {
@@ -104,18 +110,23 @@ export class Accounts {
       process.umask(mask);
     }
     if (path !== ":memory:") chmodSync(path, 0o600);
-    this.#db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;
+    this.#db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA busy_timeout=${settings.busyTimeoutMs};
       CREATE TABLE IF NOT EXISTS accounts (username TEXT PRIMARY KEY, password_hash TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS account_scopes (username TEXT NOT NULL REFERENCES accounts(username) ON DELETE CASCADE, scope TEXT NOT NULL, PRIMARY KEY(username, scope));
       CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, username TEXT NOT NULL REFERENCES accounts(username) ON DELETE CASCADE, expires_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS invites (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);`);
   }
 
+  /** The open database, for module tables that reference accounts. */
+  get database(): DatabaseSync {
+    return this.#db;
+  }
+
   /** Creates a single-use invite. The token is returned once and only its hash is stored. */
   createInvite(): { invite: Invite; token: string } {
     const token = newToken();
     const now = this.now();
-    const invite = { id: randomBytes(8).toString("hex"), createdAt: now, expiresAt: now + inviteLifetimeMs };
+    const invite = { id: randomBytes(8).toString("hex"), createdAt: now, expiresAt: now + this.inviteLifetimeMs };
     this.#db
       .prepare("INSERT INTO invites VALUES (?, ?, ?, ?)")
       .run(invite.id, digest(token), invite.createdAt, invite.expiresAt);
@@ -152,7 +163,7 @@ export class Accounts {
   async join(token: string, username: string, password: string): Promise<Account> {
     this.checkInvite(token);
     const name = validUsername(username);
-    validPassword(password);
+    validPassword(password, this.passwordLength);
     const hash = await hashPassword(password);
     this.#db.exec("BEGIN IMMEDIATE");
     try {
@@ -223,13 +234,13 @@ export class Accounts {
     const token = newToken();
     this.#db
       .prepare("INSERT INTO sessions VALUES (?, ?, ?)")
-      .run(digest(token), username, this.now() + sessionLifetimeMs);
+      .run(digest(token), username, this.now() + this.sessionLifetimeMs);
     this.#db
       .prepare(
         `DELETE FROM sessions WHERE username=? AND token_hash NOT IN
           (SELECT token_hash FROM sessions WHERE username=? ORDER BY expires_at DESC, rowid DESC LIMIT ?)`,
       )
-      .run(username, username, settings.accounts.sessionsPerAccount);
+      .run(username, username, this.settings.sessionsPerAccount);
     return token;
   }
 
@@ -277,7 +288,7 @@ function validUsername(value: string): string {
   return name;
 }
 
-function validPassword(value: string): void {
+function validPassword(value: string, passwordLength: { min: number; max: number }): void {
   if (value.length < passwordLength.min || value.length > passwordLength.max)
     throw new AccountError(400, `Password must contain ${passwordLength.min} to ${passwordLength.max} characters`);
 }

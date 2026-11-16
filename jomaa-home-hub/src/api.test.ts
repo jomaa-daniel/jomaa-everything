@@ -1,6 +1,7 @@
+import { settings } from "./settings.js";
 import assert from "node:assert/strict";
 import { before, test } from "node:test";
-import { Api } from "./api.js";
+import { hubApi } from "./hub-api.js";
 import { allFeatures, type Command, type Device, type Features, type State } from "./device.js";
 import { Group } from "./group.js";
 import { Hub } from "./hub.js";
@@ -136,12 +137,26 @@ async function setup(): Promise<Env> {
   const a = new Light("a");
   const b = new Light("b");
   const matter = new FakeMatter();
-  const accounts = new Accounts(":memory:");
+  const accounts = new Accounts(":memory:", settings.accounts);
   const hub = new Hub();
   hub.addDevice("test", a);
   hub.addDevice("test", b);
   hub.addRoom(new Group("room", "Room", [a, b]));
-  const url = await serve(new Api(hub, matter, "hunter2", accounts, new Clicks(":memory:"), silentLog).handle);
+  const url = await serve(
+    hubApi({
+      hub,
+      matter,
+      password: "hunter2",
+      accounts,
+      prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
+      log: silentLog,
+      health: null,
+      layoutPath: null,
+      organization: null,
+      secrets: null,
+      tailscale: null,
+    }).handle,
+  );
   const { status, body } = await call({ url, token: "" }, "POST", "/api/login", '{"password":"hunter2"}');
   assert.equal(status, 200);
   return { url, token: body["token"] as string, a, b, matter, accounts };
@@ -682,6 +697,7 @@ test("the prefetch list names every page with the files it loads, most-clicked f
     "/manage",
     "/permissions",
     "/secrets",
+    "/tailscale",
   ]);
   const assets = (path: string) =>
     pages.find((page) => page.path === path)?.assets.map((url) => url.replace(/\?v=[\w-]+$/, ""));

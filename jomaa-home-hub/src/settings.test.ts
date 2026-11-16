@@ -22,6 +22,16 @@ test("invalid settings name the setting", () => {
     sessionsPerAccount: 1,
     inviteLifetimeDays: 1,
     passwordLength: { min: 1, max: 2 },
+    busyTimeoutMs: 1,
+  };
+  const tailscale = {
+    python: "python3",
+    script: "../jomaa-tailscale/tailnet.py",
+    commandTimeoutSeconds: 1,
+    syncIntervalSeconds: 1,
+    observationMaxAgeSeconds: 1,
+    downloadUrl: "https://example.com/download",
+    adminUsersUrl: "https://example.com/admin/users",
   };
   const secrets = {
     envFiles: ["app/.env", "other/.env"],
@@ -31,13 +41,15 @@ test("invalid settings name the setting", () => {
   };
   const prefetch = { databaseFile: "clicks.sqlite", concurrency: 1 };
   assert.equal(
-    parseSettings(JSON.stringify({ accounts: valid, prefetch, secrets, i2c: settings.i2c, health: settings.health }))
-      .accounts.sessionsPerAccount,
+    parseSettings(
+      JSON.stringify({ accounts: valid, tailscale, prefetch, secrets, i2c: settings.i2c, health: settings.health }),
+    ).accounts.sessionsPerAccount,
     1,
   );
   const broken = (change: Record<string, unknown>) =>
     JSON.stringify({
       accounts: { ...valid, ...change },
+      tailscale,
       prefetch,
       secrets,
       i2c: settings.i2c,
@@ -49,6 +61,7 @@ test("invalid settings name the setting", () => {
   const badPrefetch = (change: Record<string, unknown>) =>
     JSON.stringify({
       accounts: valid,
+      tailscale,
       prefetch: { ...prefetch, ...change },
       secrets,
       i2c: settings.i2c,
@@ -59,6 +72,7 @@ test("invalid settings name the setting", () => {
   const badSecrets = (change: Record<string, unknown>) =>
     JSON.stringify({
       accounts: valid,
+      tailscale,
       prefetch,
       secrets: { ...secrets, ...change },
       i2c: settings.i2c,
@@ -85,4 +99,31 @@ test("the hub reads its deployment settings from the deployment's config.json", 
   });
   assert.throws(() => parseDeploySettings(text.replace(/"workflow": "[^"]*"/, '"workflow": ""')), /github\.workflow/);
   assert.throws(() => parseDeploySettings(text.replace(/"repo": "[^"]*"/, '"repo": "no-owner"')), /repo/);
+});
+
+test("invalid Tailscale settings name the setting", () => {
+  const settings = parseJson(readFileSync(settingsFile, "utf8")) as Record<string, Record<string, unknown>>;
+  const broken = (change: Record<string, unknown>) =>
+    JSON.stringify({ ...settings, tailscale: { ...settings["tailscale"], ...change } });
+  assert.throws(() => parseSettings(broken({ syncIntervalSeconds: 0 })), /tailscale\.syncIntervalSeconds/);
+  assert.throws(() => parseSettings(broken({ commandTimeoutSeconds: 0 })), /tailscale\.commandTimeoutSeconds/);
+  assert.throws(() => parseSettings(broken({ downloadUrl: "http://example.com" })), /tailscale\.downloadUrl/);
+  assert.throws(() => parseSettings(broken({ python: "" })), /tailscale\.python/);
+  assert.throws(() => parseSettings(broken({ retries: 3 })), /unknown field "retries"/);
+  const missing = { ...settings["tailscale"] };
+  delete missing["script"];
+  assert.throws(() => parseSettings(JSON.stringify({ ...settings, tailscale: missing })), /missing field "script"/);
+  assert.throws(() => parseSettings(JSON.stringify({ accounts: settings["accounts"] })), /missing field "tailscale"/);
+});
+
+test("a Tailscale command can finish within its deadline", () => {
+  const tailnet = parseJson(
+    readFileSync(new URL("../../jomaa-tailscale/config.json", import.meta.url), "utf8"),
+  ) as Record<string, number>;
+  const api = tailnet["apiTimeoutSeconds"] ?? 0;
+  const sync = (tailnet["lockTimeoutSeconds"] ?? 0) + 4 * api;
+  const observe = 3 * api + 2 * (tailnet["queryTimeoutSeconds"] ?? 0);
+  const deadline = parseSettings(readFileSync(settingsFile, "utf8")).tailscale.commandTimeoutSeconds;
+  assert.ok(deadline >= sync, `tailscale.commandTimeoutSeconds must be at least ${sync} for a sync`);
+  assert.ok(deadline >= observe, `tailscale.commandTimeoutSeconds must be at least ${observe} for an observation`);
 });

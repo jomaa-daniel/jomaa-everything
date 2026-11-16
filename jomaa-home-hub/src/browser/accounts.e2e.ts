@@ -1,12 +1,13 @@
 // Drives the account pages in Chrome against the real API and built pages:
 // the owner invites someone, they create an account through the share link,
 // and the owner grants and removes access.
+import { settings } from "../settings.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { chromium, type BrowserContext, type Page } from "playwright-core";
 import { Accounts } from "../accounts.js";
+import { hubApi } from "../hub-api.js";
 import { Clicks } from "../clicks.js";
-import { Api } from "../api.js";
 import { allFeatures, type Command, type Device, type Features, type State } from "../device.js";
 import { Group } from "../group.js";
 import { HealthStore } from "../health/store.js";
@@ -57,15 +58,19 @@ const lamp = new Lamp();
 const hub = new Hub();
 hub.addDevice("test", lamp);
 hub.addRoom(new Group("living-room", "Living room", [lamp]));
-const api = new Api(
+const api = hubApi({
   hub,
-  noMatter,
-  ownerPassword,
-  new Accounts(":memory:"),
-  new Clicks(":memory:"),
-  silentLog,
-  new HealthStore(":memory:"),
-);
+  matter: noMatter,
+  password: ownerPassword,
+  accounts: new Accounts(":memory:", settings.accounts),
+  prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
+  log: silentLog,
+  health: { store: new HealthStore(":memory:", settings.i2c), i2c: settings.i2c, page: settings.health },
+  layoutPath: null,
+  organization: null,
+  secrets: null,
+  tailscale: null,
+});
 const origin = await serve(api.handle);
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const owner = await browser.newContext();

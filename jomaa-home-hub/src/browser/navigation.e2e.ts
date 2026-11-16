@@ -3,18 +3,19 @@ import { isFocused } from "./dom.js";
 import { after, test } from "node:test";
 import { chromium } from "playwright-core";
 import { Accounts } from "../accounts.js";
-import { Api } from "../api.js";
 import { Clicks } from "../clicks.js";
+import { hubApi } from "../hub-api.js";
 import { HealthStore } from "../health/store.js";
 import { Hub } from "../hub.js";
 import { silentLog } from "../log.js";
+import { settings } from "../settings.js";
 import type { MatterAdmin } from "../matter/nodes.js";
 import { Organization } from "../organization.js";
 import { serve } from "../testing.js";
 
 const password = "navigation browser owner password";
-const accounts = new Accounts(":memory:");
-const health = new HealthStore(":memory:");
+const accounts = new Accounts(":memory:", settings.accounts);
+const health = new HealthStore(":memory:", settings.i2c);
 const organization = new Organization(":memory:");
 const matter: MatterAdmin = {
   ready: false,
@@ -34,8 +35,19 @@ for (const name of ["alpha", "beta"]) {
 }
 accounts.setScopes("alpha", ["devices"]);
 const origin = await serve(
-  new Api(new Hub(), matter, password, accounts, new Clicks(":memory:"), silentLog, health, undefined, organization)
-    .handle,
+  hubApi({
+    hub: new Hub(),
+    matter,
+    password,
+    accounts,
+    prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
+    log: silentLog,
+    health: { store: health, i2c: settings.i2c, page: settings.health },
+    layoutPath: null,
+    organization,
+    secrets: null,
+    tailscale: null,
+  }).handle,
 );
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 after(async () => {

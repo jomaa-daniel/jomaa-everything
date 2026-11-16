@@ -4,6 +4,7 @@ import { isIP } from "node:net";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { I2CStore } from "./i2c.js";
+import type { I2CSettings } from "../settings.js";
 
 export class HealthError extends Error {
   constructor(
@@ -59,7 +60,7 @@ export class HealthStore {
   readonly retentionDays: number;
   now: () => number = Date.now;
 
-  constructor(path: string, retentionDays = 30) {
+  constructor(path: string, i2c: I2CSettings, retentionDays = 30) {
     if (!Number.isInteger(retentionDays) || retentionDays < 1 || retentionDays > 3650) {
       throw new Error("HEALTH_RETENTION_DAYS must be a whole number from 1 to 3650");
     }
@@ -104,6 +105,7 @@ export class HealthStore {
     `);
     this.i2c = new I2CStore(
       this.#db,
+      i2c,
       (id) => this.get(id),
       () => this.now(),
     );

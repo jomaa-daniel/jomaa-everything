@@ -54,8 +54,11 @@ function row(account, scopes) {
     cell.append(label);
     return cell;
   });
+  const tailscale = element("a", "Tailscale");
+  tailscale.href = `/tailscale?user=${encodeURIComponent(account.username)}`;
+  tailscale.setAttribute("aria-label", `Tailscale setup for ${account.username}`);
   const actions = element("td", undefined, "row-actions");
-  actions.append(remove);
+  actions.append(tailscale, " ", remove);
   tr.append(element("td", account.username), ...cells, actions);
   return tr;
 }

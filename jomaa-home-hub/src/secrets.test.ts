@@ -15,8 +15,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { Accounts } from "./accounts.js";
+import { hubApi } from "./hub-api.js";
 import { Clicks } from "./clicks.js";
-import { Api } from "./api.js";
 import { Hub } from "./hub.js";
 import { Fields, parseJson } from "./json.js";
 import { newLog } from "./log.js";
@@ -148,7 +148,7 @@ async function setup(ghCommand: string = gh.loggedIn): Promise<Env> {
   const logs: string[] = [];
   const fake = new FakeGitHub();
   const fakeUrl = await serve(fake.handle);
-  const accounts = new Accounts(":memory:");
+  const accounts = new Accounts(":memory:", settings.accounts);
   const { token: invite } = accounts.createInvite();
   await accounts.join(invite, "guest", "guest password for the test");
   accounts.setScopes("guest", ["lights", "devices", "manage"]);
@@ -159,22 +159,24 @@ async function setup(ghCommand: string = gh.loggedIn): Promise<Env> {
     timeoutMs: 5000,
   });
   const log = newLog({}, (line) => logs.push(line));
-  const api = new Api(
-    new Hub(),
-    noMatter,
-    ownerPassword,
+  const api = hubApi({
+    hub: new Hub(),
+    matter: noMatter,
+    password: ownerPassword,
     accounts,
-    new Clicks(":memory:"),
+    prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
     log,
-    undefined,
-    undefined,
-    undefined,
-    {
+    health: null,
+    layoutPath: null,
+    organization: null,
+    secrets: {
       files: envFiles(root),
       workflow,
       cli: new GitHubCli(ghCommand, deploySettings.githubTimeoutSeconds * 1000),
+      redeployPollSeconds: settings.secrets.redeployPollSeconds,
     },
-  );
+    tailscale: null,
+  });
   const url = await serve(api.handle);
   const login = await fetch(url + "/api/login", { method: "POST", body: JSON.stringify({ password: ownerPassword }) });
   const owner = new Fields(parseJson(await login.text()), "login").string("token") ?? "";

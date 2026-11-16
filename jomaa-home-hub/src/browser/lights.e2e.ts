@@ -1,13 +1,14 @@
 // Drives the lights panel in Chrome against the real API and built pages with
 // lamps that keep reporting their old state after taking a command, and one
 // lamp that rejects every command.
+import { settings } from "../settings.js";
 import assert from "node:assert/strict";
 import { isFocused } from "./dom.js";
 import { after, test } from "node:test";
 import { chromium, type Page } from "playwright-core";
 import { Accounts } from "../accounts.js";
+import { hubApi } from "../hub-api.js";
 import { Clicks } from "../clicks.js";
-import { Api } from "../api.js";
 import { allFeatures, type Command, type Device, type Features, type State } from "../device.js";
 import { Group } from "../group.js";
 import { HealthStore } from "../health/store.js";
@@ -64,15 +65,19 @@ const hub = new Hub();
 for (const lamp of [...lamps, kitchen, desk]) hub.addDevice("test", lamp);
 hub.addRoom(new Group("living-room", "Living room", [...lamps, kitchen]));
 hub.addRoom(new Group("office", "Office", [desk]));
-const api = new Api(
+const api = hubApi({
   hub,
-  noMatter,
+  matter: noMatter,
   password,
-  new Accounts(":memory:"),
-  new Clicks(":memory:"),
-  silentLog,
-  new HealthStore(":memory:"),
-);
+  accounts: new Accounts(":memory:", settings.accounts),
+  prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
+  log: silentLog,
+  health: { store: new HealthStore(":memory:", settings.i2c), i2c: settings.i2c, page: settings.health },
+  layoutPath: null,
+  organization: null,
+  secrets: null,
+  tailscale: null,
+});
 const origin = await serve(api.handle);
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 after(() => browser.close());

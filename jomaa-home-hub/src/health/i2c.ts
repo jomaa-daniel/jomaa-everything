@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
-import { settings } from "../settings.js";
+import type { I2CSettings } from "../settings.js";
 import { HealthError } from "./store.js";
 
 export interface Capture {
@@ -27,13 +27,13 @@ function integer(value: unknown, name: string, min = 0): number {
   return value;
 }
 
-function capture(body: Record<string, unknown>): Capture {
+function capture(body: Record<string, unknown>, maxDataBytes: number): Capture {
   const keys = ["bootId", "sequence", "bus", "startUs", "endUs", "data", "dropped"];
   for (const key of Object.keys(body)) if (!keys.includes(key)) throw new HealthError(400, `unknown field: ${key}`);
   if (typeof body["bootId"] !== "string" || !/^[a-f0-9]{16,64}$/.test(body["bootId"]))
     throw new HealthError(400, "bootId must be hexadecimal");
   const data = body["data"];
-  if (typeof data !== "string" || !/^(?:[a-f0-9]{2})*$/.test(data) || data.length > settings.i2c.maxDataBytes * 2)
+  if (typeof data !== "string" || !/^(?:[a-f0-9]{2})*$/.test(data) || data.length > maxDataBytes * 2)
     throw new HealthError(400, "data must be bounded, lowercase hexadecimal bytes");
   const bus = integer(body["bus"], "bus");
   if (bus > 1) throw new HealthError(400, "bus must be 0 or 1");
@@ -60,15 +60,13 @@ export function condense(data: string, captures: number): string {
   return [literal, compressed, zero].reduce((shortest, value) => (value.length < shortest.length ? value : shortest));
 }
 
-export function expand(value: string): string {
+export function expand(value: string, maxDataBytes: number): string {
   const [encoding, data] = value.split(":", 2);
   if (encoding === "empty") return "";
   if (encoding === "zero") return "00".repeat(Number(data));
   if (encoding === "hex") return data ?? "";
   if (encoding === "deflate")
-    return inflateRawSync(Buffer.from(data ?? "", "base64"), { maxOutputLength: settings.i2c.maxDataBytes }).toString(
-      "hex",
-    );
+    return inflateRawSync(Buffer.from(data ?? "", "base64"), { maxOutputLength: maxDataBytes }).toString("hex");
   throw new Error("invalid stored capture encoding");
 }
 
@@ -79,6 +77,7 @@ export class I2CStore {
 
   constructor(
     private readonly db: DatabaseSync,
+    private readonly settings: I2CSettings,
     private readonly requireDevice: (id: string) => unknown,
     private readonly now: () => number,
   ) {
@@ -102,7 +101,7 @@ export class I2CStore {
 
   record(id: string, body: Record<string, unknown>): { duplicate: boolean; entry?: CaptureLog } {
     this.requireDevice(id);
-    const value = capture(body);
+    const value = capture(body, this.settings.maxDataBytes);
     const boot = this.db
       .prepare("SELECT sequence,end_us FROM i2c_boots WHERE device_id=? AND boot_id=? AND bus=?")
       .get(id, value.bootId, value.bus);
@@ -172,12 +171,12 @@ export class I2CStore {
 
   logs(
     id: string,
-    limit = settings.i2c.historyLimit,
+    limit = this.settings.historyLimit,
     before?: number,
   ): { logs: CaptureLog[]; nextCursor: number | null } {
     this.requireDevice(id);
     integer(limit, "limit", 1);
-    if (limit > Math.max(settings.i2c.historyLimit, settings.i2c.liveRows))
+    if (limit > Math.max(this.settings.historyLimit, this.settings.liveRows))
       throw new HealthError(400, "limit too large");
     if (before !== undefined) integer(before, "before", 1);
     const rows = this.db
@@ -189,7 +188,7 @@ export class I2CStore {
 
   subscribe(id: string, listener: (entry: CaptureLog) => void): () => void {
     this.requireDevice(id);
-    if (this.#clients >= settings.i2c.maxLiveClients) throw new HealthError(503, "too many live viewers");
+    if (this.#clients >= this.settings.maxLiveClients) throw new HealthError(503, "too many live viewers");
     const listeners = this.#listeners.get(id) ?? new Set();
     this.#listeners.set(id, listeners);
     listeners.add(listener);
@@ -216,7 +215,7 @@ export class I2CStore {
       startUs: Number(row["start_us"]),
       endUs: Number(row["end_us"]),
       captures: Number(row["captures"]),
-      data: expand(condensed),
+      data: expand(condensed, this.settings.maxDataBytes),
       dropped: Number(row["dropped"]),
       condensed,
     };

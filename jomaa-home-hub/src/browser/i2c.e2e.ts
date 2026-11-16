@@ -1,9 +1,10 @@
+import { settings } from "../settings.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { chromium } from "playwright-core";
 import { Accounts } from "../accounts.js";
+import { hubApi } from "../hub-api.js";
 import { Clicks } from "../clicks.js";
-import { Api } from "../api.js";
 import { HealthStore } from "../health/store.js";
 import { Hub } from "../hub.js";
 import { silentLog } from "../log.js";
@@ -24,15 +25,26 @@ const matter: MatterAdmin = {
 };
 
 await test("device details show live raw captures, condensed idle spans, pause, reconnect and device isolation", async () => {
-  const store = new HealthStore(":memory:");
-  const accounts = new Accounts(":memory:");
+  const store = new HealthStore(":memory:", settings.i2c);
+  const accounts = new Accounts(":memory:", settings.accounts);
   const password = "i2c browser owner password";
   store.enroll({ id: "pico-test", name: "Stream Pico" });
   store.enroll({ id: "pico-other", name: "Other Pico" });
   const organization = new Organization(":memory:");
   const origin = await serve(
-    new Api(new Hub(), matter, password, accounts, new Clicks(":memory:"), silentLog, store, undefined, organization)
-      .handle,
+    hubApi({
+      hub: new Hub(),
+      matter,
+      password,
+      accounts,
+      prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
+      log: silentLog,
+      health: { store, i2c: settings.i2c, page: settings.health },
+      layoutPath: null,
+      organization,
+      secrets: null,
+      tailscale: null,
+    }).handle,
   );
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   const page = await browser.newPage();

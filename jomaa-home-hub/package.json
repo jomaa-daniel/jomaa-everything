@@ -14,7 +14,8 @@
     "lint": "eslint .",
     "format": "prettier --write . ../jomaa-static-pages/device-panel",
     "format:check": "prettier --check . ../jomaa-static-pages/device-panel",
-    "test:browser": "npm run build && node --test --test-concurrency=1 \"dist/browser/*.e2e.js\""
+    "test:browser": "npm run build && node --test --test-concurrency=1 \"dist/browser/*.e2e.js\"",
+    "test:ui": "npm run build && node --test --test-concurrency=1 \"dist/browser/*.ui.e2e.js\""
   },
   "dependencies": {
     "@matter-server/custom-clusters": "1.5.5",

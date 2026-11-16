@@ -8,12 +8,14 @@ import { after, test } from "node:test";
 import { chromium, type Browser } from "playwright-core";
 import { Accounts } from "../accounts.js";
 import { Clicks } from "../clicks.js";
-import { Api, sessionToken } from "../api.js";
+import { sessionToken } from "../api.js";
+import { hubApi } from "../hub-api.js";
 import { parseConfig } from "../config.js";
 import { GoveeClient } from "../govee.js";
 import { HealthStore } from "../health/store.js";
 import { Hub } from "../hub.js";
 import { silentLog } from "../log.js";
+import { settings } from "../settings.js";
 import type { MatterAdmin, MatterNodes, NodeSummary } from "../matter/nodes.js";
 import { Organization } from "../organization.js";
 import { serve } from "../testing.js";
@@ -66,21 +68,23 @@ const matter: MatterAdmin & MatterNodes = {
   removeNode: () => Promise.resolve(),
 };
 const organization = new Organization(":memory:");
-const health = new HealthStore(":memory:");
+const health = new HealthStore(":memory:", settings.i2c);
 health.enroll({ id: "pico-test", name: "Pico" });
 const hub = Hub.build(parseConfig(JSON.stringify(cfg)), new GoveeClient("test", "http://127.0.0.1:1"), matter);
 const origin = await serve(
-  new Api(
+  hubApi({
     hub,
     matter,
     password,
-    new Accounts(":memory:"),
-    new Clicks(":memory:"),
-    silentLog,
-    health,
-    path,
+    accounts: new Accounts(":memory:", settings.accounts),
+    prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
+    log: silentLog,
+    health: { store: health, i2c: settings.i2c, page: settings.health },
+    layoutPath: path,
     organization,
-  ).handle,
+    secrets: null,
+    tailscale: null,
+  }).handle,
 );
 const setupHeaders = { Authorization: `Bearer ${sessionToken(password)}`, "Content-Type": "application/json" };
 for (const body of [

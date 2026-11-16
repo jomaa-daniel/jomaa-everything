@@ -7,7 +7,8 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { Api, sessionToken } from "../api.js";
+import { sessionToken } from "../api.js";
+import { hubApi } from "../hub-api.js";
 import { Hub } from "../hub.js";
 import { Accounts } from "../accounts.js";
 import { Clicks } from "../clicks.js";
@@ -59,9 +60,21 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     { stdio: "ignore" },
   );
   const ca = readFileSync(join(dir, "cert.pem"));
-  const store = new HealthStore(join(dir, "health.sqlite"));
-  const accounts = new Accounts(":memory:");
-  const api = new Api(new Hub(), matter, "test-hub-password", accounts, new Clicks(":memory:"), silentLog, store);
+  const store = new HealthStore(join(dir, "health.sqlite"), settings.i2c);
+  const accounts = new Accounts(":memory:", settings.accounts);
+  const api = hubApi({
+    hub: new Hub(),
+    matter,
+    password: "test-hub-password",
+    accounts,
+    prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
+    log: silentLog,
+    health: { store, i2c: settings.i2c, page: settings.health },
+    layoutPath: null,
+    organization: null,
+    secrets: null,
+    tailscale: null,
+  });
   const secure = createServer({ cert: ca, key: readFileSync(join(dir, "key.pem")) }, api.handle);
   const insecure = httpServer(api.handle);
   await Promise.all([
@@ -308,17 +321,21 @@ await test("device inventory includes registered Matter nodes without issuing Pi
       return Promise.resolve({ node_id: 42, available: true, is_bridge: false });
     },
   };
-  const store = new HealthStore(":memory:");
+  const store = new HealthStore(":memory:", settings.i2c);
   const server = httpServer(
-    new Api(
-      new Hub(),
-      controller,
-      "inventory-test-password",
-      new Accounts(":memory:"),
-      new Clicks(":memory:"),
-      silentLog,
-      store,
-    ).handle,
+    hubApi({
+      hub: new Hub(),
+      matter: controller,
+      password: "inventory-test-password",
+      accounts: new Accounts(":memory:", settings.accounts),
+      prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
+      log: silentLog,
+      health: { store, i2c: settings.i2c, page: settings.health },
+      layoutPath: null,
+      organization: null,
+      secrets: null,
+      tailscale: null,
+    }).handle,
   );
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
