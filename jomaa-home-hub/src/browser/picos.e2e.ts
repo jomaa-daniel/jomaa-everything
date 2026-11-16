@@ -85,7 +85,8 @@ await test("USB Pico drawer selects image functions, confirms erasure, resumes a
     const panel = page.locator("#pico-panel");
     await page.getByRole("checkbox", { name: /Health check/ }).waitFor();
     const box = await panel.boundingBox();
-    assert.ok(box && Math.abs(box.x + box.width - 1280) < 2);
+    const bodyBox = await page.locator("body").boundingBox();
+    assert.ok(box && bodyBox && Math.abs(box.x + box.width - bodyBox.x - bodyBox.width) < 2);
     assert.ok(await page.locator("#pico-flash").isDisabled());
     await page.getByRole("checkbox", { name: /I²C raw logging/ }).check();
     assert.ok(await page.getByRole("checkbox", { name: /Health check/ }).isChecked());

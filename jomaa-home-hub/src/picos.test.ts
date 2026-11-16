@@ -239,3 +239,28 @@ test("the component adapter refuses malformed process output", async () => {
   });
   await assert.rejects(adapter.discover());
 });
+
+test("public radio metadata remains valid when its name matches the supplied password", async () => {
+  const imager = new Imager();
+  const runs = new PicoRuns(imager, imageSettings());
+  const run = await runs.start(target.id, {
+    features: ["wifi"],
+    wifi: { ssid: "fixture", password: "native", transport: "native" },
+  });
+  imager.events = [
+    {
+      type: "check",
+      check: {
+        feature: "wifi",
+        status: "passed",
+        message: "Connected",
+        evidence: { transport: "native", ip: "192.0.2.1" },
+      },
+    },
+    { type: "result", status: "passed", message: "Verified" },
+  ];
+  imager.release();
+  await tick();
+  assert.equal(runs.get(run.id).status, "passed");
+  assert.equal(runs.get(run.id).wifiTransport, "native");
+});

@@ -197,6 +197,7 @@ export class PicoPanel {
 
   showRun(run) {
     this.run = run;
+    if (run.wifiTransport !== null) $("pico-radio").value = run.wifiTransport;
     this.selectedFeatures = new Set(run.features);
     this.hostRun = active(run) ? run.id : null;
     if (this.target) this.target.latestRunId = run.id;

@@ -156,7 +156,7 @@ def tls_context(config):
     return ctx
 
 
-def run(capture_enabled=True, telemetry=None):
+def run(capture_enabled=True, telemetry=None, apply_wifi=False):
     with open("device_config.json") as source:
         config = json.load(source)
     with open(STREAM_SETTINGS_FILE) as source:
@@ -170,13 +170,13 @@ def run(capture_enabled=True, telemetry=None):
     try:
         if capture is not None:
             capture.start()
-        report_loop(config, tls, capture, telemetry)
+        report_loop(config, tls, capture, telemetry, apply_wifi)
     finally:
         if capture is not None:
             capture.stop()
 
 
-def report_loop(config, tls, capture, telemetry=None):
+def report_loop(config, tls, capture, telemetry=None, apply_wifi=False):
     radio = None
     transport = config["wifi_transport"]
     if transport == "esp8285":
@@ -191,12 +191,12 @@ def report_loop(config, tls, capture, telemetry=None):
         raise ValueError("unsupported Wi-Fi transport")
     client = HTTPSClient(config, tls, radio)
     try:
-        send_loop(config, capture, radio, wlan, client, telemetry)
+        send_loop(config, capture, radio, wlan, client, telemetry, apply_wifi)
     finally:
         client.close()
 
 
-def send_loop(config, capture, radio, wlan, client, telemetry=None):
+def send_loop(config, capture, radio, wlan, client, telemetry=None, apply_wifi=False):
     runtime = config["runtime"]
     boot_id = telemetry.boot_id if telemetry is not None else binascii.hexlify(os.urandom(16)).decode()
     sequence = 0
@@ -221,7 +221,7 @@ def send_loop(config, capture, radio, wlan, client, telemetry=None):
         last_tick = now
         try:
             if not connected:
-                if not wlan.isconnected():
+                if apply_wifi or not wlan.isconnected():
                     if radio:
                         radio.connect()
                     else:

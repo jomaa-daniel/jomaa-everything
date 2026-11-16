@@ -49,6 +49,7 @@ export interface ImageRun {
   runtimeTargetId?: string;
   features: string[];
   status: "queued" | "running" | "passed" | "failed";
+  wifiTransport: "native" | "esp8285" | null;
   stage: string;
   message: string;
   createdAt: number;
@@ -356,6 +357,7 @@ export class PicoRuns {
         targetId,
         features: request.features,
         status: "queued",
+        wifiTransport: request.wifi?.transport ?? null,
         stage: "queued",
         message: "Imaging requested",
         createdAt: now,
@@ -440,8 +442,7 @@ function evidence(feature: string, value: unknown, request: FlashRequest): Recor
   const f = new Fields(value, "check evidence");
   const string = (key: string) => {
     const result = f.string(key);
-    if (!result || (request.wifi?.password && result === request.wifi.password))
-      throw new Error("Invalid check evidence");
+    if (!result) throw new Error("Invalid check evidence");
     return result;
   };
   const integer = (key: string, min = 0) => {

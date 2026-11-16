@@ -74,6 +74,8 @@ def load_config(path=CONFIG_FILE):
     for key, value in config["telemetry"].items():
         if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
             raise ImageError("Invalid telemetry setting: " + key)
+        if key in ("sampleMilliseconds", "idleMilliseconds", "baud", "temperatureAdc") and type(value) is not int:
+            raise ImageError("Telemetry setting must be a whole number: " + key)
     features = config["features"]
     if not isinstance(features, list) or len(features) != len(SUPPORTED_FEATURES):
         raise ImageError("Invalid image feature catalog")
@@ -348,10 +350,14 @@ class Host:
         self.verify(port, uid, image, request, baseline, emit)
 
     def credential(self, uid, installed):
-        device_id = "pico-" + uid
+        origin = self.setup.provisioner().hub_origin(self.origin)
+        device_id = installed.get("id") or "pico-" + uid
+        if not isinstance(device_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{2,63}", device_id):
+            raise ImageError("The installed device ID is invalid; restore a valid configuration before imaging")
         existing = next((d for d in self.client.request("/api/devices")["devices"] if d["id"] == device_id), None)
         if existing is not None:
-            if (installed.get("id") != device_id or installed.get("hub_host") != self.setup.provisioner().hub_origin(self.origin).hostname
+            if (installed.get("id") != device_id or installed.get("hub_host") != origin.hostname
+                    or installed.get("hub_port") != (origin.port or 443)
                     or not isinstance(installed.get("token"), str) or not re.fullmatch(r"[a-f0-9]{64}", installed["token"])
                     or existing["status"] == "revoked"):
                 raise ImageError("This Pico's hub credential cannot be reused. Replace its credential explicitly before imaging")
@@ -361,10 +367,9 @@ class Host:
                                           "intervalSeconds": self.config["healthIntervalSeconds"]})
             token = issued["token"]
             installed.update({"id": device_id, "token": token,
-                              "hub_host": self.setup.provisioner().hub_origin(self.origin).hostname})
+                              "hub_host": origin.hostname, "hub_port": origin.port or 443})
         self.client.request("/api/devices/" + device_id, {"name": existing["name"] if existing else "Pico " + uid,
                             "intervalSeconds": self.config["healthIntervalSeconds"]}, method="PATCH")
-        origin = self.setup.provisioner().hub_origin(self.origin)
         return {"id": device_id, "token": token, "hub_host": origin.hostname, "hub_port": origin.port or 443,
                 "interval_seconds": self.config["healthIntervalSeconds"], "ca_file": "health_ca.der"}
 
@@ -440,7 +445,11 @@ class Host:
                                    and x["heartbeat"].get("ip") not in (None, "", "0.0.0.0")
                                    and x["heartbeat"].get("freeHeapBytes", 0) > 0}
                         if len(reports) >= self.config["healthReports"]:
-                            passed("health", "New heartbeats from one boot persisted in the hub", {"deviceId": baseline["id"], "bootId": observed["bootId"], "reports": len(reports)})
+                            device = self.client.request(path)["device"]
+                            if device["status"] == "revoked":
+                                raise ImageError("The device credential was revoked during verification")
+                            if device["status"] in ("online", "degraded") and (device.get("latest") or {}).get("bootId") == observed["bootId"]:
+                                passed("health", "New heartbeats from one boot persisted in the hub", {"deviceId": baseline["id"], "bootId": observed["bootId"], "reports": len(reports)})
                     if "i2c" in remaining:
                         captures = self.client.request(path + "/i2c")["logs"]
                         capture = next((x for x in captures if x["bootId"] == observed["bootId"] and

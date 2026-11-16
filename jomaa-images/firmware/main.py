@@ -7,7 +7,7 @@ def run():
     features = status.image["features"]
     if "health" in features:
         import health
-        health.run(capture_enabled="i2c" in features, telemetry=status)
+        health.run(capture_enabled="i2c" in features, telemetry=status, apply_wifi=True)
         return
     wifi = None
     if "wifi" in features:
@@ -22,9 +22,10 @@ def run():
             wifi.active(True)
     ip = None
     connection_due = time.ticks_ms()
+    configured = False
     while True:
         now = time.ticks_ms()
-        if wifi is not None and time.ticks_diff(now, connection_due) >= 0:
+        if wifi is not None and configured and time.ticks_diff(now, connection_due) >= 0:
             try:
                 ip = wifi.ifconfig()[0] if wifi.isconnected() else None
             except Exception:
@@ -44,6 +45,7 @@ def run():
                             raise OSError("Wi-Fi connection timed out")
                         time.sleep_ms(config["runtime"]["joinPollMilliseconds"])
                 ip = wifi.ifconfig()[0]
+                configured = True
                 if ip == "0.0.0.0":
                     ip = None
             except Exception:

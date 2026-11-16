@@ -152,7 +152,8 @@ class ImagesTests(unittest.TestCase):
         boot = "abcdef0123456789"
         reports = [{"id": i, "heartbeat": {"bootId": boot, "sequence": i, "ip": "192.0.2.1", "freeHeapBytes": 1234}} for i in range(1,4)]
         capture = {"bootId": boot, "bus": 0, "sequence": 4, "data": "000102", "dropped": 0}
-        client = SimpleNamespace(request=lambda path: {"logs": [capture] if path.endswith("/i2c") else reports})
+        client = SimpleNamespace(request=lambda path: {"logs": [capture] if path.endswith("/i2c") else reports}
+                    if path.endswith(("/i2c", "/logs")) else {"device": {"status": "online", "latest": {"bootId": boot}}})
         events = self.verify(features, [{"ip": "192.0.2.1", "celsius": 23.5}], client, {"id": "pico-test", "health": 0, "captures": {}})
         passed = {e["check"]["feature"]: e["check"]["evidence"] for e in events if e["check"]["status"] == "passed"}
         self.assertEqual(set(passed), set(features))
@@ -210,6 +211,55 @@ class ImagesTests(unittest.TestCase):
         with patch.object(images, "ROOT", self.path), patch.object(images, "discover", return_value=[]), self.assertRaises(images.ImageError):
             images.execute("gone", {"features": ["temperature"]}, self.config, lambda value: None, host)
         host.reimage.assert_not_called()
+
+    def test_offline_device_does_not_pass_from_earlier_reports(self):
+        boot = "abcdef0123456789"
+        reports = [{"id": i, "heartbeat": {"bootId": boot, "sequence": i, "ip": "192.0.2.1", "freeHeapBytes": 1234}} for i in range(1,4)]
+        client = SimpleNamespace(request=lambda path: {"logs": reports} if path.endswith("/logs") else
+                                 {"device": {"status": "offline", "latest": {"bootId": boot}}})
+        with self.assertRaises(images.ImageError):
+            self.verify(["health", "wifi"], [{"ip": "192.0.2.1"}], client, {"id": "pico-test", "health": 0, "captures": {}})
+
+    def test_wifi_image_applies_settings_and_reconnects(self):
+        connected = [True]
+        calls = []
+        def connect(*args):
+            calls.append(args)
+            connected[0] = True
+        wifi = SimpleNamespace(active=lambda value: None, disconnect=lambda: None,
+                               connect=connect, isconnected=lambda: connected[0], ifconfig=lambda: ("192.0.2.1",))
+        ticks = [0]
+        def sleep(value):
+            ticks[0] += 1000
+            connected[0] = False
+            if len(calls) >= 2:
+                raise StopIteration()
+        clock = SimpleNamespace(ticks_ms=lambda: ticks[0], ticks_diff=lambda a,b: a-b,
+                                ticks_add=lambda a,b: a+b, sleep_ms=sleep)
+        status = SimpleNamespace(image={"features": ["wifi"]}, settings=self.config["telemetry"], tick=lambda ip: None)
+        config = {"wifi_transport": "native", "wifi_ssid": "requested-network", "wifi_password": "private",
+                  "runtime": {"joinTimeoutMilliseconds": 10000, "joinPollMilliseconds": 1}}
+        with patch.dict(sys.modules, {"image_status": status, "time": clock, "network": SimpleNamespace(WLAN=lambda value: wifi, STA_IF=0)}), \
+                patch("builtins.open", return_value=io.StringIO(json.dumps(config))):
+            namespace = runpy.run_path(str(HERE / "firmware/main.py"))
+            with self.assertRaises(StopIteration):
+                namespace["run"]()
+        self.assertEqual(calls, [("requested-network", "private"), ("requested-network", "private")])
+
+    def test_existing_custom_identity_and_name_are_preserved(self):
+        host = images.Host(self.config)
+        host.origin = "https://example.test"
+        requests = []
+        device = {"id": "named-pico", "name": "Family Pico", "status": "online"}
+        def request(path, body=None, method=None):
+            requests.append((path, body))
+            return {"devices": [device]} if path == "/api/devices" else {"device": device}
+        host.client = SimpleNamespace(request=request)
+        installed = {"id": "named-pico", "hub_host": "example.test", "hub_port": 443, "token": "a" * 64}
+        result = host.credential("5303284720e42a9c", installed)
+        self.assertEqual(result["id"], "named-pico")
+        self.assertEqual(requests[-1][1]["name"], "Family Pico")
+        self.assertFalse(any(path.endswith("/enroll") for path,body in requests))
 
 
 if __name__ == "__main__":
