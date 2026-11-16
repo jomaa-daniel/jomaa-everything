@@ -6,7 +6,7 @@ import type { MatterAdmin } from "../matter/nodes.js";
 import type { Hub } from "../hub.js";
 import type { Organization } from "../organization.js";
 import { HealthError, type HealthStore } from "./store.js";
-import type { I2CSettings } from "../settings.js";
+import type { HealthPageSettings, I2CSettings } from "../settings.js";
 
 /** Serves device health to sessions with the devices scope, while pings use only device credentials. */
 export class HealthHttp {
@@ -14,6 +14,7 @@ export class HealthHttp {
   constructor(
     private readonly store: HealthStore,
     private readonly i2cSettings: I2CSettings,
+    private readonly pageSettings: HealthPageSettings,
     private readonly log: Log,
     private readonly matter: MatterAdmin,
     private readonly hub: Hub,
@@ -114,6 +115,7 @@ export class HealthHttp {
           : [],
         matterConnected: this.matter.ready,
         retentionDays: this.store.retentionDays,
+        health: this.pageSettings,
         i2c: {
           historyLimit: this.i2cSettings.historyLimit,
           liveRows: this.i2cSettings.liveRows,

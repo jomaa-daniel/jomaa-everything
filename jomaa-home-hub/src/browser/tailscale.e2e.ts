@@ -74,7 +74,7 @@ const api = hubApi({
   accounts,
   prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
   log: silentLog,
-  health: { store: new HealthStore(":memory:", settings.i2c), i2c: settings.i2c },
+  health: { store: new HealthStore(":memory:", settings.i2c), i2c: settings.i2c, page: settings.health },
   layoutPath: null,
   organization: null,
   secrets: null,

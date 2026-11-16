@@ -37,7 +37,7 @@ function site(overrides: Record<string, () => Response> = {}) {
     if (hostname === "sarah.jomaa.org") return page("text/html");
     if (pathname === "/healthz") return json(200, { ok: true, matterConnected: true });
     if (pathname === "/") {
-      return new Response(null, { status: 302, headers: { Location: hostname === "jomaa.org" ? "/home" : "/devices" } });
+      return new Response(null, { status: 302, headers: { Location: hostname === "jomaa.org" ? "/home" : "/manage" } });
     }
     if (pathname === "/deploy") return json(403, { error: "unauthorized" });
     if (pathname === "/api/login" && method === "POST") {

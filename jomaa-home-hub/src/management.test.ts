@@ -76,7 +76,7 @@ test("management edits categories, rooms and assignments without changing report
       accounts: new Accounts(":memory:", settings.accounts),
       prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
       log: silentLog,
-      health: { store: health, i2c: settings.i2c },
+      health: { store: health, i2c: settings.i2c, page: settings.health },
       layoutPath: path,
       organization,
       secrets: null,

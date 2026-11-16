@@ -57,7 +57,7 @@ async function prefetchLinkedPages() {
   const loaded = new Set([here]);
   for (const entry of performance.getEntriesByType("resource")) {
     const url = new URL(entry.name);
-    if (url.origin === location.origin) loaded.add(url.pathname);
+    if (url.origin === location.origin) loaded.add(url.pathname + url.search);
   }
   const queue = [];
   for (const page of pages) {

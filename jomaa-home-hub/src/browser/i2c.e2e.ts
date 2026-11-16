@@ -9,6 +9,7 @@ import { HealthStore } from "../health/store.js";
 import { Hub } from "../hub.js";
 import { silentLog } from "../log.js";
 import type { MatterAdmin } from "../matter/nodes.js";
+import { Organization } from "../organization.js";
 import { serve } from "../testing.js";
 
 const matter: MatterAdmin = {
@@ -29,6 +30,7 @@ await test("device details show live raw captures, condensed idle spans, pause, 
   const password = "i2c browser owner password";
   store.enroll({ id: "pico-test", name: "Stream Pico" });
   store.enroll({ id: "pico-other", name: "Other Pico" });
+  const organization = new Organization(":memory:");
   const origin = await serve(
     hubApi({
       hub: new Hub(),
@@ -37,9 +39,9 @@ await test("device details show live raw captures, condensed idle spans, pause, 
       accounts,
       prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
       log: silentLog,
-      health: { store, i2c: settings.i2c },
+      health: { store, i2c: settings.i2c, page: settings.health },
       layoutPath: null,
-      organization: null,
+      organization,
       secrets: null,
       tailscale: null,
     }).handle,
@@ -49,8 +51,8 @@ await test("device details show live raw captures, condensed idle spans, pause, 
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   try {
-    await page.goto(origin + "/devices");
-    assert.equal(await page.title(), "Device health · Jomaa Home");
+    await page.goto(origin + "/manage#health");
+    assert.equal(await page.title(), "Devices · Jomaa Home");
     await page.locator("#password").fill(password);
     await page.locator("#login-form button").click();
     await page.getByRole("button", { name: "Stream Pico", exact: true }).click();
@@ -89,5 +91,6 @@ await test("device details show live raw captures, condensed idle spans, pause, 
     await browser.close();
     store.close();
     accounts.close();
+    organization.close();
   }
 });

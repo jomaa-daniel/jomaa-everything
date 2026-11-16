@@ -69,7 +69,7 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     accounts,
     prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
     log: silentLog,
-    health: { store, i2c: settings.i2c },
+    health: { store, i2c: settings.i2c, page: settings.health },
     layoutPath: null,
     organization: null,
     secrets: null,
@@ -130,7 +130,7 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     const origin = `http://127.0.0.1:${httpPort}`;
     const landing = await fetch(origin + "/", { redirect: "manual" });
     assert.equal(landing.status, 302);
-    assert.equal(landing.headers.get("location"), "/devices");
+    assert.equal(landing.headers.get("location"), "/manage");
     const homeRedirect = await new Promise<{ status: number; location: string }>((resolve, reject) => {
       const req = httpRequest(
         { hostname: "127.0.0.1", port: httpPort, path: "/", headers: { Host: "jomaa.org" } },
@@ -151,9 +151,9 @@ await test("HTTPS API separates admin and device auth and persists authenticated
       ["/home/", "text/html"],
       ["/home/base.css", "text/css"],
       ["/home/style.css", "text/css"],
-      ["/devices", "text/html"],
-      ["/devices/app.js", "text/javascript"],
-      ["/devices/style.css", "text/css"],
+      ["/manage", "text/html"],
+      ["/manage/health.js", "text/javascript"],
+      ["/home/ui.css", "text/css"],
     ] as const) {
       const response = await fetch(origin + path);
       assert.equal(response.status, 200);
@@ -330,7 +330,7 @@ await test("device inventory includes registered Matter nodes without issuing Pi
       accounts: new Accounts(":memory:", settings.accounts),
       prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
       log: silentLog,
-      health: { store, i2c: settings.i2c },
+      health: { store, i2c: settings.i2c, page: settings.health },
       layoutPath: null,
       organization: null,
       secrets: null,

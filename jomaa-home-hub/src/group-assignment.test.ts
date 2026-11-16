@@ -73,7 +73,7 @@ test("group edits persist room membership and update the running fan-out", async
       accounts: new Accounts(":memory:", settings.accounts),
       prefetch: { clicks: new Clicks(":memory:"), settings: settings.prefetch },
       log: silentLog,
-      health: { store, i2c: settings.i2c },
+      health: { store, i2c: settings.i2c, page: settings.health },
       layoutPath: path,
       organization: null,
       secrets: null,

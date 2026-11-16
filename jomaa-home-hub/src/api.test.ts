@@ -690,7 +690,6 @@ test("the prefetch list names every page with the files it loads, most-clicked f
   };
   const pages = await listed(anon);
   assert.deepEqual(pages.map((page) => page.path).sort(), [
-    "/devices",
     "/home",
     "/invite",
     "/join",
@@ -700,18 +699,40 @@ test("the prefetch list names every page with the files it loads, most-clicked f
     "/secrets",
     "/tailscale",
   ]);
-  const assets = (path: string) => pages.find((page) => page.path === path)?.assets;
-  assert.deepEqual(assets("/home"), ["/home/base.css", "/home/style.css", "/home/prefetch.js"]);
+  const assets = (path: string) =>
+    pages.find((page) => page.path === path)?.assets.map((url) => url.replace(/\?v=[\w-]+$/, ""));
+  assert.deepEqual(assets("/home"), [
+    "/home/base.css",
+    "/home/style.css",
+    "/home/ui.css",
+    "/home/ui.js",
+    "/home/prefetch.js",
+  ]);
   assert.deepEqual(assets("/permissions"), [
     "/home/base.css",
     "/home/accounts.css",
     "/permissions/app.js",
+    "/home/ui.css",
+    "/home/ui.js",
     "/home/prefetch.js",
     "/home/accounts.js",
   ]);
-  assert.deepEqual(assets("/lights"), ["/lights/style.css", "/lights/app.js"]);
+  assert.deepEqual(assets("/lights"), ["/lights/style.css", "/home/ui.css", "/home/ui.js", "/lights/app.js"]);
   for (const page of pages) {
-    for (const url of [page.path, ...page.assets]) assert.equal((await fetch(env.url + url)).status, 200, url);
+    const bodies = [
+      await (await fetch(env.url + page.path)).text(),
+      ...(await Promise.all(page.assets.map(async (url) => (await fetch(env.url + url)).text()))),
+    ];
+    for (const url of page.assets) {
+      assert.match(url, /\?v=[\w-]+$/, "asset URLs carry their content version");
+      const response = await fetch(env.url + url);
+      assert.equal(response.status, 200, url);
+      assert.equal(response.headers.get("etag"), `"${url.split("?v=")[1] ?? ""}"`, url);
+      assert.ok(
+        bodies.some((body) => body.includes(`"${url}"`)),
+        `${page.path} or its files reference ${url}`,
+      );
+    }
   }
 
   const click = (path: unknown, headers: Record<string, string> = {}) =>
@@ -744,5 +765,14 @@ test("the prefetch list names every page with the files it loads, most-clicked f
     (await listed(guest)).map((page) => page.path),
     ["/lights", "/home", "/join"],
   );
+  await call(env, "PUT", "/api/accounts/visitor/scopes", JSON.stringify({ scopes: ["devices"] }));
+  assert.ok(
+    (await listed(guest)).some((page) => page.path === "/manage"),
+    "health-only accounts discover the unified page",
+  );
+  assert.equal((await call(guest, "GET", "/api/manage")).status, 403, "health scope does not grant organization edits");
+  for (const retired of ["/devices", "/devices/", "/devices/app.js", "/devices/style.css"]) {
+    assert.equal((await fetch(env.url + retired)).status, 404, retired);
+  }
   assert.equal((await listed(env)).length, pages.length, "the owner gets every page");
 });

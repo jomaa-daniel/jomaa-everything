@@ -27,7 +27,13 @@ export class PrefetchModule {
   #prefetch = ({ res, principal }: RequestContext): Promise<void> => {
     const counts = this.clicks.counts();
     const open = this.pages
-      .filter((page) => principal === null || this.authorization.access(principal, page.access) === "allowed")
+      .filter(
+        (page) =>
+          principal === null ||
+          (page.access !== null && typeof page.access === "object" ? page.access : [page.access]).some(
+            (requirement) => this.authorization.access(principal, requirement) === "allowed",
+          ),
+      )
       .map((page) => ({ path: page.path, clicks: counts.get(page.path) ?? 0, assets: page.assets }))
       .sort((a, b) => b.clicks - a.clicks);
     writeJSON(res, 200, { concurrency: this.settings.concurrency, pages: open });

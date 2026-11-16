@@ -5,12 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Invite someone · Jomaa Home</title>
     <link rel="stylesheet" href="/home/base.css" />
-    <link rel="stylesheet" href="/manage/style.css" />
     <link rel="stylesheet" href="/home/accounts.css" />
     <script type="module" src="/invite/app.js"></script>
+    <link rel="stylesheet" href="/home/ui.css" />
+    <script type="module" src="/home/ui.js"></script>
     <script type="module" src="/home/prefetch.js"></script>
   </head>
-  <body>
+  <body class="tui-page">
     <header><a href="/home">Jomaa Home</a><button id="logout" hidden>Sign out</button></header>
     <main>
       <h1>Invite someone</h1>
@@ -35,7 +36,7 @@
           ><button id="create" class="primary">Create link</button>
         </div>
         <h2>Unused invites</h2>
-        <ul id="invites" class="management-list"></ul>
+        <ul id="invites" data-tui-nav="vertical" class="management-list"></ul>
         <p id="invites-empty" class="muted" hidden>None.</p>
       </div>
     </main>

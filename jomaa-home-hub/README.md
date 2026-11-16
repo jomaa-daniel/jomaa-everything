@@ -92,12 +92,16 @@ Following a same-origin link, by click or middle click, sends
 paths from same-origin requests.
 
 Pages and their files are served with `Cache-Control: no-cache` and a content
-`ETag`. Chrome opens a prefetched copy for five minutes without asking the hub
-again; other browsers revalidate it, and the hub answers `304 Not Modified`
-while the file is unchanged.
+`ETag`, and the hub answers `304 Not Modified` while a file is unchanged.
+The hub rewrites every stylesheet, script and module reference in the pages and
+their scripts to carry the file's content version, such as
+`/home/prefetch.js?v=<version>`, and `/api/prefetch` lists those URLs. A
+changed file gets a new URL, so a browser that keeps scripts and styles in its
+cache never pairs a new page with an old file. Chrome opens a prefetched copy
+for five minutes without asking the hub again.
 
 The locally managed Cloudflare tunnel also routes hostname `jomaa.org`, paths `/`,
-`/home`, `/devices`, `/manage`, `/lights`, `/invite`, `/join`, `/permissions`, `/tailscale`, `/secrets` (including assets), and the pages' API requests to the hub on port 8080. Its proxied DNS record
+`/home`, `/manage`, `/lights`, `/invite`, `/join`, `/permissions`, `/tailscale`, `/secrets` (including assets), and the pages' API requests to the hub on port 8080. Its proxied DNS record
 points to the same tunnel as `hub.jomaa.org`. The apex `/` redirects to `/home`;
 the hub subdomain's `/` continues to open device health.
 
@@ -105,7 +109,20 @@ the hub subdomain's `/` continues to open device health.
 
 `https://jomaa.org/manage` manages custom device types, groups, and assignments
 for configured Govee lights, paired Matter devices, and health reporters. It
-needs the owner or an account with the `manage` scope. Types have distinct colors; assigning a
+needs the owner or an account with the `manage` or `devices` scope. Organization
+actions require `manage`; health and diagnostics require `devices`. The Devices tab opens a
+compact inventory with an editor for the selected device. Category and group
+changes save immediately. The Types and Groups tabs create, rename, and delete
+categories and groups. The Health tab preserves enrollment, Matter discovery,
+health history, and live I2C captures. The standalone `/devices` page is not served.
+Arrow keys select device rows, Enter opens the editor,
+`/` focuses search, and Escape returns to the list or cancels a rename.
+On phones, selecting a device opens its editor with a button to return to the
+inventory. The bottom bar shows commands for the focused control and save results.
+The dark palette, titled panes, and focus indicators are described in
+[Organization design](docs/organization-design.md).
+
+Types have distinct colors; assigning a
 custom type changes the inventory category while hardware types and capabilities
 stay device-reported. Deleting a type clears its assignments.
 
@@ -478,7 +495,7 @@ session expiry and phone layouts without starting backend services.
 
 ## Wi-Fi device health
 
-The hub includes a device inventory, SQLite health history, and a management page at `https://jomaa.org/devices`.
+The hub includes a device inventory, SQLite health history, and a management page at `https://jomaa.org/manage#health`.
 Add device opens a network discovery window for Matter devices advertising for
 pairing or sharing. It scans while open, lists device names, addresses and
 pairing availability, and stops when closed. Scan again retries discovery.

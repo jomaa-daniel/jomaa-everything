@@ -125,7 +125,7 @@ async function run(log: Log): Promise<void> {
       accounts: people,
       prefetch: { clicks: followed, settings: settings.prefetch },
       log,
-      health: { store, i2c: settings.i2c },
+      health: { store, i2c: settings.i2c, page: settings.health },
       layoutPath: cliOptions.config,
       organization,
       secrets: {

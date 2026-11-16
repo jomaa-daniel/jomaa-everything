@@ -18,7 +18,7 @@ import type { Organization } from "./organization.js";
 import { OrganizationModule } from "./organization-module.js";
 import { PrefetchModule } from "./prefetch-module.js";
 import { SecretsModule, type SecretsAdmin } from "./secrets-module.js";
-import type { I2CSettings, PrefetchSettings, TailscaleSettings } from "./settings.js";
+import type { HealthPageSettings, I2CSettings, PrefetchSettings, TailscaleSettings } from "./settings.js";
 import type { TailscaleService } from "./tailscale.js";
 import { TailscaleModule } from "./tailscale-module.js";
 import { UserService } from "./users.js";
@@ -36,7 +36,7 @@ export interface HubApiParts {
   prefetch: { clicks: Clicks; settings: PrefetchSettings };
   log: Log;
   /** Device health; without it the /api/devices health routes are not served. */
-  health: { store: HealthStore; i2c: I2CSettings } | null;
+  health: { store: HealthStore; i2c: I2CSettings; page: HealthPageSettings } | null;
   /** The device layout file the device and organization pages edit. */
   layoutPath: string | null;
   organization: Organization | null;
@@ -87,6 +87,7 @@ export function hubApi(parts: HubApiParts): Api {
       ? new HealthHttp(
           parts.health.store,
           parts.health.i2c,
+          parts.health.page,
           log.with({ component: "device-health" }),
           matter,
           hub,
