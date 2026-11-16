@@ -156,22 +156,27 @@ def tls_context(config):
     return ctx
 
 
-def run():
+def run(capture_enabled=True, telemetry=None):
     with open("device_config.json") as source:
         config = json.load(source)
     with open(STREAM_SETTINGS_FILE) as source:
         config["runtime"] = json.load(source)
-    from stream import I2CCapture
     tls = tls_context(config)
-    capture = I2CCapture(config["runtime"])
+    if capture_enabled:
+        from stream import I2CCapture
+        capture = I2CCapture(config["runtime"])
+    else:
+        capture = None
     try:
-        capture.start()
-        report_loop(config, tls, capture)
+        if capture is not None:
+            capture.start()
+        report_loop(config, tls, capture, telemetry)
     finally:
-        capture.stop()
+        if capture is not None:
+            capture.stop()
 
 
-def report_loop(config, tls, capture):
+def report_loop(config, tls, capture, telemetry=None):
     radio = None
     transport = config["wifi_transport"]
     if transport == "esp8285":
@@ -186,14 +191,14 @@ def report_loop(config, tls, capture):
         raise ValueError("unsupported Wi-Fi transport")
     client = HTTPSClient(config, tls, radio)
     try:
-        send_loop(config, capture, radio, wlan, client)
+        send_loop(config, capture, radio, wlan, client, telemetry)
     finally:
         client.close()
 
 
-def send_loop(config, capture, radio, wlan, client):
+def send_loop(config, capture, radio, wlan, client, telemetry=None):
     runtime = config["runtime"]
-    boot_id = binascii.hexlify(os.urandom(16)).decode()
+    boot_id = telemetry.boot_id if telemetry is not None else binascii.hexlify(os.urandom(16)).decode()
     sequence = 0
     interval = config["interval_seconds"]
     retry = runtime["retrySeconds"]
@@ -204,11 +209,13 @@ def send_loop(config, capture, radio, wlan, client):
     pending_capture = None
     health_due = time.ticks_ms()
     upload_due = health_due
-    bus_ids = [bus["id"] for bus in runtime["buses"]]
+    bus_ids = [bus["id"] for bus in runtime["buses"]] if capture is not None else []
     next_bus = 0
     connected = False
     ip = None
     while True:
+        if telemetry is not None:
+            telemetry.tick(ip)
         now = time.ticks_ms()
         uptime_ms += time.ticks_diff(now, last_tick)
         last_tick = now
@@ -244,14 +251,15 @@ def send_loop(config, capture, radio, wlan, client):
                 pending = {"bootId": boot_id, "sequence": sequence, "firmware": FIRMWARE,
                            "uptimeSeconds": uptime_ms // 1000, "freeHeapBytes": heap,
                            "ip": ip,
-                           "status": "degraded" if heap < runtime["lowHeapBytes"] or capture.stopped else "healthy"}
+                           "status": "degraded" if heap < runtime["lowHeapBytes"] or
+                           (capture is not None and capture.stopped) else "healthy"}
                 try:
                     pending["rssi"] = wlan.status("rssi")
                 except (OSError, ValueError, AttributeError):
                     pass
                 if heap < runtime["lowHeapBytes"]:
                     pending["message"] = "Low free heap"
-                elif capture.stopped:
+                elif capture is not None and capture.stopped:
                     pending["message"] = "I2C capture stopped"
             if pending is not None:
                 result = client.post(pending, "health")
@@ -262,7 +270,7 @@ def send_loop(config, capture, radio, wlan, client):
                 health_due = time.ticks_add(time.ticks_ms(), interval * 1000)
                 retry = runtime["retrySeconds"]
                 print("Health report acknowledged")
-            elif pending_capture is not None or time.ticks_diff(time.ticks_ms(), upload_due) >= 0:
+            elif capture is not None and (pending_capture is not None or time.ticks_diff(time.ticks_ms(), upload_due) >= 0):
                 if pending_capture is None:
                     for _ in bus_ids:
                         bus = bus_ids[next_bus]

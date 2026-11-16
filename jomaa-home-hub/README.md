@@ -52,6 +52,33 @@ the host. Thread devices also need a Thread border router on the network.
 Set `MATTER_LOG_LEVEL` (`debug`, `info`, `notice`, `warn`, `error`; default
 `notice`) for Matter detail in the journal.
 
+## USB Pico imaging
+
+The Devices page includes a USB Picos card underneath the registered inventory.
+Its right-side panel loads the functionality catalog from `jomaa-images` and
+starts a confirmed clean flash of one Pico physically attached to the hub server.
+The image can include health reporting, Wi-Fi, internal temperature readings and
+active raw I²C logging. Health requires Wi-Fi; I²C requires both.
+
+Imaging runs continue when the panel closes. The panel displays progress and
+per-function evidence from the installed startup after reset. A copy alone does
+not pass verification. The component's [README](../jomaa-images/README.md) describes
+USB permissions, TLS trust and the verification contracts; its
+[settings](../jomaa-images/config.md) configure host commands, limits and retention.
+
+| Endpoint                           | Behavior                                                                                                     |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `GET /api/picos`                   | Server USB targets, active run ID, and configured polling interval.                                          |
+| `GET /api/picos/catalog`           | Function IDs, labels, descriptions, defaults, dependencies and default radio.                                |
+| `POST /api/picos/{targetId}/flash` | Starts a run for `features` and optional `wifi` (`ssid`, `password`, `transport`). Returns the accepted run. |
+| `GET /api/picos/runs/{runId}`      | Safe run status and selected function results/evidence.                                                      |
+
+These routes require Devices access. Flash requests require the existing
+same-origin checks and permit neither executable nor device paths from the
+browser. Wi-Fi passwords travel only in the request body and private prepared
+configuration. Terminal run records expire according to the imaging settings;
+interrupted runs fail on hub restart.
+
 ## Local development
 
 From `jomaa-home-hub/`, create the local config and secrets, then run:

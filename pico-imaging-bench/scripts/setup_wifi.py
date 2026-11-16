@@ -19,8 +19,9 @@ import time
 import urllib.request
 import zipfile
 
-FIRMWARE_URL = "https://micropython.org/resources/firmware/RPI_PICO_W-20260824-v1.29.0.uf2"
-FIRMWARE_SHA256 = "f918c0a082c6daf53e27998b7f990ba5f065db2e298b21a34024532a20786794"
+FIRMWARE_SETTINGS = json.loads((Path(__file__).resolve().parents[1] / "config.json").read_text())
+FIRMWARE_URL = FIRMWARE_SETTINGS["firmwareUrl"]
+FIRMWARE_SHA256 = FIRMWARE_SETTINGS["firmwareSha256"]
 PACKAGES = {"mpremote": "1.29.0", "pyserial": "3.5", "platformdirs": "4.14.5"}
 
 BOOT = r'''import json

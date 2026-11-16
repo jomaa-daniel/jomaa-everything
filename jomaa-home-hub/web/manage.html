@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/home/ui.css" />
     <script type="module" src="/home/ui.js"></script>
     <script type="module" src="/home/prefetch.js"></script>
+    <link rel="stylesheet" href="/manage/picos.css" />
   </head>
   <body class="tui-page organization-page">
     <header>
@@ -104,6 +105,15 @@
               <button id="health-open" class="quiet" hidden>Health &amp; diagnostics →</button>
             </aside>
           </div>
+          <section id="usb-picos" class="pico-card" hidden aria-labelledby="pico-title">
+            <div class="detail-heading">
+              <h2 id="pico-title">USB Picos</h2>
+              <button id="pico-refresh" type="button">Refresh USB</button>
+            </div>
+            <p class="muted">Connected to the hub server. Choose a Pico to image it.</p>
+            <p id="pico-inventory-status" role="status" aria-live="polite"></p>
+            <div id="pico-targets"></div>
+          </section>
         </section>
         <section id="health-panel" role="tabpanel" aria-labelledby="health-tab" hidden>
           <div class="toolbar">
@@ -320,6 +330,41 @@
         <div id="command-hints" aria-label="Keyboard commands" hidden></div>
       </div>
     </footer>
+    <dialog id="pico-panel" class="pico-panel" aria-labelledby="pico-panel-title">
+      <div class="detail-heading">
+        <h2 id="pico-panel-title">Image Pico</h2>
+        <button id="pico-close" type="button" aria-label="Close imaging panel">Close</button>
+      </div>
+      <p id="pico-identity" class="device-id"></p>
+      <p id="pico-description" class="muted"></p>
+      <p class="muted">Choose the functionality to install from jomaa-images.</p>
+      <p id="pico-panel-status" role="status" aria-live="polite"></p>
+      <button id="pico-retry" type="button" hidden>Retry</button>
+      <form id="pico-form">
+        <fieldset id="pico-options">
+          <legend>Functionality</legend>
+          <div id="pico-features"></div>
+        </fieldset>
+        <fieldset id="pico-wifi" hidden>
+          <legend>Wi-Fi settings</legend>
+          <label for="pico-radio">Radio</label
+          ><select id="pico-radio">
+            <option value="esp8285">External ESP8285</option>
+            <option value="native">Native Pico W</option>
+          </select>
+          <label for="pico-ssid">Network name</label><input id="pico-ssid" autocomplete="off" />
+          <label for="pico-password">Network password</label
+          ><input id="pico-password" type="password" autocomplete="off" />
+        </fieldset>
+        <p class="pico-erase">Flashing replaces the firmware and erases this Pico's files.</p>
+        <button id="pico-flash" type="submit" class="primary" disabled>Flash image</button>
+      </form>
+      <section id="pico-results" hidden aria-labelledby="pico-results-title">
+        <h3 id="pico-results-title">Image test results</h3>
+        <p id="pico-run-status" role="status" aria-live="polite"></p>
+        <ol id="pico-checks"></ol>
+      </section>
+    </dialog>
     <dialog id="discover-dialog" aria-labelledby="discover-title" aria-describedby="discover-help">
       <h2 id="discover-title">Add device</h2>
       <p id="discover-help" class="muted">

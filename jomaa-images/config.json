@@ -1,0 +1,48 @@
+{
+  "command": ["python3", "jomaa-images/images.py"],
+  "benchScripts": "pico-imaging-bench/scripts",
+  "hubDeploy": "jomaa-home-hub/deploy.json",
+  "runDirectory": "jomaa-images/data/runs",
+  "runStateFile": "jomaa-images/data/runs.json",
+  "lockFile": "jomaa-images/data/imaging.lock",
+  "trustedCaFile": null,
+  "commandTimeoutSeconds": 30,
+  "flashTimeoutSeconds": 600,
+  "verificationSeconds": 180,
+  "usbTimeoutSeconds": 60,
+  "returnTimeoutSeconds": 60,
+  "pollMilliseconds": 2000,
+  "retentionHours": 24,
+  "maxOutputBytes": 65536,
+  "maxRequestBytes": 4096,
+  "healthReports": 3,
+  "healthIntervalSeconds": 15,
+  "defaultWifiTransport": "esp8285",
+  "discovery": {
+    "ttyDirectory": "/sys/class/tty",
+    "blockDirectory": "/sys/class/block",
+    "deviceDirectory": "/dev",
+    "serialDirectory": "/dev/serial/by-id",
+    "vendorId": "2e8a",
+    "runtimeProductId": "0005",
+    "bootselProductId": "0003",
+    "blockCommand": ["lsblk", "--json", "--paths", "--output", "PATH,LABEL,MOUNTPOINTS"]
+    ,"mountCommand": ["udisksctl", "mount", "--no-user-interaction", "--block-device"]
+  },
+  "telemetry": {
+    "sampleMilliseconds": 1000,
+    "idleMilliseconds": 10,
+    "baud": 115200,
+    "temperatureAdc": 4,
+    "referenceVolts": 3.3,
+    "referenceCelsius": 27,
+    "referenceSensorVolts": 0.706,
+    "voltsPerCelsius": 0.001721
+  },
+  "features": [
+    {"id": "health", "label": "Health check", "description": "Send verified heartbeats to the hub. Verification requires new reports from one boot.", "requires": ["wifi"], "default": false},
+    {"id": "wifi", "label": "Wi-Fi", "description": "Connect with an ESP8285 radio or a native Pico W radio.", "requires": [], "default": false},
+    {"id": "temperature", "label": "Temperature reading", "description": "Read the Pico's built-in temperature sensor and report Celsius over USB.", "requires": [], "default": false},
+    {"id": "i2c", "label": "I²C raw logging", "description": "Actively read the configured I²C buses and send raw captures to the hub. This is not passive bus sniffing.", "requires": ["health", "wifi"], "default": false}
+  ]
+}

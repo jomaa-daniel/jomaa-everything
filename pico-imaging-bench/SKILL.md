@@ -62,7 +62,7 @@ and [receiver API](../jomaa-home-hub/docs/health-monitoring.md).
 through `--target-port` erases the target filesystem. Keep these distinct effects explicit when
 changing the scripts.
 
-The one-shot scripts pin the MicroPython UF2 URL and SHA-256 in `setup_wifi.py`. The firmware must
+The one-shot scripts read the MicroPython UF2 URL and SHA-256 from `config.json`. The firmware must
 include `ssl.SSLContext`, `CERT_REQUIRED`, and `load_verify_locations`. Automatic extraction of the
 OS-verified root CA in `setup_pico.py` requires host Python 3.13+.
 
