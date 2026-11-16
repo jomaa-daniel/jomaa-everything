@@ -21,13 +21,22 @@ def run():
             wifi = network.WLAN(network.STA_IF)
             wifi.active(True)
     ip = None
+    connection_due = time.ticks_ms()
     while True:
+        now = time.ticks_ms()
+        if wifi is not None and time.ticks_diff(now, connection_due) >= 0:
+            try:
+                ip = wifi.ifconfig()[0] if wifi.isconnected() else None
+            except Exception:
+                ip = None
+            connection_due = time.ticks_add(now, status.settings["sampleMilliseconds"])
         status.tick(ip)
         if wifi is not None and ip is None:
             try:
                 if config["wifi_transport"] == "esp8285":
                     wifi.connect()
                 else:
+                    wifi.disconnect()
                     wifi.connect(config["wifi_ssid"], config["wifi_password"])
                     start = time.ticks_ms()
                     while not wifi.isconnected():

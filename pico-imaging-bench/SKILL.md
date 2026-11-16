@@ -172,5 +172,5 @@ diagnostic output.
 
 Run `scripts/test_pico.py` to require three new database reports from one boot. It never opens USB and
 leaves the running reporter alone. Existing online status and duplicate/out-of-order logs are insufficient.
-The health UI is `/devices`. Device registration and accepted reports must be verified against the
+The health UI is `/manage#health`. Device registration and accepted reports must be verified against the
 configured hub's persisted records, including after a restart when checking startup persistence.

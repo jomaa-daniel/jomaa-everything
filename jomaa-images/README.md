@@ -2,13 +2,22 @@
 
 The Devices page shows USB Picos attached to the Linux hub server. Selecting a board opens the imaging panel with the functions in `config.json`. Health check requires Wi-Fi; I²C raw logging requires both. Temperature reading uses the Pico's internal sensor and emits Celsius over USB. I²C logging performs active reads on the configured buses.
 
-`Flash image` confirms the target and filesystem erasure, then starts a server-owned run. The panel shows progress and each selected function's observed evidence. Closing the panel does not cancel imaging. Runs are private and retained according to `retentionHours`; interrupted runs fail on hub restart.
+`Flash image` confirms the target and filesystem erasure, then starts a server-owned run. The panel shows progress and each selected function's observed evidence. Closing the panel does not cancel imaging. Run summaries are private and retained according to `retentionHours`; interrupted runs fail on hub restart. Prepared files remain in the private run directory.
 
 The host needs Python, internet access for verified USB tools and firmware, readable/writable serial devices, and permission to mount the selected BOOTSEL volume with `udisksctl`. Imaging is noninteractive and does not run sudo. Health images need the hub service's `HUB_PASSWORD` environment and a trusted root CA through `trustedCaFile` or OS-verified chain extraction. The administrator password is never installed on the Pico. Wi-Fi credentials arrive over stdin and exist only in private prepared/device configuration.
 
 Only the selected board is opened. A runtime board's returning unique ID is checked before formatting; a BOOTSEL board without a known runtime ID is identified by its USB bootloader identity before writing and checked after firmware returns. Multiple BOOTSEL targets are refused. Flashing validates the trusted UF2 digest, block layout, chip family and BOOTSEL volume, then formats LittleFS with the required flash alignment.
 
 ## Commands
+
+The operator applies USB access on the hub server with the root setup command:
+
+```
+python3 jomaa-images/setup_server.py
+sudo python3 jomaa-images/setup_server.py --execute
+```
+
+The first command shows the policies. Execution grants the configured group access to matching Pico serial/block devices and permits noninteractive mounting only for the configured BOOTSEL USB identity and filesystem label. It reloads udev and updates matching attached device permissions. This root step is run by the user; ordinary deployment and imaging do not run sudo.
 
 Run from the repository root:
 

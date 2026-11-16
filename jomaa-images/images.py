@@ -50,6 +50,14 @@ def load_config(path=CONFIG_FILE):
     if config.get("trustedCaFile") is not None and not isinstance(config["trustedCaFile"], str):
         raise ImageError("Invalid trustedCaFile")
     discovery = config["discovery"]
+    if not isinstance(discovery.get("bootselLabel"), str) or not discovery["bootselLabel"]:
+        raise ImageError("Invalid discovery.bootselLabel")
+    setup = config["setup"]
+    if not isinstance(setup["group"], str) or not re.fullmatch(r"[a-z_][a-z0-9_-]*", setup["group"]):
+        raise ImageError("Invalid setup.group")
+    for key in ("udevRulesFile", "polkitRulesFile", "udevadm"):
+        if not isinstance(setup[key], str) or not Path(setup[key]).is_absolute():
+            raise ImageError("Invalid setup path: " + key)
     for key in ("ttyDirectory", "blockDirectory", "deviceDirectory", "serialDirectory"):
         if not isinstance(discovery.get(key), str) or not Path(discovery[key]).is_absolute():
             raise ImageError("Invalid discovery path: " + key)
@@ -129,7 +137,7 @@ def discover(config, private=False):
                             timeout=config["commandTimeoutSeconds"])
     def volumes(items):
         for item in items:
-            if item.get("label") == "RPI-RP2":
+            if item.get("label") == settings["bootselLabel"]:
                 mounts[item["path"]] = next((x for x in item.get("mountpoints", []) if x), None)
             volumes(item.get("children", []))
     volumes(json.loads(result.stdout)["blockdevices"])

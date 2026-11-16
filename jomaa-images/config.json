@@ -18,6 +18,12 @@
   "healthReports": 3,
   "healthIntervalSeconds": 15,
   "defaultWifiTransport": "esp8285",
+  "setup": {
+    "group": "jerry",
+    "udevRulesFile": "/etc/udev/rules.d/70-jomaa-picos.rules",
+    "polkitRulesFile": "/etc/polkit-1/rules.d/70-jomaa-picos.rules",
+    "udevadm": "/usr/bin/udevadm"
+  },
   "discovery": {
     "ttyDirectory": "/sys/class/tty",
     "blockDirectory": "/sys/class/block",
@@ -26,6 +32,7 @@
     "vendorId": "2e8a",
     "runtimeProductId": "0005",
     "bootselProductId": "0003",
+    "bootselLabel": "RPI-RP2",
     "blockCommand": ["lsblk", "--json", "--paths", "--output", "PATH,LABEL,MOUNTPOINTS"]
     ,"mountCommand": ["udisksctl", "mount", "--no-user-interaction", "--block-device"]
   },
@@ -43,6 +50,6 @@
     {"id": "health", "label": "Health check", "description": "Send verified heartbeats to the hub. Verification requires new reports from one boot.", "requires": ["wifi"], "default": false},
     {"id": "wifi", "label": "Wi-Fi", "description": "Connect with an ESP8285 radio or a native Pico W radio.", "requires": [], "default": false},
     {"id": "temperature", "label": "Temperature reading", "description": "Read the Pico's built-in temperature sensor and report Celsius over USB.", "requires": [], "default": false},
-    {"id": "i2c", "label": "I²C raw logging", "description": "Actively read the configured I²C buses and send raw captures to the hub. This is not passive bus sniffing.", "requires": ["health", "wifi"], "default": false}
+    {"id": "i2c", "label": "I²C raw logging", "description": "Actively read the configured I²C buses and send raw captures to the hub.", "requires": ["health", "wifi"], "default": false}
   ]
 }

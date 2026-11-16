@@ -23,6 +23,11 @@
 | `healthReports` | Required new persisted heartbeats from the installed boot. |
 | `healthIntervalSeconds` | Reporter interval selected during imaging verification. |
 | `defaultWifiTransport` | Initially selected physical radio transport in the imaging panel. |
+| `setup` | One-time root-owned USB access policies applied only by the operator. |
+| `setup.group` | Existing group granted Pico serial access and BOOTSEL mount permission. |
+| `setup.udevRulesFile` | Absolute destination for the root-owned Pico device rules. |
+| `setup.polkitRulesFile` | Absolute destination for the root-owned BOOTSEL mount policy. |
+| `setup.udevadm` | Absolute udev command used for rule reload, device identity lookup and targeted change events. |
 | `discovery` | Linux USB discovery settings. |
 | `discovery.ttyDirectory` | Kernel tty device inventory. |
 | `discovery.blockDirectory` | Kernel block device inventory. |
@@ -31,10 +36,11 @@
 | `discovery.vendorId` | USB vendor to include. |
 | `discovery.runtimeProductId` | MicroPython runtime USB product. |
 | `discovery.bootselProductId` | RP2040 BOOTSEL USB product. |
+| `discovery.bootselLabel` | BOOTSEL filesystem label required for discovery and mount authorization. |
 | `discovery.blockCommand` | Command returning block paths, labels and mountpoints as lsblk JSON. |
 | `discovery.mountCommand` | Noninteractive mount command, followed by the selected block device path. |
 | `telemetry` | Installed USB observations and internal temperature sensor calibration. |
-| `telemetry.sampleMilliseconds` | Interval between USB observations and temperature samples. |
+| `telemetry.sampleMilliseconds` | Minimum interval between USB observations and temperature samples, and the Wi-Fi-only connection check interval. |
 | `telemetry.idleMilliseconds` | Main loop delay for an image without health reporting. |
 | `telemetry.baud` | Host USB serial observation baud rate. |
 | `telemetry.temperatureAdc` | ADC channel of the internal temperature sensor. |

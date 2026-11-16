@@ -90,7 +90,7 @@
 }
 .pico-check.passed strong,
 .pico-panel .success {
-  color: var(--accent);
+  color: var(--success);
 }
 .pico-check.failed strong,
 .pico-error {
