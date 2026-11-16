@@ -10,11 +10,11 @@ Only the selected board is opened. A runtime board's returning unique ID is chec
 
 ## Commands
 
-The operator applies USB access on the hub server with the root setup command:
+The operator applies USB access on jerry from the current release with the root setup command. Push first, so the current release has the script:
 
 ```
-python3 jomaa-images/setup_server.py
-sudo python3 jomaa-images/setup_server.py --execute
+ssh jerry python3 .local/share/jomaa-deploy/current/jomaa-images/setup_server.py
+ssh -t jerry sudo python3 .local/share/jomaa-deploy/current/jomaa-images/setup_server.py --execute
 ```
 
 The first command shows the policies. Execution grants the configured group access to matching Pico serial/block devices and permits noninteractive mounting only for the configured BOOTSEL USB identity and filesystem label. It reloads udev and updates matching attached device permissions. This root step is run by the user; ordinary deployment and imaging do not run sudo.
