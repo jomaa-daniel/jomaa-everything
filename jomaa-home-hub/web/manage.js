@@ -1,6 +1,8 @@
 import { sessionEndEvent, updateUIHints } from "/home/ui.js";
 import { loadHealth, resetHealth, closeHealth, selectHealth } from "/manage/health.js";
+import { PicoPanel } from "/manage/picos.js";
 const $ = (id) => document.getElementById(id);
+const picoPanel = new PicoPanel(() => signedIn(false));
 const tabs = ["devices", "types", "groups", "health"];
 const sourceLabels = { matter: "Matter", govee: "Govee", health: "Health reporter" };
 let catalog = { types: [], groups: [], devices: [] };
@@ -31,6 +33,10 @@ function notice(text, state = "") {
 }
 
 function updateCommands() {
+  if (document.activeElement.closest("#pico-panel")) {
+    updateUIHints();
+    return;
+  }
   if (activeTab === "health") {
     updateUIHints();
     return;
@@ -93,6 +99,7 @@ function updateCommands() {
 }
 
 function signedIn(value) {
+  picoPanel.session(value && canHealth);
   $("login-section").hidden = value;
   for (const id of ["management", "logout", "refresh", "command-hints"]) $(id).hidden = !value;
   if (!value) {
@@ -214,6 +221,8 @@ function plural(count, singular) {
 }
 
 function showTab(tab, focus = false) {
+  if (tab === "health") $("inventory").after($("usb-picos"));
+  else if (tab === "devices") $("device-workspace").after($("usb-picos"));
   const refreshDevices = activeTab === "health" && tab === "devices" && canManage && !$("management").hidden;
   if (tab !== "health") closeHealth();
   activeTab = tab;

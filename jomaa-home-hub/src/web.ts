@@ -37,6 +37,8 @@ const assetFiles: Record<string, [string, string]> = {
   "/secrets/style.css": ["secrets.css", css],
   "/manage/app.js": ["manage.js", js],
   "/manage/health.js": ["health.js", js],
+  "/manage/picos.js": ["picos.js", js],
+  "/manage/picos.css": ["picos.css", css],
   "/manage/style.css": ["manage.css", css],
   "/lights/app.js": ["lights.js", js],
   "/lights/style.css": ["lights.css", css],

@@ -1,0 +1,101 @@
+.pico-card {
+  border: 1px solid var(--border);
+  border-radius: 0;
+  margin-top: 32px;
+  padding: 24px;
+  width: min(100%, 440px);
+  aspect-ratio: 1;
+  min-height: 300px;
+}
+.pico-card .detail-heading {
+  flex-wrap: wrap;
+}
+.pico-target {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-top: 12px;
+  white-space: normal;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.tui-page dialog.pico-panel {
+  background: var(--surface);
+  color: var(--ink);
+  position: fixed;
+  inset: 0 0 0 auto;
+  margin: 0;
+  width: min(520px, 100%);
+  max-width: 100%;
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+  border-width: 0 0 0 1px;
+  overflow: auto;
+}
+.pico-panel > .detail-heading {
+  position: sticky;
+  top: 0;
+  padding: 8px 0;
+  background: var(--surface);
+  z-index: 1;
+}
+.pico-panel fieldset {
+  border: 0;
+  padding: 0;
+  margin: 24px 0;
+  min-width: 0;
+}
+.pico-panel legend {
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.pico-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  font-size: 14px;
+}
+.pico-feature input {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin: 4px 0;
+  flex-shrink: 0;
+}
+.pico-feature span span {
+  display: block;
+  font-weight: 400;
+  font-size: 13px;
+  margin-top: 4px;
+}
+.pico-panel select {
+  width: 100%;
+  margin-bottom: 16px;
+}
+.pico-erase {
+  color: var(--muted);
+  font-size: 13px;
+}
+.pico-check {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.pico-check > * {
+  display: block;
+}
+.pico-check.passed strong,
+.pico-panel .success {
+  color: var(--success);
+}
+.pico-check.failed strong,
+.pico-error {
+  color: var(--error);
+}
+#pico-checks {
+  padding-left: 22px;
+}

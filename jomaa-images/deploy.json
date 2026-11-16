@@ -1,0 +1,6 @@
+{
+  "name": "images",
+  "inputs": ["pico-imaging-bench", "jomaa-home-hub/scripts/init_pico.py", "jomaa-home-hub/devices/pico-health", "jomaa-home-hub/settings.json"],
+  "checks": [["{python}", "-m", "unittest", "discover", "-s", "tests", "-q"]],
+  "state": ["jomaa-images/data"]
+}

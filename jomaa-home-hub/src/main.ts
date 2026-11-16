@@ -17,6 +17,7 @@ import { EnvFiles } from "./secrets.js";
 import { DeployWorkflow, GitHubCli } from "./redeploy.js";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { ImageCommand, imageSettings, PicoRuns } from "./picos.js";
 import { stderrLog, type Log } from "./log.js";
 import { MatterNotReadyError, type MatterAdmin, type MatterNodes } from "./matter/nodes.js";
 
@@ -91,6 +92,17 @@ async function run(log: Log): Promise<void> {
     accounts = people;
     const followed = new Clicks(besideHealth(settings.prefetch.databaseFile));
     clicks = followed;
+    let images: PicoRuns | undefined;
+    try {
+      const imageConfig = imageSettings();
+      images = new PicoRuns(
+        new ImageCommand(imageConfig),
+        imageConfig,
+        fileURLToPath(new URL(imageConfig.runStateFile, releaseRoot)),
+      );
+    } catch {
+      log.error("USB Pico imaging setup is unavailable", {});
+    }
     const api = new Api(
       Hub.build(cfg, govee, matter),
       matter,
@@ -111,6 +123,7 @@ async function run(log: Log): Promise<void> {
         }),
         cli: new GitHubCli(settings.secrets.ghCommand, deploySettings.githubTimeoutSeconds * 1000),
       },
+      images,
     );
     const cert = process.env["HUB_TLS_CERT"];
     const key = process.env["HUB_TLS_KEY"];

@@ -18,6 +18,7 @@ import type { EnvChange } from "./envfile.js";
 import { SecretsError, type EnvFiles } from "./secrets.js";
 import type { DeployWorkflow, GitHubCli } from "./redeploy.js";
 import { settings } from "./settings.js";
+import { PicoError, type PicoRuns } from "./picos.js";
 import {
   AccountError,
   isScope,
@@ -136,6 +137,7 @@ export class Api {
     private readonly layoutPath?: string,
     private readonly organization?: Organization,
     private readonly secrets?: SecretsAdmin,
+    private readonly picos?: PicoRuns,
   ) {
     this.#token = sessionToken(password);
     this.#healthHttp = health
@@ -158,6 +160,10 @@ export class Api {
     ];
     this.#authed = [
       route("GET", "/api/session", null, this.#session),
+      route("GET", "/api/picos", "devices", this.#picoInventory),
+      route("GET", "/api/picos/catalog", "devices", this.#picoCatalog),
+      route("POST", "/api/picos/{targetId}/flash", "devices", this.#picoFlash),
+      route("GET", "/api/picos/runs/{runId}", "devices", this.#picoRun),
       route("GET", "/api/invites", "owner", this.#inviteList),
       route("POST", "/api/invites", "owner", this.#inviteCreate),
       route("DELETE", "/api/invites/{id}", "owner", this.#inviteRevoke),
@@ -200,7 +206,8 @@ export class Api {
         err instanceof HttpError ||
         err instanceof HealthError ||
         err instanceof AccountError ||
-        err instanceof SecretsError
+        err instanceof SecretsError ||
+        err instanceof PicoError
       ) {
         if (err instanceof HealthError && err.status === 429) res.setHeader("Retry-After", "15");
         writeError(res, err.status, err.message);
@@ -281,6 +288,53 @@ export class Api {
 
   async #health({ res }: RequestContext): Promise<void> {
     writeJSON(res, 200, { ok: true, matterConnected: this.matter.ready });
+    return Promise.resolve();
+  }
+
+  #images(): PicoRuns {
+    if (!this.picos) throw new PicoError(503, "USB Pico imaging is unavailable on this hub");
+    return this.picos;
+  }
+
+  async #picoInventory({ res }: RequestContext): Promise<void> {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      writeJSON(res, 200, await this.#images().inventory());
+    } catch (error) {
+      if (error instanceof PicoError) throw error;
+      throw new PicoError(503, "USB discovery failed; check the imaging setup and retry");
+    }
+  }
+
+  async #picoCatalog({ res }: RequestContext): Promise<void> {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      writeJSON(res, 200, await this.#images().imager.catalog());
+    } catch {
+      throw new PicoError(503, "Image options could not load; check the imaging setup and retry");
+    }
+  }
+
+  async #picoFlash({ req, res, params }: RequestContext): Promise<void> {
+    requireSameOrigin(req);
+    res.setHeader("Cache-Control", "no-store");
+    const images = this.#images();
+    if (req.headers["content-type"]?.split(";")[0]?.trim() !== "application/json")
+      throw new PicoError(415, "use application/json");
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of req) {
+      size += (chunk as Buffer).length;
+      if (size > images.settings.maxRequestBytes) throw new PicoError(413, "image request too large");
+      chunks.push(chunk as Buffer);
+    }
+    const value = parseJson(Buffer.concat(chunks).toString("utf8"));
+    writeJSON(res, 202, { run: await images.start(params[0] ?? "", value) });
+  }
+
+  #picoRun({ res, params }: RequestContext): Promise<void> {
+    res.setHeader("Cache-Control", "no-store");
+    writeJSON(res, 200, { run: this.#images().get(params[0] ?? "") });
     return Promise.resolve();
   }
 

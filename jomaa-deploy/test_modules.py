@@ -74,7 +74,7 @@ class DeclarationTest(unittest.TestCase):
         self.assertEqual({m.name: m.kind for m in modules}, {
             "deploy": "Checks", "pico-imaging-bench": "Checks", "agent-pipeline": "Checks", "ssh": "External",
             "hub": "Service", "static": "Service", "sarah.jomaa.org": "StaticSite", "health": "Command",
-            "tailnet": "Command"})
+            "tailnet": "Command", "images": "Checks"})
         units = {m.name: m.unit for m in modules if m.kind == "Service"}
         self.assertEqual(units, {"hub": "jomaa-hub", "static": "jomaa-static-pages"})
 

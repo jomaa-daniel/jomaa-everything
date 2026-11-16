@@ -62,7 +62,7 @@ and [receiver API](../jomaa-home-hub/docs/health-monitoring.md).
 through `--target-port` erases the target filesystem. Keep these distinct effects explicit when
 changing the scripts.
 
-The one-shot scripts pin the MicroPython UF2 URL and SHA-256 in `setup_wifi.py`. The firmware must
+The one-shot scripts read the MicroPython UF2 URL and SHA-256 from `config.json`. The firmware must
 include `ssl.SSLContext`, `CERT_REQUIRED`, and `load_verify_locations`. Automatic extraction of the
 OS-verified root CA in `setup_pico.py` requires host Python 3.13+.
 
@@ -172,5 +172,5 @@ diagnostic output.
 
 Run `scripts/test_pico.py` to require three new database reports from one boot. It never opens USB and
 leaves the running reporter alone. Existing online status and duplicate/out-of-order logs are insufficient.
-The health UI is `/devices`. Device registration and accepted reports must be verified against the
+The health UI is `/manage#health`. Device registration and accepted reports must be verified against the
 configured hub's persisted records, including after a restart when checking startup persistence.
