@@ -9,7 +9,7 @@ import { Hub } from "../hub.js";
 import { Organization } from "../organization.js";
 import { silentLog } from "../log.js";
 import type { MatterAdmin } from "../matter/nodes.js";
-import { ImageCommand, imageSettings, PicoRuns, type ImageEvent, type PicoImager } from "../picos.js";
+import { ImageCommand, imageSettings, PicoRuns, type PicoImager } from "../picos.js";
 import { serve } from "../testing.js";
 
 const matter: MatterAdmin = {
@@ -42,7 +42,7 @@ await test("USB Pico split view selects image functions, confirms erasure, resum
   };
   let flashes = 0;
   let selected: string[] = [];
-  let events: ImageEvent[] = [];
+  let events: unknown[] = [];
   const imager: PicoImager = {
     discover: () => Promise.resolve([target]),
     catalog: () => Promise.resolve(catalog),
@@ -61,7 +61,7 @@ await test("USB Pico split view selects image functions, confirms erasure, resum
   const organization = new Organization(":memory:");
   const password = "pico browser owner password";
   store.enroll({ id: "existing-health", name: "Existing device" });
-  const runs = new PicoRuns(imager, settings);
+  const runs = new PicoRuns(imager, settings, null);
   const origin = await serve(
     new Api(new Hub(), matter, password, accounts, clicks, silentLog, store, undefined, organization, undefined, runs)
       .handle,

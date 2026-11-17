@@ -16,7 +16,6 @@ import {
   PicoRuns,
   type Feature,
   type FlashRequest,
-  type ImageEvent,
   type PicoImager,
   type PicoTarget,
 } from "./picos.js";
@@ -54,7 +53,7 @@ class Imager implements PicoImager {
   targets = [target];
   calls: FlashRequest[] = [];
   discoveries = 0;
-  events: ImageEvent[] = [];
+  events: unknown[] = [];
   release: () => void = () => {
     throw new Error("No active flash");
   };
@@ -65,7 +64,7 @@ class Imager implements PicoImager {
   catalog(): Promise<{ features: Feature[]; defaultWifiTransport: "native" | "esp8285" }> {
     return Promise.resolve({ features, defaultWifiTransport: "esp8285" });
   }
-  async flash(_id: string, request: FlashRequest, emit: (event: ImageEvent) => void): Promise<void> {
+  async flash(_id: string, request: FlashRequest, emit: (event: unknown) => void): Promise<void> {
     this.calls.push(request);
     await new Promise<void>((resolve) => {
       this.release = resolve;
@@ -77,7 +76,7 @@ class Imager implements PicoImager {
 async function tick(): Promise<void> {
   await new Promise<void>((resolve) => setImmediate(resolve));
 }
-const passedTemperature: ImageEvent[] = [
+const passedTemperature: unknown[] = [
   {
     type: "check",
     check: { feature: "temperature", status: "passed", message: "Observed", evidence: { celsius: 24 } },
@@ -87,7 +86,7 @@ const passedTemperature: ImageEvent[] = [
 
 test("Pico APIs require Devices access before discovering or launching, and refuse cross-origin flashes", async () => {
   const imager = new Imager();
-  const runs = new PicoRuns(imager, imageSettings());
+  const runs = new PicoRuns(imager, imageSettings(), null);
   const accounts = new Accounts(":memory:");
   const clicks = new Clicks(":memory:");
   const { token } = accounts.createInvite();
@@ -107,7 +106,7 @@ test("Pico APIs require Devices access before discovering or launching, and refu
     const refused = await fetch(origin + "/api/picos/runtime-test/flash", {
       method: "POST",
       headers: { ...owner, "Content-Type": "application/json", Origin: "https://elsewhere.test" },
-      body: JSON.stringify({ features: ["temperature"] }),
+      body: JSON.stringify({ features: ["temperature"], wifi: null }),
     });
     assert.equal(refused.status, 403);
     assert.equal(imager.calls.length, 0);
@@ -142,26 +141,28 @@ test("Pico APIs require Devices access before discovering or launching, and refu
 
 test("invalid options, missing boards and concurrent submissions never launch another flash", async () => {
   const imager = new Imager();
-  const runs = new PicoRuns(imager, imageSettings());
+  const runs = new PicoRuns(imager, imageSettings(), null);
   for (const value of [
-    { features: [] },
-    { features: ["health"] },
-    { features: ["i2c"] },
-    { features: ["temperature", "temperature"] },
-    { features: ["bad"] },
-    { features: ["temperature"], port: "/dev/untrusted" },
+    { features: [], wifi: null },
+    { features: ["health"], wifi: null },
+    { features: ["i2c"], wifi: null },
+    { features: ["temperature", "temperature"], wifi: null },
+    { features: ["bad"], wifi: null },
+    { features: ["temperature"], wifi: null, port: "/dev/untrusted" },
+    { features: ["temperature"] },
+    { features: ["wifi"], wifi: null },
   ]) {
     await assert.rejects(runs.start(target.id, value));
   }
   await assert.rejects(
-    runs.start("gone", { features: ["temperature"] }),
+    runs.start("gone", { features: ["temperature"], wifi: null }),
     (error: unknown) => error instanceof PicoError && error.status === 404,
   );
   assert.equal(imager.calls.length, 0);
-  const run = await runs.start(target.id, { features: ["temperature"] });
+  const run = await runs.start(target.id, { features: ["temperature"], wifi: null });
   assert.equal(imager.calls.length, 1);
   await assert.rejects(
-    runs.start(target.id, { features: ["temperature"] }),
+    runs.start(target.id, { features: ["temperature"], wifi: null }),
     (error: unknown) => error instanceof PicoError && error.status === 409,
   );
   imager.events = passedTemperature;
@@ -174,6 +175,7 @@ test("invalid options, missing boards and concurrent submissions never launch an
 test("completion needs every selected observed result and rejects impossible evidence", async () => {
   for (const events of [
     [{ type: "result", status: "passed", message: "Copied" }],
+    [{ type: "stage", stage: "copied", message: "Copied" }, ...passedTemperature],
     [
       {
         type: "check",
@@ -181,10 +183,10 @@ test("completion needs every selected observed result and rejects impossible evi
       },
     ],
     [],
-  ] as ImageEvent[][]) {
+  ]) {
     const imager = new Imager();
-    const runs = new PicoRuns(imager, imageSettings());
-    const run = await runs.start(target.id, { features: ["temperature"] });
+    const runs = new PicoRuns(imager, imageSettings(), null);
+    const run = await runs.start(target.id, { features: ["temperature"], wifi: null });
     imager.events = events;
     imager.release();
     await tick();
@@ -208,7 +210,7 @@ test("run persistence excludes credentials and marks interrupted work failed on 
     const restored = new PicoRuns(new Imager(), imageSettings(), file);
     assert.equal(restored.get(run.id).status, "failed");
     imager.events = [
-      { type: "stage", stage: "testing", message: "private-password-fixture" },
+      { type: "stage", stage: "testing", message: "private-password-fixture", runtimeTargetId: null },
       { type: "result", status: "failed", message: "private-password-fixture" },
     ];
     imager.release();
@@ -222,8 +224,8 @@ test("run persistence excludes credentials and marks interrupted work failed on 
 
 test("USB mode changes retain a board's latest results", async () => {
   const imager = new Imager();
-  const runs = new PicoRuns(imager, imageSettings());
-  const run = await runs.start(target.id, { features: ["temperature"] });
+  const runs = new PicoRuns(imager, imageSettings(), null);
+  const run = await runs.start(target.id, { features: ["temperature"], wifi: null });
   const runtimeTargetId = "runtime-abcdef";
   imager.events = [{ type: "stage", stage: "returned", message: "Returned", runtimeTargetId }, ...passedTemperature];
   imager.release();
@@ -242,7 +244,7 @@ test("the component adapter refuses malformed process output", async () => {
 
 test("public radio metadata remains valid when its name matches the supplied password", async () => {
   const imager = new Imager();
-  const runs = new PicoRuns(imager, imageSettings());
+  const runs = new PicoRuns(imager, imageSettings(), null);
   const run = await runs.start(target.id, {
     features: ["wifi"],
     wifi: { ssid: "fixture", password: "native", transport: "native" },

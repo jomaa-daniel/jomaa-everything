@@ -324,9 +324,10 @@ export class Api {
     const chunks: Buffer[] = [];
     let size = 0;
     for await (const chunk of req) {
-      size += (chunk as Buffer).length;
+      if (!Buffer.isBuffer(chunk)) throw new PicoError(400, "invalid image request");
+      size += chunk.length;
       if (size > images.settings.maxRequestBytes) throw new PicoError(413, "image request too large");
-      chunks.push(chunk as Buffer);
+      chunks.push(chunk);
     }
     const value = parseJson(Buffer.concat(chunks).toString("utf8"));
     writeJSON(res, 202, { run: await images.start(params[0] ?? "", value) });

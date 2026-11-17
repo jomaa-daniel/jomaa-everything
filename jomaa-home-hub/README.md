@@ -68,12 +68,12 @@ not pass verification. The component's [README](../jomaa-images/README.md) descr
 USB permissions, TLS trust and the verification contracts; its
 [settings](../jomaa-images/config.md) configure host commands, limits and retention.
 
-| Endpoint                           | Behavior                                                                                                     |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `GET /api/picos`                   | Server USB targets, active run ID, and configured polling interval.                                          |
-| `GET /api/picos/catalog`           | Function IDs, labels, descriptions, defaults, dependencies and default radio.                                |
-| `POST /api/picos/{targetId}/flash` | Starts a run for `features` and optional `wifi` (`ssid`, `password`, `transport`). Returns the accepted run. |
-| `GET /api/picos/runs/{runId}`      | Safe run status and selected function results/evidence.                                                      |
+| Endpoint                           | Behavior                                                                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/picos`                   | Server USB targets, active run ID, and configured polling interval.                                                            |
+| `GET /api/picos/catalog`           | Function IDs, labels, descriptions, defaults, dependencies and default radio.                                                  |
+| `POST /api/picos/{targetId}/flash` | Starts a run for `features` and `wifi`: `ssid`, `password` and `transport`, or `null` without Wi-Fi. Returns the accepted run. |
+| `GET /api/picos/runs/{runId}`      | Safe run status and selected function results/evidence.                                                                        |
 
 These routes require Devices access. Flash requests require the existing
 same-origin checks and permit neither executable nor device paths from the

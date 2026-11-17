@@ -92,8 +92,8 @@ def load_config(path=CONFIG_FILE):
 
 
 def validate_request(value, config):
-    if not isinstance(value, dict) or set(value) - {"features", "wifi"}:
-        raise ImageError("Use a features list and optional Wi-Fi settings")
+    if not isinstance(value, dict) or set(value) != {"features", "wifi"}:
+        raise ImageError("Use a features list and Wi-Fi settings or null")
     features = value.get("features")
     if (not isinstance(features, list) or not features or any(not isinstance(x, str) for x in features)
             or len(set(features)) != len(features) or set(features) - SUPPORTED_FEATURES):
@@ -101,7 +101,7 @@ def validate_request(value, config):
     for feature in config["features"]:
         if feature["id"] in features and not set(feature["requires"]).issubset(features):
             raise ImageError("Select the required features for " + feature["label"])
-    if ("wifi" in features) != ("wifi" in value):
+    if ("wifi" in features) != (value["wifi"] is not None):
         raise ImageError("Wi-Fi settings are required only for Wi-Fi images")
     if "wifi" in features:
         wifi = value["wifi"]
@@ -233,7 +233,7 @@ class Host:
         self.console_uid = None
 
     def stage(self, emit, stage, message):
-        emit({"type": "stage", "stage": stage, "message": message})
+        emit({"type": "stage", "stage": stage, "message": message, "runtimeTargetId": None})
 
     def bootstrap(self, directory):
         self.env = self.wifi.install_tools(directory / "tools")

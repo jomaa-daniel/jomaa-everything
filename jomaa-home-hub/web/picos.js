@@ -253,9 +253,12 @@ export class PicoPanel {
     )
       return;
     const epoch = this.panelEpoch;
-    const body = { features: selected.map((x) => x.id) };
-    if (this.selectedFeatures.has("wifi"))
-      body.wifi = { ssid: $("pico-ssid").value, password: $("pico-password").value, transport: $("pico-radio").value };
+    const body = {
+      features: selected.map((x) => x.id),
+      wifi: this.selectedFeatures.has("wifi")
+        ? { ssid: $("pico-ssid").value, password: $("pico-password").value, transport: $("pico-radio").value }
+        : null,
+    };
     this.submitting = true;
     this.controls();
     $("pico-password").value = "";
