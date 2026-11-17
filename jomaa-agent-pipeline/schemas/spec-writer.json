@@ -1,0 +1,19 @@
+{
+  "title": "Response of the spec-writer",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "instruction"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "jomaa-pipeline.spec-writer.v1"
+    },
+    "instruction": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

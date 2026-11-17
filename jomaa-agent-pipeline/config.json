@@ -2,7 +2,10 @@
   "stateDir": "~/.jomaa-agent-pipeline",
   "workspaceDir": "/tmp/jomaa-agent-pipeline",
   "claudeProjectsDir": "~/.claude/projects",
-  "claude": ["/usr/local/bin/claude_code/native/claude", "claude"],
+  "claude": [
+    "/usr/local/bin/claude_code/native/claude",
+    "claude"
+  ],
   "clearEnvironment": [
     "CLAUDECODE",
     "CLAUDE_CODE_PROCESS_WRAPPER",
@@ -15,44 +18,165 @@
     "META_3PAI_SANDBOX_RUNTIME"
   ],
   "roles": {
+    "spec-writer": {
+      "model": "opus",
+      "effort": "high",
+      "tools": [
+        "Read",
+        "Glob",
+        "Grep"
+      ],
+      "budgetUsd": 10,
+      "persist": false,
+      "maxTurns": 120
+    },
     "instruction-reviewer": {
       "model": "opus",
       "effort": "high",
-      "tools": ["Read", "Glob", "Grep"],
+      "tools": [
+        "Read",
+        "Glob",
+        "Grep"
+      ],
       "budgetUsd": 5,
-      "persist": false
+      "persist": false,
+      "maxTurns": 80
     },
     "test-author": {
       "model": "opus",
       "effort": "high",
-      "tools": ["Bash", "Read", "Edit", "Write", "Glob", "Grep"],
+      "tools": [
+        "Bash",
+        "Read",
+        "Edit",
+        "Write",
+        "Glob",
+        "Grep"
+      ],
       "budgetUsd": 20,
-      "persist": false
+      "persist": false,
+      "maxTurns": 250
     },
     "test-reviewer": {
       "model": "opus",
       "effort": "high",
-      "tools": ["Read", "Glob", "Grep"],
+      "tools": [
+        "Read",
+        "Glob",
+        "Grep"
+      ],
       "budgetUsd": 5,
-      "persist": false
+      "persist": false,
+      "maxTurns": 80
     },
     "implementer": {
       "model": "opus",
       "effort": "high",
-      "tools": ["Bash", "Read", "Edit", "Write", "Glob", "Grep"],
+      "tools": [
+        "Bash",
+        "Read",
+        "Edit",
+        "Write",
+        "Glob",
+        "Grep"
+      ],
       "budgetUsd": 30,
-      "persist": true
+      "persist": true,
+      "maxTurns": 300
     }
   },
-  "systemPaths": ["/usr", "/bin", "/sbin", "/opt", "/dev", "~/.homebrew"],
+  "systemPaths": [
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/opt",
+    "/dev",
+    "~/.homebrew"
+  ],
   "prepare": {
-    "jomaa-home-hub": [["npm", "ci", "--no-audit", "--no-fund"]],
-    "jomaa-health": [["npm", "ci", "--no-audit", "--no-fund"]]
+    "jomaa-home-hub": [
+      [
+        "npm",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ]
+    ],
+    "jomaa-health": [
+      [
+        "npm",
+        "ci",
+        "--no-audit",
+        "--no-fund"
+      ]
+    ]
   },
   "feedbackRounds": 2,
   "sealRuns": 2,
   "testTimeoutSeconds": 900,
   "agentTimeoutSeconds": 5400,
   "agentWatchSeconds": 5,
-  "secretLineLength": 30
+  "secretLineLength": 30,
+  "attempts": 3,
+  "parallelAttempts": 3,
+  "reviewRounds": 3,
+  "dispatchRetries": 1,
+  "maxCostUsd": 200,
+  "keepAwake": [
+    "caffeinate",
+    "-i",
+    "-w",
+    "{pid}"
+  ],
+  "landRemote": "https://github.com/jomaa-daniel/jomaa-everything.git",
+  "landBranch": "main",
+  "landGitConfig": [
+    "credential.helper=",
+    "credential.helper=!gh auth git-credential"
+  ],
+  "landChecks": [
+    [
+      "{python}",
+      "jomaa-deploy/verify.py",
+      "--job",
+      "verify"
+    ]
+  ],
+  "pullRequestBranch": "pipeline/{task}",
+  "openPullRequest": [
+    "{python}",
+    "{pipeline}/github.py",
+    "create",
+    "{branch}",
+    "{base}",
+    "{title}",
+    "{bodyFile}"
+  ],
+  "waitForChecks": [
+    "{python}",
+    "{pipeline}/github.py",
+    "checks",
+    "{pullRequest}"
+  ],
+  "checksTimeoutSeconds": 5400,
+  "mergePullRequest": [
+    "{python}",
+    "{pipeline}/github.py",
+    "merge",
+    "{pullRequest}"
+  ],
+  "deployCheck": [
+    "{python}",
+    "{pipeline}/github.py",
+    "deploy",
+    "{commit}"
+  ],
+  "deployTimeoutSeconds": 1800,
+  "github": {
+    "gh": "gh",
+    "pollSeconds": 30,
+    "mergeMethod": "--merge",
+    "deployWorkflow": "deploy.yml",
+    "deployJob": "deploy"
+  }
 }

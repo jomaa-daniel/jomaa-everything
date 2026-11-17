@@ -65,13 +65,9 @@ The instruction fails review when:
 
 ## Output
 
-Think it through, then end your final message with exactly one JSON object and
-nothing after it:
-
-```json
-{"verdict": "approve" | "revise",
- "findings": [{"where": "R2 | Contract | Goal | ...", "problem": "...", "fix": "..."}]}
-```
+Think it through, then return your verdict as your structured response:
+`verdict` is `approve` or `revise`, and each finding names `where` (R2,
+Contract, Goal, ...), the `problem`, and the `fix`.
 
 Approve only when no finding remains that would leave the implementer guessing
 or would tell them how to build it. A `fix` says what the instruction should

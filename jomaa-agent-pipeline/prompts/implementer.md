@@ -31,7 +31,8 @@ You may later receive the requirements the hidden tests found unmet, by number.
 Re-read those requirements, find where your change falls short of them, and
 fix it.
 
-## Final message
+## Response
 
-Summarize what you changed, which tests you ran with their results, and every
-assumption you made.
+Return your structured response: a `summary` of what you changed and which
+tests you ran with their results, and every assumption you made as
+`assumptions`.

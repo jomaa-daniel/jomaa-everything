@@ -1,0 +1,26 @@
+{
+  "title": "Response of the implementer",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "summary",
+    "assumptions"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "jomaa-pipeline.implementer.v1"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

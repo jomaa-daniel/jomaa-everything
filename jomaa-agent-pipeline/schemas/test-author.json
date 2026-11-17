@@ -1,0 +1,19 @@
+{
+  "title": "Response of the test-author",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "summary"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "jomaa-pipeline.test-author.v1"
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

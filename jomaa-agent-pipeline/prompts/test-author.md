@@ -84,7 +84,7 @@ implementation to confirm every test can pass, but remove it completely before
 you finish: afterwards `git status` shows only your test files and the
 manifest, and the refactor commit holds no part of the feature.
 
-## Final message
+## Response
 
-Summarize the refactor, if any, and list each test id with its kind and
-clause. Never paste test code or assertions into the final message.
+Return a `summary` as your structured response: the refactor, if any, and each
+test id with its kind and clause. Never paste test code or assertions into it.

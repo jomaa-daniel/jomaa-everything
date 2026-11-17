@@ -34,11 +34,8 @@ leave this directory.
 
 ## Output
 
-End your final message with exactly one JSON object and nothing after it:
-
-```json
-{"verdict": "approve" | "revise",
- "findings": [{"where": "<test id | file | refactor | manifest>", "problem": "...", "fix": "..."}]}
-```
+Return your verdict as your structured response: `verdict` is `approve` or
+`revise`, and each finding names `where` (a test id, file, `refactor` or
+`manifest`), the `problem`, and the `fix`.
 
 Approve only when no finding remains.

@@ -13,7 +13,7 @@ Home projects, kept in one repo.
 | `jomaa-tailscale/` | jerry on Tailscale: home LAN subnet router and exit node. Deployments apply the tailnet policy and node settings. |
 | `pico-imaging-bench/` | Flash and verify the Pico health reporter over USB. |
 | `jomaa-images/` | Select Pico functions and flash USB boards from the Devices imaging panel, with observed verification results. |
-| `jomaa-agent-pipeline/` | Optional blind pipeline: product instruction, reviewed hidden tests, blind implementation, and trajectory audit. |
+| `jomaa-agent-pipeline/` | Optional blind pipeline job: a script dispatches bounded agents to build an instruction or rebuild a landed change behind sealed hidden tests, audits them, and lands the best attempt through a pull request. |
 
 Repo rules for people and agents are in [`AGENTS.md`](AGENTS.md).
 

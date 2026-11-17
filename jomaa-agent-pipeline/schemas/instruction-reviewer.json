@@ -1,0 +1,48 @@
+{
+  "title": "Response of the instruction-reviewer",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "verdict",
+    "findings"
+  ],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "jomaa-pipeline.instruction-reviewer.v1"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "approve",
+        "revise"
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "where",
+          "problem",
+          "fix"
+        ],
+        "properties": {
+          "where": {
+            "type": "string",
+            "minLength": 1
+          },
+          "problem": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fix": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
