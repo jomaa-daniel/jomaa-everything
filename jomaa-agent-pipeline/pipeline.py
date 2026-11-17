@@ -213,6 +213,8 @@ def export(repo: Path, rev_: str, target: Path, patches: list[Path], components:
     with tarfile.open(fileobj=io.BytesIO(git(repo, "archive", rev_))) as archive:
         archive.extractall(target, filter="tar")
     git(target, "init", "-q")
+    git(target, "config", "user.name", GIT_ENV["GIT_AUTHOR_NAME"])
+    git(target, "config", "user.email", GIT_ENV["GIT_AUTHOR_EMAIL"])
     for patch in patches:
         if patch.read_bytes().strip():
             git(target, "apply", "--binary", str(patch))
