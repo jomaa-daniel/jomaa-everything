@@ -39,7 +39,15 @@ const linkedPages = ["/lights", "/manage", "/permissions", "/secrets", "/invite"
 
 const clicks = new Clicks(":memory:");
 for (const path of ["/secrets", "/secrets", "/secrets", "/lights", "/lights"]) clicks.record(path);
-const api = new Api(new Hub(), noMatter, "prefetch browser test password", new Accounts(":memory:"), clicks, silentLog);
+const api = new Api(
+  new Hub(),
+  noMatter,
+  "prefetch browser test password",
+  new Accounts(":memory:"),
+  clicks,
+  silentLog,
+  { health: null, layoutPath: null, organization: null, secrets: null, picos: null },
+);
 
 /** Requests after the home page's own files in arrival order, with their response status once sent. */
 const requests: { path: string; status: number | null }[] = [];

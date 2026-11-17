@@ -66,6 +66,9 @@ class JobTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name).resolve()
+        gitconfig = self.root / "gitconfig"
+        gitconfig.write_text("[user]\n\tname = Agent\n\temail = agent@example.test\n")
+        self.patch(mock.patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": str(gitconfig), "GIT_CONFIG_NOSYSTEM": "1"}))
         self.repo = self.root / "repo"
         self.repo.mkdir()
         git(self.repo, "init", "-q", "-b", "main")

@@ -10,6 +10,7 @@ Tools are pinned in package-lock.json, so every machine runs the same versions.
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import subprocess
 import sys
@@ -17,6 +18,8 @@ import time
 from pathlib import Path
 
 HUB_DIR = Path(__file__).resolve().parent.parent
+AUDIT_FILE = HUB_DIR / "audit.json"
+SEVERITIES = ("info", "low", "moderate", "high", "critical")
 
 
 def run(cmd: list[str]) -> subprocess.CompletedProcess:
@@ -29,6 +32,34 @@ def check_cmd(*cmd: str):
         return None if out.returncode == 0 else (out.stdout + out.stderr).strip()
 
     return check
+
+
+def unaccepted(report: dict, level: str, accepted: list[str]) -> list[str]:
+    """Advisories in an npm audit JSON report at or above level that are not accepted."""
+    found = set()
+    for vulnerability in report.get("vulnerabilities", {}).values():
+        for via in vulnerability.get("via", []):
+            if not isinstance(via, dict) or SEVERITIES.index(via["severity"]) < SEVERITIES.index(level):
+                continue
+            advisory = via["url"].rstrip("/").rsplit("/", 1)[-1]
+            if advisory not in accepted:
+                found.add(f"{advisory} ({via['severity']}): {via['name']} {via['title']}")
+    return sorted(found)
+
+
+def check_audit() -> str | None:
+    settings = json.loads(AUDIT_FILE.read_text())
+    if settings["level"] not in SEVERITIES:
+        return f"audit.json level must be one of {', '.join(SEVERITIES)}"
+    out = run(["npm", "audit", "--omit=dev", "--json"])
+    try:
+        report = json.loads(out.stdout)
+    except json.JSONDecodeError:
+        return (out.stdout + out.stderr).strip()
+    if "error" in report:
+        return json.dumps(report["error"])
+    found = unaccepted(report, settings["level"], settings["acceptedAdvisories"])
+    return "\n".join(found) if found else None
 
 
 def check_installed() -> str | None:
@@ -52,7 +83,7 @@ def checks(fast: bool) -> list[tuple[str, object]]:
         ("npm ci", check_cmd("npm", "ci", "--no-audit", "--no-fund")),
         *steps,
         ("node tests", check_cmd("npm", "test")),
-        ("npm audit", check_cmd("npm", "audit", "--omit=dev", "--audit-level=high")),
+        ("npm audit", check_audit),
         ("python tests", check_cmd(sys.executable, "-m", "unittest", "discover", "-s", "scripts", "-q")),
     ]
 

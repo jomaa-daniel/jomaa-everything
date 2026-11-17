@@ -57,15 +57,13 @@ const lamp = new Lamp();
 const hub = new Hub();
 hub.addDevice("test", lamp);
 hub.addRoom(new Group("living-room", "Living room", [lamp]));
-const api = new Api(
-  hub,
-  noMatter,
-  ownerPassword,
-  new Accounts(":memory:"),
-  new Clicks(":memory:"),
-  silentLog,
-  new HealthStore(":memory:"),
-);
+const api = new Api(hub, noMatter, ownerPassword, new Accounts(":memory:"), new Clicks(":memory:"), silentLog, {
+  health: new HealthStore(":memory:"),
+  layoutPath: null,
+  organization: null,
+  secrets: null,
+  picos: null,
+});
 const origin = await serve(api.handle);
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const owner = await browser.newContext();

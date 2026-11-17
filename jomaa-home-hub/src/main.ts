@@ -92,7 +92,7 @@ async function run(log: Log): Promise<void> {
     accounts = people;
     const followed = new Clicks(besideHealth(settings.prefetch.databaseFile));
     clicks = followed;
-    let images: PicoRuns | undefined;
+    let images: PicoRuns | null = null;
     try {
       const imageConfig = imageSettings();
       images = new PicoRuns(
@@ -103,17 +103,11 @@ async function run(log: Log): Promise<void> {
     } catch {
       log.error("USB Pico imaging setup is unavailable", {});
     }
-    const api = new Api(
-      Hub.build(cfg, govee, matter),
-      matter,
-      password,
-      people,
-      followed,
-      log,
-      store,
-      cliOptions.config,
+    const api = new Api(Hub.build(cfg, govee, matter), matter, password, people, followed, log, {
+      health: store,
+      layoutPath: cliOptions.config,
       organization,
-      {
+      secrets: {
         files: new EnvFiles(fileURLToPath(releaseRoot), settings.secrets.envFiles, deploySettings.hubPasswordMinLength),
         workflow: new DeployWorkflow({
           api: deploySettings.githubApi,
@@ -123,8 +117,8 @@ async function run(log: Log): Promise<void> {
         }),
         cli: new GitHubCli(settings.secrets.ghCommand, deploySettings.githubTimeoutSeconds * 1000),
       },
-      images,
-    );
+      picos: images,
+    });
     const cert = process.env["HUB_TLS_CERT"];
     const key = process.env["HUB_TLS_KEY"];
     if (Boolean(cert) !== Boolean(key)) throw new Error("set both HUB_TLS_CERT and HUB_TLS_KEY");

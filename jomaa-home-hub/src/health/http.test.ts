@@ -61,7 +61,13 @@ await test("HTTPS API separates admin and device auth and persists authenticated
   const ca = readFileSync(join(dir, "cert.pem"));
   const store = new HealthStore(join(dir, "health.sqlite"));
   const accounts = new Accounts(":memory:");
-  const api = new Api(new Hub(), matter, "test-hub-password", accounts, new Clicks(":memory:"), silentLog, store);
+  const api = new Api(new Hub(), matter, "test-hub-password", accounts, new Clicks(":memory:"), silentLog, {
+    health: store,
+    layoutPath: null,
+    organization: null,
+    secrets: null,
+    picos: null,
+  });
   const secure = createServer({ cert: ca, key: readFileSync(join(dir, "key.pem")) }, api.handle);
   const insecure = httpServer(api.handle);
   await Promise.all([
@@ -317,7 +323,7 @@ await test("device inventory includes registered Matter nodes without issuing Pi
       new Accounts(":memory:"),
       new Clicks(":memory:"),
       silentLog,
-      store,
+      { health: store, layoutPath: null, organization: null, secrets: null, picos: null },
     ).handle,
   );
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

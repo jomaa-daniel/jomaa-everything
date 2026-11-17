@@ -9,6 +9,13 @@ import { releaseRoot } from "./settings.js";
 
 const configFile = new URL("jomaa-images/config.json", releaseRoot);
 const terminal = (status: string) => status === "passed" || status === "failed";
+const wifiTransports = ["native", "esp8285"] as const;
+const runStatuses = ["queued", "running", "passed", "failed"] as const;
+const checkStatuses = ["pending", "running", "passed", "failed"] as const;
+const reportedStatuses = ["running", "passed", "failed"] as const;
+const resultStatuses = ["passed", "failed"] as const;
+const oneOf = <T extends string>(values: readonly T[], value: string | null): value is T =>
+  values.some((x) => x === value);
 const ssidMaxBytes = 32;
 const passwordMaxBytes = 64;
 
@@ -29,27 +36,39 @@ export interface PicoTarget {
   unavailableReason: string | null;
   latestRunId: string | null;
 }
+export type WifiTransport = (typeof wifiTransports)[number];
+export interface WifiSettings {
+  ssid: string;
+  password: string;
+  transport: WifiTransport;
+}
 export interface FlashRequest {
   features: string[];
-  wifi?: { ssid: string; password: string; transport: "native" | "esp8285" };
+  wifi: WifiSettings | null;
 }
 export interface ImageCheck {
   feature: string;
-  status: "pending" | "running" | "passed" | "failed";
+  status: (typeof checkStatuses)[number];
   message: string;
   evidence: Record<string, unknown> | null;
 }
 export type ImageEvent =
-  | { type: "stage"; stage: string; message: string; runtimeTargetId?: string }
-  | { type: "check"; check: ImageCheck }
-  | { type: "result"; status: "passed" | "failed"; message: string };
+  | { type: "stage"; stage: string; message: string; runtimeTargetId: string | null }
+  | {
+      type: "check";
+      feature: string;
+      status: (typeof reportedStatuses)[number];
+      message: string;
+      evidence: unknown;
+    }
+  | { type: "result"; status: (typeof resultStatuses)[number]; message: string };
 export interface ImageRun {
   id: string;
   targetId: string;
-  runtimeTargetId?: string;
+  runtimeTargetId: string | null;
   features: string[];
-  status: "queued" | "running" | "passed" | "failed";
-  wifiTransport: "native" | "esp8285" | null;
+  status: (typeof runStatuses)[number];
+  wifiTransport: WifiTransport | null;
   stage: string;
   message: string;
   createdAt: number;
@@ -58,8 +77,9 @@ export interface ImageRun {
 }
 export interface PicoImager {
   discover(): Promise<PicoTarget[]>;
-  catalog(): Promise<{ features: Feature[]; defaultWifiTransport: "native" | "esp8285" }>;
-  flash(targetId: string, request: FlashRequest, emit: (event: ImageEvent) => void): Promise<void>;
+  catalog(): Promise<{ features: Feature[]; defaultWifiTransport: WifiTransport }>;
+  /** Flashes the target, passing each structured event it reports, unvalidated, to emit. */
+  flash(targetId: string, request: FlashRequest, emit: (event: unknown) => void): Promise<void>;
 }
 export interface ImageSettings {
   command: string[];
@@ -83,8 +103,8 @@ export class PicoError extends Error {
 
 export function imageSettings(): ImageSettings {
   const f = new Fields(parseJson(readFileSync(configFile, "utf8")), "image settings");
-  const command = f.list("command");
-  if (!command.length || command.some((x) => typeof x !== "string" || !x)) throw new Error("Invalid image command");
+  const command = f.list("command").filter((x): x is string => typeof x === "string" && x !== "");
+  if (!command.length || command.length !== f.list("command").length) throw new Error("Invalid image command");
   const state = f.string("runStateFile");
   if (!state || state.startsWith("/") || state.split("/").includes("..")) throw new Error("Invalid runStateFile");
   const positive = (key: string) => {
@@ -93,7 +113,7 @@ export function imageSettings(): ImageSettings {
     return value;
   };
   return {
-    command: command as string[],
+    command,
     runStateFile: state,
     pollMilliseconds: positive("pollMilliseconds"),
     retentionHours: positive("retentionHours"),
@@ -105,7 +125,7 @@ export function imageSettings(): ImageSettings {
 }
 
 export function flashRequest(value: unknown, catalog: Feature[]): FlashRequest {
-  const f = new Fields(value, "image request").only("features", "wifi").required("features");
+  const f = new Fields(value, "image request").only("features", "wifi").required("features", "wifi");
   const features = f.list("features");
   if (
     !features.length ||
@@ -117,36 +137,132 @@ export function flashRequest(value: unknown, catalog: Feature[]): FlashRequest {
     if (features.includes(feature.id) && !feature.requires.every((id) => features.includes(id)))
       throw new PicoError(400, `Select required features for ${feature.label}`);
   }
-  const result: FlashRequest = { features: catalog.filter((x) => features.includes(x.id)).map((x) => x.id) };
-  if (features.includes("wifi") !== f.has("wifi"))
+  const ordered = catalog.filter((x) => features.includes(x.id)).map((x) => x.id);
+  const supplied = f.value("wifi");
+  if (features.includes("wifi") !== (supplied !== null))
     throw new PicoError(400, "Supply Wi-Fi settings only for Wi-Fi images");
-  if (features.includes("wifi")) {
-    const wifi = new Fields(f.value("wifi"), "Wi-Fi")
-      .only("ssid", "password", "transport")
-      .required("ssid", "password", "transport");
-    const ssid = wifi.string("ssid");
-    const password = wifi.string("password");
-    const transport = wifi.string("transport");
+  return { features: ordered, wifi: supplied === null ? null : wifiSettings(supplied) };
+}
+
+function wifiSettings(value: unknown): WifiSettings {
+  const wifi = new Fields(value, "Wi-Fi")
+    .only("ssid", "password", "transport")
+    .required("ssid", "password", "transport");
+  const ssid = wifi.string("ssid");
+  const password = wifi.string("password");
+  const transport = wifi.string("transport");
+  if (
+    ssid === null ||
+    password === null ||
+    Buffer.byteLength(ssid) < 1 ||
+    Buffer.byteLength(ssid) > ssidMaxBytes ||
+    Buffer.byteLength(password) > passwordMaxBytes ||
+    /[\r\n\0]/.test(ssid + password) ||
+    !oneOf(wifiTransports, transport)
+  )
+    throw new PicoError(400, "Invalid Wi-Fi settings");
+  return { ssid, password, transport };
+}
+
+/** Validates one structured event reported by an imager. */
+export function imageEvent(value: unknown): ImageEvent {
+  const f = new Fields(value, "imaging event");
+  const type = f.string("type");
+  if (type === "stage") {
+    f.only("type", "stage", "message", "runtimeTargetId").required("type", "stage", "message", "runtimeTargetId");
+    const stage = f.string("stage");
+    const message = f.string("message");
+    const runtimeTargetId = f.string("runtimeTargetId");
     if (
-      ssid === null ||
-      password === null ||
-      Buffer.byteLength(ssid) < 1 ||
-      Buffer.byteLength(ssid) > ssidMaxBytes ||
-      Buffer.byteLength(password) > passwordMaxBytes ||
-      /[\r\n\0]/.test(ssid + password) ||
-      (transport !== "native" && transport !== "esp8285")
+      stage === null ||
+      message === null ||
+      (runtimeTargetId !== null && !/^runtime-[a-f0-9]+$/.test(runtimeTargetId))
     )
-      throw new PicoError(400, "Invalid Wi-Fi settings");
-    result.wifi = { ssid, password, transport };
+      throw new Error("Invalid stage event");
+    return { type, stage, message, runtimeTargetId };
   }
-  return result;
+  if (type === "check") {
+    f.only("type", "check").required("type", "check");
+    const check = new Fields(f.value("check"), "image check")
+      .only("feature", "status", "message", "evidence")
+      .required("feature", "status", "message", "evidence");
+    const feature = check.string("feature");
+    const status = check.string("status");
+    const message = check.string("message");
+    if (feature === null || message === null || !oneOf(reportedStatuses, status))
+      throw new Error("Invalid check event");
+    return { type, feature, status, message, evidence: check.value("evidence") };
+  }
+  if (type === "result") {
+    f.only("type", "status", "message").required("type", "status", "message");
+    const status = f.string("status");
+    const message = f.string("message");
+    if (message === null || !oneOf(resultStatuses, status)) throw new Error("Invalid result event");
+    return { type, status, message };
+  }
+  throw new Error("Invalid imaging event");
+}
+
+/** Reads one stored run from the private run file. */
+function storedRun(value: unknown): ImageRun {
+  const f = new Fields(value, "stored imaging run");
+  const string = (key: string) => {
+    const result = f.string(key);
+    if (result === null) throw new Error("Invalid stored imaging run");
+    return result;
+  };
+  const time = (key: string) => {
+    const result = f.int(key);
+    if (result === null) throw new Error("Invalid stored imaging run");
+    return result;
+  };
+  const status = f.string("status");
+  const wifiTransport = f.string("wifiTransport");
+  const features = f.list("features").filter((x): x is string => typeof x === "string");
+  if (
+    !oneOf(runStatuses, status) ||
+    (wifiTransport !== null && !oneOf(wifiTransports, wifiTransport)) ||
+    features.length !== f.list("features").length
+  )
+    throw new Error("Invalid stored imaging run");
+  const checks = f.list("checks").map((item): ImageCheck => {
+    const check = new Fields(item, "stored image check");
+    const feature = check.string("feature");
+    const checkStatus = check.string("status");
+    const message = check.string("message");
+    const evidence = check.value("evidence");
+    if (
+      feature === null ||
+      message === null ||
+      !oneOf(checkStatuses, checkStatus) ||
+      !(evidence === null || isObject(evidence))
+    )
+      throw new Error("Invalid stored image check");
+    return { feature, status: checkStatus, message, evidence };
+  });
+  return {
+    id: string("id"),
+    targetId: string("targetId"),
+    runtimeTargetId: f.string("runtimeTargetId"),
+    features,
+    status,
+    wifiTransport,
+    stage: string("stage"),
+    message: string("message"),
+    createdAt: time("createdAt"),
+    updatedAt: time("updatedAt"),
+    checks,
+  };
 }
 
 /** Runs the image component without a shell and accepts its structured output only. */
 export class ImageCommand implements PicoImager {
   constructor(private readonly settings: ImageSettings) {}
 
-  private command(args: string[], request?: FlashRequest, emit?: (event: ImageEvent) => void): Promise<unknown> {
+  private command(
+    args: string[],
+    flash: { request: FlashRequest; emit: (event: unknown) => void } | null,
+  ): Promise<unknown> {
     return new Promise((resolve, reject) => {
       const [program, ...prefix] = this.settings.command;
       if (!program) {
@@ -172,7 +288,7 @@ export class ImageCommand implements PicoImager {
       };
       const timer = setTimeout(
         stop,
-        (emit ? this.settings.flashTimeoutSeconds : this.settings.commandTimeoutSeconds) * 1000,
+        (flash ? this.settings.flashTimeoutSeconds : this.settings.commandTimeoutSeconds) * 1000,
       );
       child.stdout.on("data", (chunk: Buffer) => {
         size += chunk.length;
@@ -181,14 +297,12 @@ export class ImageCommand implements PicoImager {
           return;
         }
         output += chunk.toString("utf8");
-        if (emit) {
+        if (flash) {
           for (let newline = output.indexOf("\n"); newline >= 0; newline = output.indexOf("\n")) {
             const line = output.slice(0, newline);
             output = output.slice(newline + 1);
             try {
-              const event = parseJson(line);
-              if (!isObject(event) || !["stage", "check", "result"].includes(String(event["type"]))) throw new Error();
-              emit(event as unknown as ImageEvent);
+              flash.emit(parseJson(line));
             } catch {
               stop();
               return;
@@ -202,11 +316,11 @@ export class ImageCommand implements PicoImager {
       });
       child.once("close", (code) => {
         clearTimeout(timer);
-        if (failed || code !== 0 || (emit && output.trim())) {
+        if (failed || code !== 0 || (flash && output.trim())) {
           reject(new PicoError(503, "Imaging stopped or exceeded its deadline; check the feature results"));
           return;
         }
-        if (emit) resolve(undefined);
+        if (flash) resolve(undefined);
         else {
           try {
             resolve(parseJson(output));
@@ -218,12 +332,12 @@ export class ImageCommand implements PicoImager {
       child.stdin.on("error", () => {
         /* Process failure is reported by close. */
       });
-      child.stdin.end(request ? JSON.stringify(request) : "");
+      child.stdin.end(flash ? JSON.stringify(flash.request) : "");
     });
   }
 
   async discover(): Promise<PicoTarget[]> {
-    const result = new Fields(await this.command(["discover"]), "USB inventory");
+    const result = new Fields(await this.command(["discover"], null), "USB inventory");
     return result.list("targets").map((value) => {
       const f = new Fields(value, "USB target");
       const id = f.string("id");
@@ -242,18 +356,18 @@ export class ImageCommand implements PicoImager {
       };
     });
   }
-  async catalog(): Promise<{ features: Feature[]; defaultWifiTransport: "native" | "esp8285" }> {
-    const result = new Fields(await this.command(["catalog"]), "image catalog");
+  async catalog(): Promise<{ features: Feature[]; defaultWifiTransport: WifiTransport }> {
+    const result = new Fields(await this.command(["catalog"], null), "image catalog");
     const features = result.list("features").map((value) => {
       const f = new Fields(value, "image feature");
       const id = f.string("id");
-      const requires = f.list("requires");
-      if (!id || requires.some((x) => typeof x !== "string")) throw new PicoError(503, "Invalid image catalog");
+      const requires = f.list("requires").filter((x): x is string => typeof x === "string");
+      if (!id || requires.length !== f.list("requires").length) throw new PicoError(503, "Invalid image catalog");
       return {
         id,
         label: f.string("label") ?? id,
         description: f.string("description") ?? "",
-        requires: requires as string[],
+        requires,
         default: f.bool("default") === true,
       };
     });
@@ -264,12 +378,11 @@ export class ImageCommand implements PicoImager {
     )
       throw new PicoError(503, "Invalid image catalog");
     const defaultWifiTransport = result.string("defaultWifiTransport");
-    if (defaultWifiTransport !== "native" && defaultWifiTransport !== "esp8285")
-      throw new PicoError(503, "Invalid radio default");
+    if (!oneOf(wifiTransports, defaultWifiTransport)) throw new PicoError(503, "Invalid radio default");
     return { features, defaultWifiTransport };
   }
-  async flash(targetId: string, request: FlashRequest, emit: (event: ImageEvent) => void): Promise<void> {
-    await this.command(["flash", "--target", targetId], request, emit);
+  async flash(targetId: string, request: FlashRequest, emit: (event: unknown) => void): Promise<void> {
+    await this.command(["flash", "--target", targetId], { request, emit });
   }
 }
 
@@ -280,16 +393,14 @@ export class PicoRuns {
   constructor(
     readonly imager: PicoImager,
     readonly settings: ImageSettings,
-    private readonly file?: string,
+    private readonly file: string | null,
   ) {
-    if (file) {
+    if (file !== null) {
       try {
         const saved = parseJson(readFileSync(file, "utf8"));
         if (!Array.isArray(saved)) throw new Error("Invalid stored imaging runs");
         for (const value of saved) {
-          if (!isObject(value) || typeof value["id"] !== "string" || !Array.isArray(value["checks"]))
-            throw new Error("Invalid stored imaging run");
-          const run = value as unknown as ImageRun;
+          const run = storedRun(value);
           if (!terminal(run.status)) {
             run.status = "failed";
             run.message = "The hub restarted before verification completed";
@@ -316,7 +427,7 @@ export class PicoRuns {
   }
   private save(): void {
     this.prune();
-    if (!this.file) return;
+    if (this.file === null) return;
     mkdirSync(dirname(this.file), { recursive: true, mode: 0o700 });
     const temp = this.file + ".new";
     writeFileSync(temp, JSON.stringify([...this.runs.values()]), { mode: 0o600 });
@@ -355,6 +466,7 @@ export class PicoRuns {
       const run: ImageRun = {
         id: randomUUID(),
         targetId,
+        runtimeTargetId: null,
         features: request.features,
         status: "queued",
         wifiTransport: request.wifi?.transport ?? null,
@@ -380,50 +492,40 @@ export class PicoRuns {
     }
   }
   private async execute(run: ImageRun, request: FlashRequest): Promise<void> {
-    let final: "passed" | "failed" | undefined;
-    const safe = (text: string) =>
-      request.wifi?.password ? text.replaceAll(request.wifi.password, "[redacted]") : text;
+    const outcome: { final: "passed" | "failed" | null } = { final: null };
+    const password = request.wifi?.password ?? "";
+    const safe = (text: string) => (password ? text.replaceAll(password, "[redacted]") : text);
     try {
       run.status = "running";
       this.save();
-      await this.imager.flash(run.targetId, request, (event) => {
-        if (final) throw new Error("Output followed a final imaging result");
-        if (event.type === "stage" && typeof event.stage === "string" && typeof event.message === "string") {
+      await this.imager.flash(run.targetId, request, (value) => {
+        if (outcome.final) throw new Error("Output followed a final imaging result");
+        const event = imageEvent(value);
+        if (event.type === "stage") {
           run.stage = safe(event.stage);
           run.message = safe(event.message);
-          if (event.runtimeTargetId !== undefined) {
-            if (!/^runtime-[a-f0-9]+$/.test(event.runtimeTargetId)) throw new Error("Invalid runtime identity");
-            run.runtimeTargetId = event.runtimeTargetId;
-          }
+          if (event.runtimeTargetId !== null) run.runtimeTargetId = event.runtimeTargetId;
         } else if (event.type === "check") {
-          const f = new Fields(event.check, "image check");
-          const feature = f.string("feature");
-          const check = run.checks.find((x) => x.feature === feature);
-          const status = f.string("status");
-          if (!check || !["running", "passed", "failed"].includes(status ?? "")) throw new Error("Invalid image check");
-          const verifiedEvidence = status === "passed" ? evidence(check.feature, f.value("evidence"), request) : null;
-          check.status = status as ImageCheck["status"];
-          check.message = safe(f.string("message") ?? "");
-          check.evidence = verifiedEvidence;
-        } else if (
-          event.type === "result" &&
-          ["passed", "failed"].includes(event.status) &&
-          typeof event.message === "string"
-        ) {
-          final = event.status;
+          const check = run.checks.find((x) => x.feature === event.feature);
+          if (!check) throw new Error("Invalid image check");
+          check.evidence = event.status === "passed" ? evidence(check.feature, event.evidence, request) : null;
+          check.status = event.status;
+          check.message = safe(event.message);
+        } else {
+          outcome.final = event.status;
           run.message = safe(event.message);
-        } else throw new Error("Invalid imaging event");
+        }
         run.updatedAt = Date.now();
         this.save();
       });
-      if (final !== "passed" || run.checks.some((check) => check.status !== "passed"))
+      if (outcome.final !== "passed" || run.checks.some((check) => check.status !== "passed"))
         throw new Error("Selected functions did not pass verification");
       run.status = "passed";
       run.stage = "complete";
     } catch {
       run.status = "failed";
       run.stage = "failed";
-      if (!final || final === "passed")
+      if (outcome.final !== "failed")
         run.message = "Imaging stopped before every function was verified; check USB access and the host imaging setup";
       for (const check of run.checks)
         if (check.status !== "passed") {

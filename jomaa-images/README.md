@@ -28,7 +28,7 @@ python3 jomaa-images/images.py prepare --output NEW_PRIVATE_DIRECTORY
 python3 jomaa-images/images.py flash --target TARGET_ID
 ```
 
-Preparation and flashing read one JSON request from stdin, such as `{"features":["temperature"]}`. Wi-Fi images add `wifi` with `ssid`, `password` and `transport` (`esp8285` or `native`); pass credentials through private input, never command-line arguments. `--config FILE` chooses host settings. Preparation opens no USB devices. Flashing performs erasure; it emits structured stage, check and final-result events. Discovery and catalog emit one JSON object.
+Preparation and flashing read one JSON request from stdin, such as `{"features":["temperature"],"wifi":null}`. Wi-Fi images set `wifi` to an object with `ssid`, `password` and `transport` (`esp8285` or `native`); pass credentials through private input, never command-line arguments. `--config FILE` chooses host settings. Preparation opens no USB devices. Flashing performs erasure; it emits structured stage, check and final-result events. Discovery and catalog emit one JSON object.
 
 ## Verification
 

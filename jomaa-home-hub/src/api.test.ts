@@ -141,7 +141,15 @@ async function setup(): Promise<Env> {
   hub.addDevice("test", a);
   hub.addDevice("test", b);
   hub.addRoom(new Group("room", "Room", [a, b]));
-  const url = await serve(new Api(hub, matter, "hunter2", accounts, new Clicks(":memory:"), silentLog).handle);
+  const url = await serve(
+    new Api(hub, matter, "hunter2", accounts, new Clicks(":memory:"), silentLog, {
+      health: null,
+      layoutPath: null,
+      organization: null,
+      secrets: null,
+      picos: null,
+    }).handle,
+  );
   const { status, body } = await call({ url, token: "" }, "POST", "/api/login", '{"password":"hunter2"}');
   assert.equal(status, 200);
   return { url, token: body["token"] as string, a, b, matter, accounts };

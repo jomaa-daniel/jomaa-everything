@@ -80,6 +80,15 @@ export interface SecretsAdmin {
   cli: GitHubCli;
 }
 
+/** The optional hub services; null leaves the corresponding routes unavailable. */
+export interface ApiServices {
+  health: HealthStore | null;
+  layoutPath: string | null;
+  organization: Organization | null;
+  secrets: SecretsAdmin | null;
+  picos: PicoRuns | null;
+}
+
 interface RequestContext {
   req: IncomingMessage;
   res: ServerResponse;
@@ -119,7 +128,12 @@ export class Api {
   readonly #accountLimiter = new LoginLimiter();
   readonly #public: Route[];
   readonly #authed: Route[];
-  readonly #healthHttp: HealthHttp | undefined;
+  readonly #healthHttp: HealthHttp | null;
+  private readonly health: HealthStore | null;
+  private readonly layoutPath: string | null;
+  private readonly organization: Organization | null;
+  private readonly secrets: SecretsAdmin | null;
+  private readonly picos: PicoRuns | null;
   #groupChange: Promise<void> = Promise.resolve();
 
   /**
@@ -133,16 +147,17 @@ export class Api {
     private readonly accounts: Accounts,
     private readonly clicks: Clicks,
     private readonly log: Log,
-    private readonly health?: HealthStore,
-    private readonly layoutPath?: string,
-    private readonly organization?: Organization,
-    private readonly secrets?: SecretsAdmin,
-    private readonly picos?: PicoRuns,
+    services: ApiServices,
   ) {
+    this.health = services.health;
+    this.layoutPath = services.layoutPath;
+    this.organization = services.organization;
+    this.secrets = services.secrets;
+    this.picos = services.picos;
     this.#token = sessionToken(password);
-    this.#healthHttp = health
-      ? new HealthHttp(health, log.with({ component: "device-health" }), matter, hub, organization)
-      : undefined;
+    this.#healthHttp = services.health
+      ? new HealthHttp(services.health, log.with({ component: "device-health" }), matter, hub, services.organization)
+      : null;
     const route = (method: string, path: string, requires: Requirement, handler: Handler): Route => ({
       method,
       pattern: new RegExp("^" + path.replace(/\{\w+\}/g, "([^/]+)") + "$"),
@@ -324,9 +339,10 @@ export class Api {
     const chunks: Buffer[] = [];
     let size = 0;
     for await (const chunk of req) {
-      size += (chunk as Buffer).length;
+      if (!Buffer.isBuffer(chunk)) throw new PicoError(400, "invalid image request");
+      size += chunk.length;
       if (size > images.settings.maxRequestBytes) throw new PicoError(413, "image request too large");
-      chunks.push(chunk as Buffer);
+      chunks.push(chunk);
     }
     const value = parseJson(Buffer.concat(chunks).toString("utf8"));
     writeJSON(res, 202, { run: await images.start(params[0] ?? "", value) });
@@ -830,7 +846,7 @@ export class Api {
 
   async #matterGroup({ req, res, params }: RequestContext): Promise<void> {
     requireSameOrigin(req);
-    if (this.layoutPath === undefined) throw new HttpError(503, "group editing is unavailable");
+    if (this.layoutPath === null) throw new HttpError(503, "group editing is unavailable");
     const raw = params[0] ?? "";
     const nodeId = Number(raw);
     if (!/^[1-9]\d*$/.test(raw) || !Number.isSafeInteger(nodeId)) throw new HttpError(400, "invalid Matter node ID");

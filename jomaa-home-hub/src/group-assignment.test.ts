@@ -64,8 +64,13 @@ test("group edits persist room membership and update the running fan-out", async
   const store = new HealthStore(":memory:");
   const hub = Hub.build(parseConfig(JSON.stringify(cfg)), new GoveeClient("test", "http://127.0.0.1:1"), controller);
   const origin = await serve(
-    new Api(hub, controller, "test-password", new Accounts(":memory:"), new Clicks(":memory:"), silentLog, store, path)
-      .handle,
+    new Api(hub, controller, "test-password", new Accounts(":memory:"), new Clicks(":memory:"), silentLog, {
+      health: store,
+      layoutPath: path,
+      organization: null,
+      secrets: null,
+      picos: null,
+    }).handle,
   );
   const headers = { Authorization: `Bearer ${sessionToken("test-password")}`, "Content-Type": "application/json" };
   const save = (body: unknown) =>

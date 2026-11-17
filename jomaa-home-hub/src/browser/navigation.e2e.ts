@@ -34,8 +34,13 @@ for (const name of ["alpha", "beta"]) {
 }
 accounts.setScopes("alpha", ["devices"]);
 const origin = await serve(
-  new Api(new Hub(), matter, password, accounts, new Clicks(":memory:"), silentLog, health, undefined, organization)
-    .handle,
+  new Api(new Hub(), matter, password, accounts, new Clicks(":memory:"), silentLog, {
+    health,
+    layoutPath: null,
+    organization,
+    secrets: null,
+    picos: null,
+  }).handle,
 );
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 after(async () => {

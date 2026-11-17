@@ -18,7 +18,7 @@ export class HealthHttp {
     private readonly log: Log,
     private readonly matter: MatterAdmin,
     private readonly hub: Hub,
-    private readonly organization?: Organization,
+    private readonly organization: Organization | null,
   ) {
     this.#connectivity = new Connectivity(hub);
   }

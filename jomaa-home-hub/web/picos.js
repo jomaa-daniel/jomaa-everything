@@ -22,8 +22,12 @@ export class PicoPanel {
     this.timer = null;
     this.loading = false;
     $("pico-refresh").addEventListener("click", () => this.refresh());
-    $("pico-close").addEventListener("click", () => $("pico-panel").close());
-    $("pico-panel").addEventListener("close", () => this.close());
+    $("pico-close").addEventListener("click", () => this.close(true));
+    $("pico-panel").addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      this.close(true);
+    });
     $("pico-retry").addEventListener("click", () => this.open(this.target, this.opener));
     $("pico-form").addEventListener("submit", (event) => {
       event.preventDefault();
@@ -55,8 +59,7 @@ export class PicoPanel {
     $("usb-picos").hidden = !value;
     if (value) void this.refresh();
     else {
-      $("pico-panel").close();
-      this.close();
+      this.close(false);
       this.targets = [];
       $("pico-targets").replaceChildren();
     }
@@ -86,6 +89,7 @@ export class PicoPanel {
         list.append(button);
         if (this.target?.id === target.id) this.opener = button;
       }
+      this.markSelected();
       $("pico-inventory-status").textContent = this.targets.length
         ? `${this.targets.length} connected`
         : "No USB Picos connected. Connect a Pico to the hub server and refresh.";
@@ -97,14 +101,21 @@ export class PicoPanel {
     }
   }
 
-  close() {
+  close(restoreFocus) {
     this.panelEpoch++;
     clearTimeout(this.timer);
     this.timer = null;
+    $("pico-panel").hidden = true;
     $("pico-password").value = "";
-    if (this.signedIn && this.opener?.isConnected) this.opener.focus();
+    if (restoreFocus && this.signedIn && this.opener?.isConnected) this.opener.focus();
     this.target = null;
     this.run = null;
+    this.markSelected();
+  }
+
+  markSelected() {
+    for (const button of $("pico-targets").querySelectorAll(".pico-target"))
+      button.setAttribute("aria-pressed", String(button.dataset.targetId === this.target?.id));
   }
 
   async open(target, opener) {
@@ -125,7 +136,11 @@ export class PicoPanel {
     $("pico-results").hidden = true;
     $("pico-panel-status").textContent = "Loading image options…";
     $("pico-retry").hidden = true;
-    if (!$("pico-panel").open) $("pico-panel").showModal();
+    this.markSelected();
+    if ($("pico-panel").hidden) {
+      $("pico-panel").hidden = false;
+      $("pico-panel-title").focus();
+    }
     this.controls();
     try {
       const catalog = await this.api("/api/picos/catalog");
@@ -238,9 +253,12 @@ export class PicoPanel {
     )
       return;
     const epoch = this.panelEpoch;
-    const body = { features: selected.map((x) => x.id) };
-    if (this.selectedFeatures.has("wifi"))
-      body.wifi = { ssid: $("pico-ssid").value, password: $("pico-password").value, transport: $("pico-radio").value };
+    const body = {
+      features: selected.map((x) => x.id),
+      wifi: this.selectedFeatures.has("wifi")
+        ? { ssid: $("pico-ssid").value, password: $("pico-password").value, transport: $("pico-radio").value }
+        : null,
+    };
     this.submitting = true;
     this.controls();
     $("pico-password").value = "";

@@ -31,8 +31,13 @@ await test("device details show live raw captures, condensed idle spans, pause, 
   store.enroll({ id: "pico-other", name: "Other Pico" });
   const organization = new Organization(":memory:");
   const origin = await serve(
-    new Api(new Hub(), matter, password, accounts, new Clicks(":memory:"), silentLog, store, undefined, organization)
-      .handle,
+    new Api(new Hub(), matter, password, accounts, new Clicks(":memory:"), silentLog, {
+      health: store,
+      layoutPath: null,
+      organization,
+      secrets: null,
+      picos: null,
+    }).handle,
   );
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   const page = await browser.newPage();

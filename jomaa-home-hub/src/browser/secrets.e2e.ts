@@ -102,17 +102,11 @@ const accounts = new Accounts(":memory:");
 const { token: invite } = accounts.createInvite();
 await accounts.join(invite, "guest", guestPassword);
 accounts.setScopes("guest", ["lights", "devices", "manage"]);
-const api = new Api(
-  new Hub(),
-  noMatter,
-  ownerPassword,
-  accounts,
-  new Clicks(":memory:"),
-  silentLog,
-  undefined,
-  undefined,
-  undefined,
-  {
+const api = new Api(new Hub(), noMatter, ownerPassword, accounts, new Clicks(":memory:"), silentLog, {
+  health: null,
+  layoutPath: null,
+  organization: null,
+  secrets: {
     files: new EnvFiles(root, Object.keys(contents), deploySettings.hubPasswordMinLength),
     workflow: new DeployWorkflow({
       api: fakeGitHub,
@@ -122,7 +116,8 @@ const api = new Api(
     }),
     cli: new GitHubCli(ghCommand, deploySettings.githubTimeoutSeconds * 1000),
   },
-);
+  picos: null,
+});
 const origin = await serve(api.handle);
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const owner = await browser.newContext();

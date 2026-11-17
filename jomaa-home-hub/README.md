@@ -55,8 +55,10 @@ Set `MATTER_LOG_LEVEL` (`debug`, `info`, `notice`, `warn`, `error`; default
 ## USB Pico imaging
 
 The Devices page includes a USB Picos card underneath the registered inventory.
-Its right-side panel loads the functionality catalog from `jomaa-images` and
-starts a confirmed clean flash of one Pico physically attached to the hub server.
+Selecting a Pico opens its imaging panel in a cell beside the card, on the same
+page, or below it on narrow screens. The panel loads the functionality catalog
+from `jomaa-images` and starts a confirmed clean flash of one Pico physically
+attached to the hub server.
 The image can include health reporting, Wi-Fi, internal temperature readings and
 active raw I²C logging. Health requires Wi-Fi; I²C requires both.
 
@@ -66,12 +68,12 @@ not pass verification. The component's [README](../jomaa-images/README.md) descr
 USB permissions, TLS trust and the verification contracts; its
 [settings](../jomaa-images/config.md) configure host commands, limits and retention.
 
-| Endpoint                           | Behavior                                                                                                     |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `GET /api/picos`                   | Server USB targets, active run ID, and configured polling interval.                                          |
-| `GET /api/picos/catalog`           | Function IDs, labels, descriptions, defaults, dependencies and default radio.                                |
-| `POST /api/picos/{targetId}/flash` | Starts a run for `features` and optional `wifi` (`ssid`, `password`, `transport`). Returns the accepted run. |
-| `GET /api/picos/runs/{runId}`      | Safe run status and selected function results/evidence.                                                      |
+| Endpoint                           | Behavior                                                                                                                       |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/picos`                   | Server USB targets, active run ID, and configured polling interval.                                                            |
+| `GET /api/picos/catalog`           | Function IDs, labels, descriptions, defaults, dependencies and default radio.                                                  |
+| `POST /api/picos/{targetId}/flash` | Starts a run for `features` and `wifi`: `ssid`, `password` and `transport`, or `null` without Wi-Fi. Returns the accepted run. |
+| `GET /api/picos/runs/{runId}`      | Safe run status and selected function results/evidence.                                                                        |
 
 These routes require Devices access. Flash requests require the existing
 same-origin checks and permit neither executable nor device paths from the
@@ -466,9 +468,11 @@ python3 scripts/verify.py
 
 Installs the pinned dependencies, then runs Prettier, the TypeScript compiler
 (strict), ESLint (typescript-eslint's strict type-checked rules), the Node
-tests, `npm audit` and the Python tests. The Node tests include a run of the
-real Matter controller on a fresh fabric; the Python tests build the real hub
-and drive it against a fake Govee API. `npm test` runs just the Node tests.
+tests, `npm audit` of the production dependencies and the Python tests. The
+audit's failing severity and accepted advisories are in
+[`audit.json`](audit.json), described in [`audit.md`](audit.md). The Node tests
+include a run of the real Matter controller on a fresh fabric; the Python tests
+build the real hub and drive it against a fake Govee API. `npm test` runs just the Node tests.
 
 `node dist/main.js --no-matter` runs the hub without the Matter controller,
 for Govee-only homes and tests.

@@ -43,9 +43,9 @@ class ImagesTests(unittest.TestCase):
                 images.load_config(file)
 
     def test_feature_dependencies_invalid_requests_have_no_outputs(self):
-        for request in ({"features": []}, {"features": ["temperature", "temperature"]},
-                        {"features": ["unknown"]}, {"features": ["health"]}, {"features": ["i2c"]},
-                        {"features": ["temperature"], "wifi": {}},
+        for request in ({"features": [], "wifi": None}, {"features": ["temperature", "temperature"], "wifi": None},
+                        {"features": ["unknown"], "wifi": None}, {"features": ["health"], "wifi": None}, {"features": ["i2c"], "wifi": None},
+                        {"features": ["temperature"], "wifi": {}}, {"features": ["temperature"]},
                         {"features": ["wifi"], "wifi": {"ssid": "a" * 33, "password": "secret", "transport": "native"}}):
             with self.subTest(request=request), self.assertRaises(images.ImageError):
                 images.prepare(self.path / "image", request, self.config)
@@ -53,7 +53,7 @@ class ImagesTests(unittest.TestCase):
 
     def test_preparation_installs_only_selected_modules_and_private_config(self):
         output = self.path / "temperature"
-        image = images.prepare(output, {"features": ["temperature"]}, self.config)
+        image = images.prepare(output, {"features": ["temperature"], "wifi": None}, self.config)
         self.assertEqual(image["features"], ["temperature"])
         self.assertEqual({p.name for p in output.iterdir()}, {"main.py", "image_status.py", "image.json", "image_settings.json"})
         request = {"features": ["wifi", "health"], "wifi": {"ssid": "test-network", "password": "private-fixture", "transport": "esp8285"}}
@@ -140,7 +140,7 @@ class ImagesTests(unittest.TestCase):
         now = [0]
         def ticks(): now[0] += .01; return now[0]
         events = []
-        request = {"features": features}
+        request = {"features": features, "wifi": None}
         if "wifi" in features:
             request["wifi"] = {"ssid": "fixture", "password": "private", "transport": "esp8285"}
         with patch.dict(sys.modules, {"serial": SimpleNamespace(Serial=serial)}), patch.object(images.time, "monotonic", ticks):
@@ -202,14 +202,14 @@ class ImagesTests(unittest.TestCase):
         target = {"id": "runtime-fixture", "uniqueId": uid, "port": "fixture-port", "mode": "runtime"}
         with patch.object(images, "discover", side_effect=[[target], [bootsel]]), self.assertRaises(images.ImageError):
             host.reimage(target,
-                         {"features": ["temperature"]}, self.path, lambda value: None)
+                         {"features": ["temperature"], "wifi": None}, self.path, lambda value: None)
         host.usb.assert_not_called()
         host.inspect.assert_called_once_with("fixture-port")
 
     def test_disconnected_target_has_no_usb_operations(self):
         host = Mock()
         with patch.object(images, "ROOT", self.path), patch.object(images, "discover", return_value=[]), self.assertRaises(images.ImageError):
-            images.execute("gone", {"features": ["temperature"]}, self.config, lambda value: None, host)
+            images.execute("gone", {"features": ["temperature"], "wifi": None}, self.config, lambda value: None, host)
         host.reimage.assert_not_called()
 
     def test_offline_device_does_not_pass_from_earlier_reports(self):
@@ -236,7 +236,7 @@ class ImagesTests(unittest.TestCase):
                 raise StopIteration()
         clock = SimpleNamespace(ticks_ms=lambda: ticks[0], ticks_diff=lambda a,b: a-b,
                                 ticks_add=lambda a,b: a+b, sleep_ms=sleep)
-        status = SimpleNamespace(image={"features": ["wifi"]}, settings=self.config["telemetry"], tick=lambda ip: None)
+        status = SimpleNamespace(image={"features": ["wifi"], "wifi": None}, settings=self.config["telemetry"], tick=lambda ip: None)
         config = {"wifi_transport": "native", "wifi_ssid": "requested-network", "wifi_password": "private",
                   "runtime": {"joinTimeoutMilliseconds": 10000, "joinPollMilliseconds": 1}}
         with patch.dict(sys.modules, {"image_status": status, "time": clock, "network": SimpleNamespace(WLAN=lambda value: wifi, STA_IF=0)}), \
