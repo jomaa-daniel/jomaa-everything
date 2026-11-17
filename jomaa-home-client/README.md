@@ -20,7 +20,7 @@ Both apps:
 ## Test
 
 ```bash
-python3 scripts/verify.py              # Android unit tests, strict lint, builds; iOS tests on a Mac
+python3 scripts/verify.py              # Android unit tests, strict lint, builds
 python3 scripts/verify.py --emulator   # plus Android emulator tests
 ```
 

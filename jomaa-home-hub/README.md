@@ -468,11 +468,9 @@ python3 scripts/verify.py
 
 Installs the pinned dependencies, then runs Prettier, the TypeScript compiler
 (strict), ESLint (typescript-eslint's strict type-checked rules), the Node
-tests, `npm audit` of the production dependencies and the Python tests. The
-audit's failing severity and accepted advisories are in
-[`audit.json`](audit.json), described in [`audit.md`](audit.md). The Node tests
-include a run of the real Matter controller on a fresh fabric; the Python tests
-build the real hub and drive it against a fake Govee API. `npm test` runs just the Node tests.
+tests and the Python tests. The Node tests include a run of the real Matter
+controller on a fresh fabric; the Python tests build the real hub and drive it
+against a fake Govee API. `npm test` runs just the Node tests.
 
 `node dist/main.js --no-matter` runs the hub without the Matter controller,
 for Govee-only homes and tests.
