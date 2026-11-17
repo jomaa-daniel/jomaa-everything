@@ -24,7 +24,7 @@ const matter: MatterAdmin = {
   removeNode: () => Promise.resolve(),
 };
 
-await test("USB Pico drawer selects image functions, confirms erasure, resumes a run and renders results on desktop and mobile", async () => {
+await test("USB Pico split view selects image functions, confirms erasure, resumes a run and renders results on desktop and mobile", async () => {
   const settings = { ...imageSettings(), pollMilliseconds: 30 };
   const catalog = await new ImageCommand(settings).catalog();
   const target = {
@@ -84,9 +84,14 @@ await test("USB Pico drawer selects image functions, confirms erasure, resumes a
     await page.getByRole("button", { name: /Jerry USB Pico/ }).click();
     const panel = page.locator("#pico-panel");
     await page.getByRole("checkbox", { name: /Health check/ }).waitFor();
+    const listBox = await page.locator(".pico-card").boundingBox();
     const box = await panel.boundingBox();
-    const bodyBox = await page.locator("body").boundingBox();
-    assert.ok(box && bodyBox && Math.abs(box.x + box.width - bodyBox.x - bodyBox.width) < 2);
+    assert.ok(listBox && box);
+    assert.ok(Math.abs(box.y - listBox.y) < 2 && box.x >= listBox.x + listBox.width);
+    assert.ok(box.x + box.width <= 1280);
+    assert.equal(await page.locator("dialog[open]").count(), 0);
+    assert.ok(await page.locator("#pico-panel-title:focus").isVisible());
+    assert.equal(await page.getByRole("button", { name: /Jerry USB Pico/ }).getAttribute("aria-pressed"), "true");
     assert.ok(await page.locator("#pico-flash").isDisabled());
     await page.getByRole("checkbox", { name: /I²C raw logging/ }).check();
     assert.ok(await page.getByRole("checkbox", { name: /Health check/ }).isChecked());
@@ -127,12 +132,15 @@ await test("USB Pico drawer selects image functions, confirms erasure, resumes a
     await page.screenshot({ path: "/tmp/jomaa-picos-desktop.png", fullPage: false });
     await page.setViewportSize({ width: 390, height: 844 });
     const mobileBox = await panel.boundingBox();
-    assert.ok(mobileBox && mobileBox.x >= 0 && mobileBox.width <= 390);
+    const mobileListBox = await page.locator(".pico-card").boundingBox();
+    assert.ok(mobileBox && mobileListBox && mobileBox.x >= 0 && mobileBox.x + mobileBox.width <= 390);
+    assert.ok(mobileBox.y >= mobileListBox.y + mobileListBox.height);
     assert.ok(await page.locator("#pico-close").isVisible());
     await page.screenshot({ path: "/tmp/jomaa-picos-mobile.png", fullPage: false });
     await page.keyboard.press("Escape");
     assert.ok(await panel.isHidden());
     assert.equal(await page.locator(".pico-target:focus").getAttribute("data-target-id"), target.id);
+    assert.equal(await page.getByRole("button", { name: /Jerry USB Pico/ }).getAttribute("aria-pressed"), "false");
     await page.getByRole("button", { name: /Jerry USB Pico/ }).click();
     await page.locator("#pico-run-status.success").waitFor();
     await page.locator("#pico-close").click();

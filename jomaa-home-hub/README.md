@@ -55,8 +55,10 @@ Set `MATTER_LOG_LEVEL` (`debug`, `info`, `notice`, `warn`, `error`; default
 ## USB Pico imaging
 
 The Devices page includes a USB Picos card underneath the registered inventory.
-Its right-side panel loads the functionality catalog from `jomaa-images` and
-starts a confirmed clean flash of one Pico physically attached to the hub server.
+Selecting a Pico opens its imaging panel in a cell beside the card, on the same
+page, or below it on narrow screens. The panel loads the functionality catalog
+from `jomaa-images` and starts a confirmed clean flash of one Pico physically
+attached to the hub server.
 The image can include health reporting, Wi-Fi, internal temperature readings and
 active raw I²C logging. Health requires Wi-Fi; I²C requires both.
 
