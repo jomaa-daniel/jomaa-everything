@@ -95,8 +95,13 @@ test("Pico APIs require Devices access before discovering or launching, and refu
   const guest = accounts.createSession("guest");
   const password = "pico api owner password";
   const origin = await serve(
-    new Api(new Hub(), matter, password, accounts, clicks, silentLog, undefined, undefined, undefined, undefined, runs)
-      .handle,
+    new Api(new Hub(), matter, password, accounts, clicks, silentLog, {
+      health: null,
+      layoutPath: null,
+      organization: null,
+      secrets: null,
+      picos: runs,
+    }).handle,
   );
   try {
     assert.equal((await fetch(origin + "/api/picos")).status, 401);

@@ -86,17 +86,13 @@ const cloud = await serve((req, res) => {
 });
 const hub = Hub.build(parseConfig(JSON.stringify(cfg)), new GoveeClient("test", cloud), matter);
 const origin = await serve(
-  new Api(
-    hub,
-    matter,
-    password,
-    new Accounts(":memory:"),
-    new Clicks(":memory:"),
-    silentLog,
+  new Api(hub, matter, password, new Accounts(":memory:"), new Clicks(":memory:"), silentLog, {
     health,
-    path,
+    layoutPath: path,
     organization,
-  ).handle,
+    secrets: null,
+    picos: null,
+  }).handle,
 );
 const setupHeaders = { Authorization: `Bearer ${sessionToken(password)}`, "Content-Type": "application/json" };
 for (const body of [

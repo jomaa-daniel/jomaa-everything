@@ -63,8 +63,13 @@ await test("USB Pico split view selects image functions, confirms erasure, resum
   store.enroll({ id: "existing-health", name: "Existing device" });
   const runs = new PicoRuns(imager, settings, null);
   const origin = await serve(
-    new Api(new Hub(), matter, password, accounts, clicks, silentLog, store, undefined, organization, undefined, runs)
-      .handle,
+    new Api(new Hub(), matter, password, accounts, clicks, silentLog, {
+      health: store,
+      layoutPath: null,
+      organization,
+      secrets: null,
+      picos: runs,
+    }).handle,
   );
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });

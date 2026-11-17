@@ -159,22 +159,17 @@ async function setup(ghCommand: string = gh.loggedIn): Promise<Env> {
     timeoutMs: 5000,
   });
   const log = newLog({}, (line) => logs.push(line));
-  const api = new Api(
-    new Hub(),
-    noMatter,
-    ownerPassword,
-    accounts,
-    new Clicks(":memory:"),
-    log,
-    undefined,
-    undefined,
-    undefined,
-    {
+  const api = new Api(new Hub(), noMatter, ownerPassword, accounts, new Clicks(":memory:"), log, {
+    health: null,
+    layoutPath: null,
+    organization: null,
+    secrets: {
       files: envFiles(root),
       workflow,
       cli: new GitHubCli(ghCommand, deploySettings.githubTimeoutSeconds * 1000),
     },
-  );
+    picos: null,
+  });
   const url = await serve(api.handle);
   const login = await fetch(url + "/api/login", { method: "POST", body: JSON.stringify({ password: ownerPassword }) });
   const owner = new Fields(parseJson(await login.text()), "login").string("token") ?? "";
