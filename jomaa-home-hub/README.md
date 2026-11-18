@@ -500,6 +500,7 @@ Pico W, Pico 2 W, and RP2040 boards with an ESP8285 UART radio report over verif
 Their first authenticated report registers them; missed reports mark them offline.
 See [Health monitoring](docs/health-monitoring.md) for setup, USB provisioning, API details, and tests.
 For imaging and checking a board from scratch, use [Pico imaging bench](../pico-imaging-bench/README.md).
+The image catalog includes four-wire PWM fan control. Its hub API uses Matter Fan Control attribute names and reports acknowledged PWM duty. See [Fan control](../jomaa-images/README.md#fan-control) for the hardware settings and API.
 
 Device connection status uses each source: Govee cloud online flags, Matter
 controller availability, and Pico health reports. Govee checks read state and

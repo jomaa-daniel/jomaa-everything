@@ -1,6 +1,6 @@
 # jomaa-images
 
-The Devices page shows USB Picos attached to the Linux hub server. Selecting a board opens the imaging panel with the functions in `config.json`. Health check requires Wi-Fi; I²C raw logging requires both. Temperature reading uses the Pico's internal sensor and emits Celsius over USB. I²C logging performs active reads on the configured buses.
+The Devices page shows USB Picos attached to the Linux hub server. Selecting a board opens the imaging panel with the functions in `config.json`. Health check requires Wi-Fi; I²C raw logging and PWM fan control require both. Temperature reading uses the Pico's internal sensor and emits Celsius over USB. I²C logging performs active reads on the configured buses.
 
 `Flash image` confirms the target and filesystem erasure, then starts a server-owned run. The panel shows progress and each selected function's observed evidence. Closing the panel does not cancel imaging. Run summaries are private and retained according to `retentionHours`; interrupted runs fail on hub restart. Prepared files remain in the private run directory.
 
@@ -30,9 +30,27 @@ python3 jomaa-images/images.py flash --target TARGET_ID
 
 Preparation and flashing read one JSON request from stdin, such as `{"features":["temperature"],"wifi":null}`. Wi-Fi images set `wifi` to an object with `ssid`, `password` and `transport` (`esp8285` or `native`); pass credentials through private input, never command-line arguments. `--config FILE` chooses host settings. Preparation opens no USB devices. Flashing performs erasure; it emits structured stage, check and final-result events. Discovery and catalog emit one JSON object.
 
+## Fan control
+
+Select **PWM fan control** to install a hardware PWM output controlled through the Pi hub's API. Wi-Fi and health are selected as prerequisites. The installed settings come from `fan` in [config.json](config.json), documented in [config.md](config.md). The output starts at `fan.startupPercent` before Wi-Fi or TLS setup and holds its last applied duty during network failures. Hardware PWM continues during uploads and retries. Reboot applies the startup duty, then retrieves the persisted hub setting.
+
+The electrical profile is for a separately powered four-wire fan with a PWM control input. Connect `fan.gpio` to a suitable transistor or open-drain driver and share ground with the fan supply. `fan.inverted` describes that driver's polarity. The Pico GPIO must not power the fan or receive its supply voltage. Confirm the fan's PWM frequency, stop behavior and driver wiring before flashing. The tachometer wire is not sampled by this feature.
+
+The API uses the Matter Fan Control cluster's attribute names and enum values. It supports Off, Low, Medium and High modes, with `fan.lowPercent` and `fan.mediumPercent` defining their ranges. The transport is the existing authenticated HTTPS device channel. This image does not advertise or commission as a Matter endpoint.
+
+| Method | API | Body / response |
+| --- | --- | --- |
+| GET | `/api/devices/{id}/fan` | Returns `fan`, including `fanMode`, `fanModeSequence`, `percentSetting`, `percentCurrent`, `revision`, `appliedRevision`, `pending`, `available` and peripheral readback in `report`. |
+| PUT | `/api/devices/{id}/fan` | Write exactly one attribute: `{"percentSetting":50}` or `{"fanMode":0}`. Returns 202 with the requested state; poll GET until `pending` is false. |
+| POST | `/api/devices/{id}/fan/report` | Device-only report and command exchange using the individual device bearer token over verified HTTPS. |
+
+GET and PUT require an owner session or the Devices scope. Fan modes follow Matter: Off is 0, Low is 1, Medium is 2, High is 3. A percent setting of 0 requests off and 100 requests maximum output. Null `percentSetting` leaves the setting unchanged. Unsupported attributes and modes are rejected. Repeating the same setting retains its revision. A new setting remains pending until a report acknowledges its revision. The reporter exchanges fan state at `fan.pollMilliseconds`; network operations can delay delivery.
+
+`percentCurrent` reports the PWM peripheral's logical duty, not measured RPM or airflow. It becomes null when reports are older than `fan.staleMilliseconds` or health is offline. `report` retains the last observation and its identity. A fan that keeps spinning at zero PWM cannot be physically turned off through its PWM input alone. Firmware readback does not establish an electrical waveform or fan rotation.
+
 ## Verification
 
-The installed startup emits its unique install ID, runtime UID, boot ID and selected features. The host reads these without entering raw REPL. Health passes after the configured count of new persisted reports from this boot, Wi-Fi after an observed valid IP, temperature after a finite Celsius sample, and I²C after a new persisted capture without capture errors. Empty captures are described as having no responding devices. Overall success requires all selected checks and installed startup execution after reset.
+The installed startup emits its unique install ID, runtime UID, boot ID and selected features. The host reads these without entering raw REPL. Health passes after the configured count of new persisted reports from this boot, Wi-Fi after an observed valid IP, temperature after a finite Celsius sample, and I²C after a new persisted capture without capture errors. Fan control requires PWM peripheral readback from this installation that matches a fresh hub report acknowledging the requested revision. Empty captures are described as having no responding devices. Overall success requires all selected checks and installed startup execution after reset.
 
 ```
 python3 -m unittest discover -s jomaa-images/tests -v

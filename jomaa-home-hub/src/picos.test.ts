@@ -26,6 +26,7 @@ const features: Feature[] = [
   { id: "wifi", label: "Wi-Fi", description: "Connection", requires: [], default: false },
   { id: "temperature", label: "Temperature reading", description: "Celsius", requires: [], default: false },
   { id: "i2c", label: "I²C raw logging", description: "Active reads", requires: ["health", "wifi"], default: false },
+  { id: "fan", label: "PWM fan control", description: "PWM output", requires: ["health", "wifi"], default: false },
 ];
 const target: PicoTarget = {
   id: "runtime-test",

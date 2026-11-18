@@ -48,6 +48,15 @@
 | `telemetry.referenceCelsius` | Calibration reference temperature. |
 | `telemetry.referenceSensorVolts` | Sensor output voltage at the reference temperature. |
 | `telemetry.voltsPerCelsius` | Sensor voltage change per Celsius degree. |
+| `fan` | Hardware PWM output and Matter Fan Control attribute mapping. |
+| `fan.gpio` | Pico GPIO connected to the fan's PWM driver input; must not overlap the selected radio or I²C pins. |
+| `fan.frequencyHz` | Requested hardware PWM frequency. The runtime reports the frequency read back from the PWM peripheral. |
+| `fan.inverted` | Invert GPIO duty for an inverting transistor or open-drain driver, so logical fan duty remains proportional to the requested percent. |
+| `fan.startupPercent` | PWM percent applied at boot until an authenticated hub command arrives. |
+| `fan.lowPercent` | Low mode duty and upper boundary of the Low percent range. |
+| `fan.mediumPercent` | Medium mode duty and upper boundary of the Medium percent range; exceeds `fan.lowPercent` and is below maximum duty. |
+| `fan.pollMilliseconds` | Minimum interval between fan state exchanges on the reporter's shared verified HTTPS connection. Network operations and retries can extend the interval. |
+| `fan.staleMilliseconds` | Age after which reported PWM duty is unavailable in the API; must exceed `fan.pollMilliseconds`. |
 | `features` | Ordered supported image options. |
 | `features[].id` | Function ID used in requests and image manifests. |
 | `features[].label` | Checkbox label. |

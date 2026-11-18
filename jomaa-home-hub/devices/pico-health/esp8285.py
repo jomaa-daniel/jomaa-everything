@@ -1,7 +1,7 @@
 """ESP8285 AT transport. The Pico verifies TLS over an ordinary TCP UART stream."""
 import io
 import time
-from machine import RTC, UART
+from machine import Pin, RTC, UART
 
 
 def _quoted(value):
@@ -59,8 +59,9 @@ class TCPStream(io.IOBase):
 class ESP8285:
     def __init__(self, config):
         self.config = config
-        # GP0/GP1 are the board's existing UART0 wiring. Buffer incoming TLS records.
-        self.uart = UART(0, 115200, timeout=0, rxbuf=16384, txbuf=2048)
+        uart = config["runtime"]["espUart"]
+        self.uart = UART(uart["id"], uart["baud"], tx=Pin(uart["tx"]), rx=Pin(uart["rx"]),
+                         timeout=0, rxbuf=uart["rxBufferBytes"], txbuf=uart["txBufferBytes"])
         self.transparent = False
 
     def _drain(self):

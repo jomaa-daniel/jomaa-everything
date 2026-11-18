@@ -99,12 +99,14 @@ await test("USB Pico split view selects image functions, confirms erasure, resum
     assert.equal(await page.getByRole("button", { name: /Jerry USB Pico/ }).getAttribute("aria-pressed"), "true");
     assert.ok(await page.locator("#pico-flash").isDisabled());
     await page.getByRole("checkbox", { name: /I²C raw logging/ }).check();
+    await page.getByRole("checkbox", { name: /PWM fan control/ }).check();
     assert.ok(await page.getByRole("checkbox", { name: /Health check/ }).isChecked());
     assert.ok(await page.getByRole("checkbox", { name: /^Wi-Fi/ }).isChecked());
     assert.equal(await page.locator("#pico-radio").inputValue(), catalog.defaultWifiTransport);
     await page.getByRole("checkbox", { name: /^Wi-Fi/ }).uncheck();
     assert.ok(!(await page.getByRole("checkbox", { name: /Health check/ }).isChecked()));
     assert.ok(!(await page.getByRole("checkbox", { name: /I²C raw logging/ }).isChecked()));
+    assert.ok(!(await page.getByRole("checkbox", { name: /PWM fan control/ }).isChecked()));
     await page.getByRole("checkbox", { name: /Temperature reading/ }).check();
     page.once("dialog", (dialog) => {
       void dialog.dismiss();
@@ -148,6 +150,61 @@ await test("USB Pico split view selects image functions, confirms erasure, resum
     assert.equal(await page.getByRole("button", { name: /Jerry USB Pico/ }).getAttribute("aria-pressed"), "false");
     await page.getByRole("button", { name: /Jerry USB Pico/ }).click();
     await page.locator("#pico-run-status.success").waitFor();
+    await page.getByRole("checkbox", { name: /Temperature reading/ }).uncheck();
+    await page.getByRole("checkbox", { name: /PWM fan control/ }).check();
+    assert.ok(await page.getByRole("checkbox", { name: /Health check/ }).isChecked());
+    assert.ok(await page.getByRole("checkbox", { name: /^Wi-Fi/ }).isChecked());
+    await page.locator("#pico-ssid").fill("test-network");
+    await page.locator("#pico-password").fill("private-fixture");
+    page.once("dialog", (dialog) => {
+      void dialog.accept();
+    });
+    await page.locator("#pico-flash").click();
+    await page.locator("#pico-run-status", { hasText: "Imaging in progress" }).waitFor();
+    assert.deepEqual(selected, ["health", "wifi", "fan"]);
+    events = [
+      {
+        type: "check",
+        check: {
+          feature: "health",
+          status: "passed",
+          message: "Persisted",
+          evidence: { deviceId: "pico-fan", bootId: "a".repeat(16), reports: 3 },
+        },
+      },
+      {
+        type: "check",
+        check: {
+          feature: "wifi",
+          status: "passed",
+          message: "Connected",
+          evidence: { transport: catalog.defaultWifiTransport, ip: "192.0.2.1" },
+        },
+      },
+      {
+        type: "check",
+        check: {
+          feature: "fan",
+          status: "passed",
+          message: "PWM acknowledged",
+          evidence: {
+            deviceId: "pico-fan",
+            bootId: "a".repeat(16),
+            gpio: 15,
+            frequencyHz: 25000,
+            percentCurrent: 50,
+            appliedRevision: 3,
+          },
+        },
+      },
+      { type: "result", status: "passed", message: "Fan image verified" },
+    ];
+    finish();
+    await page.locator("#pico-run-status.success").waitFor();
+    assert.match((await page.locator("#pico-checks").textContent()) ?? "", /GP15 · 25000 Hz · 50% PWM · revision 3/);
+    await page.screenshot({ path: "/tmp/jomaa-fan-mobile.png", fullPage: false });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.screenshot({ path: "/tmp/jomaa-fan-desktop.png", fullPage: false });
     await page.locator("#pico-close").click();
     await page.locator("#logout").click();
     await page.locator("#usb-picos").waitFor({ state: "hidden" });

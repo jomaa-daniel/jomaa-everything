@@ -184,6 +184,44 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     assert.equal((await call(path, "POST", ping, token)).status, 201);
     assert.equal((await call(path, "POST", ping, token)).body["duplicate"], true);
     assert.equal(store.logs("pico-api").logs.length, 1);
+    const fanPath = "/api/devices/pico-api/fan";
+    const fanReport = {
+      bootId: ping.bootId,
+      installId: "b".repeat(32),
+      sequence: 0,
+      appliedRevision: null,
+      percentCurrent: 100,
+      gpio: 15,
+      frequencyHz: 25000,
+      inverted: true,
+    };
+    assert.equal((await call(fanPath, "GET", undefined, admin)).status, 404);
+    assert.equal((await call(fanPath + "/report", "POST", fanReport, admin)).status, 401);
+    assert.equal((await call(fanPath + "/report", "POST", fanReport, token, true)).status, 426);
+    assert.equal((await call(fanPath + "/report", "POST", fanReport, token)).status, 200);
+    assert.equal((await call(fanPath, "GET", undefined, token)).status, 401);
+    assert.equal((await call(fanPath, "GET", undefined, guest)).status, 200);
+    assert.equal((await call(fanPath, "PUT", { percentSetting: 25 }, token)).status, 401);
+    assert.equal(
+      (await call(fanPath, "PUT", { percentSetting: 25 }, admin, false, { Origin: "https://attacker.invalid" })).status,
+      403,
+    );
+    assert.equal((await call(fanPath, "PUT", { percentSetting: 101 }, admin)).status, 400);
+    const requested = await call(fanPath, "PUT", { percentSetting: 25 }, admin);
+    assert.equal(requested.status, 202);
+    assert.equal(store.fan.get("pico-api").pending, true);
+    await call(
+      fanPath + "/report",
+      "POST",
+      {
+        ...fanReport,
+        sequence: 1,
+        appliedRevision: store.fan.get("pico-api").revision,
+        percentCurrent: 25,
+      },
+      token,
+    );
+    assert.equal(store.fan.get("pico-api").pending, false);
     const capture = {
       bootId: ping.bootId,
       sequence: 0,

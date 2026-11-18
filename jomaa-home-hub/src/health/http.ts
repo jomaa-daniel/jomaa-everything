@@ -33,7 +33,7 @@ export class HealthHttp {
     const url = new URL(req.url ?? "/", "http://hub");
     if (url.pathname !== "/api/devices" && !url.pathname.startsWith("/api/devices/")) return false;
     res.setHeader("Cache-Control", "no-store");
-    const ping = /^\/api\/devices\/([^/]+)\/(health|i2c)$/.exec(url.pathname);
+    const ping = /^\/api\/devices\/([^/]+)\/(health|i2c|fan\/report)$/.exec(url.pathname);
     if (ping && (ping[2] === "health" || req.method === "POST")) {
       if (req.method !== "POST") throw new HealthError(405, "method not allowed");
       // Forwarded HTTPS is trusted only from the existing local tunnel (limiter.ts).
@@ -48,7 +48,9 @@ export class HealthHttp {
         this.#limiter.fail(client);
         throw err;
       }
-      if (ping[2] === "i2c") {
+      if (ping[2] === "fan/report") {
+        json(res, 200, this.store.fan.record(id, await body(req)));
+      } else if (ping[2] === "i2c") {
         const result = this.store.i2c.record(id, await body(req, settings.i2c.maxRequestBytes));
         json(res, 200, { ok: true, duplicate: result.duplicate });
       } else {
@@ -93,6 +95,14 @@ export class HealthHttp {
         }
         if (originHost !== req.headers.host) throw new HealthError(403, "cross-site request refused");
       }
+    }
+    const fan = /^\/api\/devices\/([^/]+)\/fan$/.exec(url.pathname);
+    if (fan) {
+      const id = decodeURIComponent(fan[1] ?? "");
+      if (req.method === "GET") json(res, 200, { fan: this.store.fan.get(id) });
+      else if (req.method === "PUT") json(res, 202, { fan: this.store.fan.write(id, await body(req)) });
+      else throw new HealthError(405, "method not allowed");
+      return true;
     }
     if (url.pathname === "/api/devices") {
       if (req.method !== "GET") throw new HealthError(405, "method not allowed");

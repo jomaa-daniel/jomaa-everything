@@ -4,6 +4,7 @@ import { isIP } from "node:net";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { I2CStore } from "./i2c.js";
+import { FanStore } from "./fan.js";
 
 export class HealthError extends Error {
   constructor(
@@ -56,6 +57,7 @@ const hash = (token: string) => createHash("sha256").update(token).digest();
 export class HealthStore {
   readonly #db: DatabaseSync;
   readonly i2c: I2CStore;
+  readonly fan: FanStore;
   readonly retentionDays: number;
   now: () => number = Date.now;
 
@@ -103,6 +105,11 @@ export class HealthStore {
       COMMIT;
     `);
     this.i2c = new I2CStore(
+      this.#db,
+      (id) => this.get(id),
+      () => this.now(),
+    );
+    this.fan = new FanStore(
       this.#db,
       (id) => this.get(id),
       () => this.now(),

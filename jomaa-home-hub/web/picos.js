@@ -235,7 +235,9 @@ export class PicoPanel {
               ? `${evidence.transport === "esp8285" ? "ESP8285" : "Native Pico W"} · ${evidence.ip}`
               : check.feature === "health"
                 ? `${evidence.reports} new heartbeats · ${evidence.deviceId}`
-                : `${evidence.bytes} bytes received · ${evidence.dropped} capture errors`;
+                : check.feature === "fan"
+                  ? `GP${evidence.gpio} · ${evidence.frequencyHz} Hz · ${evidence.percentCurrent}% PWM · revision ${evidence.appliedRevision}`
+                  : `${evidence.bytes} bytes received · ${evidence.dropped} capture errors`;
         row.append(node("span", summary, "device-id"));
       }
       checks.append(row);

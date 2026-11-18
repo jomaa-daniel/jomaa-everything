@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { Fields, isObject, parseJson } from "./json.js";
 import { releaseRoot } from "./settings.js";
 
-const configFile = new URL("jomaa-images/config.json", releaseRoot);
+export const imageConfigFile = new URL("jomaa-images/config.json", releaseRoot);
 const terminal = (status: string) => status === "passed" || status === "failed";
 const wifiTransports = ["native", "esp8285"] as const;
 const runStatuses = ["queued", "running", "passed", "failed"] as const;
@@ -102,7 +102,7 @@ export class PicoError extends Error {
 }
 
 export function imageSettings(): ImageSettings {
-  const f = new Fields(parseJson(readFileSync(configFile, "utf8")), "image settings");
+  const f = new Fields(parseJson(readFileSync(imageConfigFile, "utf8")), "image settings");
   const command = f.list("command").filter((x): x is string => typeof x === "string" && x !== "");
   if (!command.length || command.length !== f.list("command").length) throw new Error("Invalid image command");
   const state = f.string("runStateFile");
@@ -566,6 +566,19 @@ function evidence(feature: string, value: unknown, request: FlashRequest): Recor
   }
   if (feature === "health")
     return { deviceId: string("deviceId"), bootId: string("bootId"), reports: integer("reports", 3) };
+  if (feature === "fan") {
+    const percentCurrent = integer("percentCurrent");
+    const gpio = integer("gpio");
+    if (percentCurrent > 100 || gpio > 28) throw new Error("Invalid fan PWM result");
+    return {
+      deviceId: string("deviceId"),
+      bootId: string("bootId"),
+      gpio,
+      frequencyHz: integer("frequencyHz", 1),
+      percentCurrent,
+      appliedRevision: integer("appliedRevision"),
+    };
+  }
   if (feature === "i2c")
     return {
       deviceId: string("deviceId"),

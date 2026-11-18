@@ -23,7 +23,9 @@ ROOT = Path(__file__).resolve().parent.parent
 FIRMWARE = Path(__file__).with_name("firmware")
 CONFIG_FILE = Path(__file__).with_name("config.json")
 MARKER = b"JOMAA_IMAGE:"
-SUPPORTED_FEATURES = {"health", "wifi", "temperature", "i2c"}
+SUPPORTED_FEATURES = {"health", "wifi", "temperature", "i2c", "fan"}
+MAX_PERCENT = 100
+MAX_GPIO = 28
 SSID_MAX_BYTES = 32
 PASSWORD_MAX_BYTES = 64
 
@@ -76,13 +78,24 @@ def load_config(path=CONFIG_FILE):
             raise ImageError("Invalid telemetry setting: " + key)
         if key in ("sampleMilliseconds", "idleMilliseconds", "baud", "temperatureAdc") and type(value) is not int:
             raise ImageError("Telemetry setting must be a whole number: " + key)
+    fan = config.get("fan")
+    if not isinstance(fan, dict) or set(fan) != {"gpio", "frequencyHz", "inverted", "startupPercent",
+            "lowPercent", "mediumPercent", "pollMilliseconds", "staleMilliseconds"}:
+        raise ImageError("Invalid fan settings")
+    for key in ("gpio", "frequencyHz", "startupPercent", "lowPercent", "mediumPercent", "pollMilliseconds", "staleMilliseconds"):
+        if type(fan[key]) is not int or fan[key] < 0:
+            raise ImageError("Invalid fan setting: " + key)
+    if (fan["gpio"] > MAX_GPIO or not fan["frequencyHz"] or type(fan["inverted"]) is not bool
+            or fan["startupPercent"] > MAX_PERCENT or not 0 < fan["lowPercent"] < fan["mediumPercent"] < MAX_PERCENT
+            or not 0 < fan["pollMilliseconds"] < fan["staleMilliseconds"]):
+        raise ImageError("Invalid fan PWM or mode settings")
     features = config["features"]
     if not isinstance(features, list) or len(features) != len(SUPPORTED_FEATURES):
         raise ImageError("Invalid image feature catalog")
     ids = [feature["id"] for feature in features]
     if set(ids) != SUPPORTED_FEATURES:
         raise ImageError("Unsupported image feature catalog")
-    dependencies = {"health": ["wifi"], "wifi": [], "temperature": [], "i2c": ["health", "wifi"]}
+    dependencies = {"health": ["wifi"], "wifi": [], "temperature": [], "i2c": ["health", "wifi"], "fan": ["health", "wifi"]}
     for feature in features:
         if (set(feature) != {"id", "label", "description", "requires", "default"}
                 or not all(isinstance(feature[k], str) and feature[k] for k in ("label", "description"))
@@ -112,6 +125,17 @@ def validate_request(value, config):
                 or len(wifi["password"].encode()) > PASSWORD_MAX_BYTES
                 or any(c in wifi["ssid"] + wifi["password"] for c in ("\r", "\n", "\x00"))):
             raise ImageError("Invalid Wi-Fi settings")
+    if "fan" in features:
+        _, setup = helpers(config)
+        runtime = json.loads(setup.provisioner().STREAM_SETTINGS.read_text())
+        pin = config["fan"]["gpio"]
+        if value["wifi"]["transport"] == "esp8285" and pin in (runtime["espUart"]["tx"], runtime["espUart"]["rx"]):
+            raise ImageError("Fan PWM GPIO overlaps the ESP8285 radio")
+        if "i2c" in features:
+            for bus in runtime["buses"]:
+                for bus_pin in (bus["sda"], bus["scl"]):
+                    if pin == bus_pin:
+                        raise ImageError("Fan PWM GPIO overlaps an I²C pin")
     return {**value, "features": [x["id"] for x in config["features"] if x["id"] in features]}
 
 
@@ -199,6 +223,9 @@ def prepare(output, request, config, device_config=None, certificate=None):
     private_json(output / "image_settings.json", config["telemetry"])
     shutil.copyfile(FIRMWARE / "main.py", output / "main.py")
     shutil.copyfile(FIRMWARE / "image_status.py", output / "image_status.py")
+    if "fan" in request["features"]:
+        private_json(output / "fan_settings.json", config["fan"])
+        shutil.copyfile(FIRMWARE / "fan.py", output / "fan.py")
     if "wifi" in request["features"]:
         runtime = json.loads(module.STREAM_SETTINGS.read_text())
         runtime["maxDataBytes"] = json.loads((module.FIRMWARE.parents[2] / "settings.json").read_text())["i2c"]["maxDataBytes"]
@@ -456,6 +483,22 @@ class Host:
                                         x["sequence"] > baseline["captures"].get((x["bootId"], x["bus"]), -1)), None)
                         if capture and capture["dropped"] == 0:
                             passed("i2c", "Raw bytes persisted" if capture["data"] else "Capture persisted; no responding I²C devices", {"deviceId": baseline["id"], "bootId": capture["bootId"], "sequence": capture["sequence"], "bytes": len(capture["data"]) // 2, "dropped": capture["dropped"]})
+                    if "fan" in remaining:
+                        pwm = observed.get("fan") or {}
+                        if pwm.get("appliedRevision") is not None:
+                            fan = self.client.request(path + "/fan")["fan"]
+                            report = fan["report"]
+                            if (fan["available"] and not fan["pending"]
+                                    and report["bootId"] == observed["bootId"]
+                                    and report["installId"] == image["installId"]
+                                    and pwm["gpio"] == self.config["fan"]["gpio"]
+                                    and pwm["inverted"] == self.config["fan"]["inverted"]
+                                    and all(pwm[key] == report[key] for key in
+                                        ("gpio", "frequencyHz", "inverted", "percentCurrent", "appliedRevision"))):
+                                passed("fan", "PWM peripheral readback and hub command acknowledgment matched",
+                                       {"deviceId": baseline["id"], "bootId": report["bootId"],
+                                        "gpio": report["gpio"], "frequencyHz": report["frequencyHz"],
+                                        "percentCurrent": report["percentCurrent"], "appliedRevision": report["appliedRevision"]})
                 if observed is not None and not remaining:
                     return
         for feature in request["features"]:

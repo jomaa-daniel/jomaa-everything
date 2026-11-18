@@ -187,6 +187,25 @@ class ImagesTests(unittest.TestCase):
         with self.assertRaises(images.ImageError):
             self.verify(["i2c"], [{}], client, {"id": "pico-test", "health": 0, "captures": {}})
 
+    def test_fan_verification_requires_fresh_acknowledgment_and_matching_readback(self):
+        boot = "abcdef0123456789"
+        pwm = {"bootId": boot, "installId": "installed", "gpio": self.config["fan"]["gpio"],
+               "inverted": self.config["fan"]["inverted"], "frequencyHz": 25000,
+               "percentCurrent": 50, "appliedRevision": 3}
+        fan = {"available": True, "pending": False, "report": pwm}
+        baseline = {"id": "pico-test", "health": 0, "captures": {}}
+        for result in ({**fan, "pending": True}, {**fan, "available": False},
+                       {**fan, "report": {**pwm, "installId": "old"}},
+                       {**fan, "report": {**pwm, "percentCurrent": 100}}):
+            client = SimpleNamespace(request=lambda path: {"fan": result})
+            with self.subTest(result=result), self.assertRaises(images.ImageError):
+                self.verify(["fan"], [{"fan": pwm}], client, baseline)
+        client = SimpleNamespace(request=lambda path: {"fan": fan})
+        events = self.verify(["fan"], [{"fan": pwm}], client, baseline)
+        passed = next(e["check"] for e in events if e["check"]["status"] == "passed")
+        self.assertEqual(passed["evidence"]["percentCurrent"], 50)
+        self.assertEqual(passed["evidence"]["appliedRevision"], 3)
+
     def test_wrong_returning_uid_preserves_the_returning_filesystem(self):
         host = images.Host(self.config)
         uid = "5303284720e42a9c"

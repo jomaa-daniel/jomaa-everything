@@ -1,4 +1,12 @@
 {
+  "espUart": {
+    "id": 0,
+    "tx": 0,
+    "rx": 1,
+    "baud": 115200,
+    "rxBufferBytes": 16384,
+    "txBufferBytes": 2048
+  },
   "buses": [
     {
       "id": 0,

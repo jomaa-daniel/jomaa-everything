@@ -46,10 +46,21 @@
     "referenceSensorVolts": 0.706,
     "voltsPerCelsius": 0.001721
   },
+  "fan": {
+    "gpio": 15,
+    "frequencyHz": 25000,
+    "inverted": true,
+    "startupPercent": 100,
+    "lowPercent": 33,
+    "mediumPercent": 66,
+    "pollMilliseconds": 1000,
+    "staleMilliseconds": 30000
+  },
   "features": [
     {"id": "health", "label": "Health check", "description": "Send verified heartbeats to the hub. Verification requires new reports from one boot.", "requires": ["wifi"], "default": false},
     {"id": "wifi", "label": "Wi-Fi", "description": "Connect with an ESP8285 radio or a native Pico W radio.", "requires": [], "default": false},
     {"id": "temperature", "label": "Temperature reading", "description": "Read the Pico's built-in temperature sensor and report Celsius over USB.", "requires": [], "default": false},
-    {"id": "i2c", "label": "I²C raw logging", "description": "Actively read the configured I²C buses and send raw captures to the hub.", "requires": ["health", "wifi"], "default": false}
+    {"id": "i2c", "label": "I²C raw logging", "description": "Actively read the configured I²C buses and send raw captures to the hub.", "requires": ["health", "wifi"], "default": false},
+    {"id": "fan", "label": "PWM fan control", "description": "Control a fan through the hub API and report the applied PWM duty. Uses the configured PWM pin and driver polarity.", "requires": ["health", "wifi"], "default": false}
   ]
 }

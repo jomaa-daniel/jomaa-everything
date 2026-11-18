@@ -270,7 +270,9 @@ def send_loop(config, capture, radio, wlan, client, telemetry=None, apply_wifi=F
                 health_due = time.ticks_add(time.ticks_ms(), interval * 1000)
                 retry = runtime["retrySeconds"]
                 print("Health report acknowledged")
-            elif capture is not None and (pending_capture is not None or time.ticks_diff(time.ticks_ms(), upload_due) >= 0):
+            if telemetry is not None and telemetry.fan is not None:
+                telemetry.fan.exchange(client)
+            if capture is not None and (pending_capture is not None or time.ticks_diff(time.ticks_ms(), upload_due) >= 0):
                 if pending_capture is None:
                     for _ in bus_ids:
                         bus = bus_ids[next_bus]

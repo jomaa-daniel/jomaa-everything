@@ -5,6 +5,13 @@ Health and capture uploads share one verified TLS connection. Each response is f
 
 | Setting                   | Meaning                                                                                                                                              |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `espUart`                 | External ESP8285 radio's hardware UART and buffers.                                                                                                  |
+| `espUart.id`              | Hardware UART controller.                                                                                                                            |
+| `espUart.tx`              | GPIO carrying UART output to the radio.                                                                                                              |
+| `espUart.rx`              | GPIO carrying UART input from the radio.                                                                                                             |
+| `espUart.baud`            | Radio UART baud rate.                                                                                                                                |
+| `espUart.rxBufferBytes`   | UART receive buffer capacity for incoming TLS records.                                                                                               |
+| `espUart.txBufferBytes`   | UART transmit buffer capacity.                                                                                                                       |
 | `buses`                   | I²C controllers sampled by this Pico.                                                                                                                |
 | `buses[].id`              | Hardware I²C controller identifier.                                                                                                                  |
 | `buses[].sda`             | GPIO used for SDA.                                                                                                                                   |

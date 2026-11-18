@@ -15,6 +15,10 @@ unique_id = binascii.hexlify(machine.unique_id()).decode()
 adc = machine.ADC(settings["temperatureAdc"]) if "temperature" in image["features"] else None
 due = time.ticks_ms()
 sequence = 0
+fan = None
+if "fan" in image["features"]:
+    from fan import Fan
+    fan = Fan(boot_id, image["installId"])
 
 def tick(ip=None):
     global due, sequence
@@ -29,6 +33,8 @@ def tick(ip=None):
         voltage = adc.read_u16() * settings["referenceVolts"] / 65535
         result["celsius"] = settings["referenceCelsius"] - \
             (voltage - settings["referenceSensorVolts"]) / settings["voltsPerCelsius"]
+    if fan is not None:
+        result["fan"] = fan.state()
     print(MARKER + json.dumps(result))
     sequence += 1
     due = time.ticks_add(now, settings["sampleMilliseconds"])
