@@ -130,7 +130,7 @@ cache never pairs a new page with an old file. Chrome opens a prefetched copy
 for five minutes without asking the hub again.
 
 The locally managed Cloudflare tunnel also routes hostname `jomaa.org`, paths `/`,
-`/home`, `/manage`, `/lights`, `/invite`, `/join`, `/permissions`, `/secrets` (including assets), and the pages' API requests to the hub on port 8080. Its proxied DNS record
+`/home`, `/manage`, `/lights`, `/accounts`, `/join`, `/secrets` (including assets), and the pages' API requests to the hub on port 8080. Its proxied DNS record
 points to the same tunnel as `hub.jomaa.org`. The apex `/` redirects to `/home`;
 the hub subdomain's `/` continues to open device health.
 
@@ -198,7 +198,8 @@ username blank. The owner can open every page and is the only one who can
 invite people and change permissions. The phone apps and scripts sign in as the
 owner.
 
-`https://jomaa.org/invite` creates share links of the form
+`https://jomaa.org/accounts` manages accounts and invites on one page. Its
+Invites section creates share links of the form
 `https://jomaa.org/join#<token>`. Each link works once and expires after
 `accounts.inviteLifetimeDays`; the page shows a link only when it is created
 and lists unused invites for revoking. The token stays in the URL fragment, so it never reaches the
@@ -210,8 +211,8 @@ dots, dashes, or underscores) and a password within
 the account leaves the browser's current session unchanged. A new account can't
 open any page.
 
-`https://jomaa.org/permissions` lists accounts with a checkbox per scope; each
-change saves immediately:
+The Accounts section of `/accounts` lists accounts with a checkbox per scope and a button
+that deletes the account; each change saves immediately:
 
 | Scope     | Grants                                                             |
 | --------- | ------------------------------------------------------------------ |

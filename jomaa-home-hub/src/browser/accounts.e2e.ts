@@ -1,6 +1,6 @@
-// Drives the account pages in Chrome against the real API and built pages:
-// the owner invites someone, they create an account through the share link,
-// and the owner grants and removes access.
+// Drives the accounts and join pages in Chrome against the real API and built
+// pages: the owner invites someone, they create an account through the share
+// link, and the owner grants and removes access.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { chromium, type BrowserContext, type Page } from "playwright-core";
@@ -86,19 +86,17 @@ async function signInAsOwner(page: Page): Promise<void> {
 let inviteLink = "";
 
 await test("the owner signs in and creates an invite link", async () => {
-  const permissions = await open(owner, "/permissions");
-  await signInAsOwner(permissions);
-  await permissions.locator("#accounts-empty").waitFor();
-  await permissions.close();
-
-  const invite = await open(owner, "/invite");
-  await invite.locator("#content").waitFor();
-  await invite.locator("#create").click();
-  await invite.locator("#invites li").waitFor();
-  inviteLink = await invite.locator("#link").inputValue();
+  const page = await open(owner, "/accounts");
+  await signInAsOwner(page);
+  await page.locator("#accounts-empty").waitFor();
+  await page.locator("#invites-empty").waitFor();
+  await page.locator("#create").click();
+  await page.locator("#invites li").waitFor();
+  inviteLink = await page.locator("#link").inputValue();
   assert.match(inviteLink, new RegExp(`^${origin}/join#[\\w-]{43}$`));
-  assert.ok(await invite.locator("#copy").isEnabled());
-  await invite.close();
+  assert.ok(await page.locator("#copy").isEnabled());
+  assert.ok(await page.locator("#invites-empty").isHidden());
+  await page.close();
 });
 
 await test("the share link creates an account with a username and password", async () => {
@@ -138,16 +136,22 @@ await test("a new account signs in but can't open any page", async () => {
   assert.ok(await tab.locator("#login-section").isVisible());
   await tab.close();
 
-  for (const path of ["/permissions", "/invite"]) {
-    const tab = await open(guest, path);
-    await tab.locator("#not-owner").waitFor();
-    assert.ok(!(await tab.locator("#content").isVisible()), `${path} hides owner controls`);
-    await tab.close();
-  }
+  const accounts = await open(guest, "/accounts");
+  await accounts.locator("#not-owner").waitFor();
+  assert.ok(!(await accounts.locator("#content").isVisible()), "/accounts hides owner controls");
+  await accounts.close();
+});
+
+await test("the accounts page lists the new account and no longer lists the used invite", async () => {
+  const page = await open(owner, "/accounts");
+  await page.getByLabel("sarah can open Lights").waitFor();
+  await page.locator("#invites-empty").waitFor();
+  assert.equal(await page.locator("#invites li").count(), 0);
+  await page.close();
 });
 
 await test("the owner grants Lights and the account controls the room", async () => {
-  const permissions = await open(owner, "/permissions");
+  const permissions = await open(owner, "/accounts");
   await permissions.getByLabel("sarah can open Lights").check();
   await permissions.locator("#notice", { hasText: "Saved sarah" }).waitFor();
   await permissions.reload();
@@ -166,7 +170,7 @@ await test("the owner grants Lights and the account controls the room", async ()
   await devices.locator("#notice", { hasText: "no device access" }).waitFor();
   await devices.close();
 
-  const revoke = await open(owner, "/permissions");
+  const revoke = await open(owner, "/accounts");
   await revoke.getByLabel("sarah can open Lights").uncheck();
   await revoke.locator("#notice", { hasText: "Saved sarah" }).waitFor();
   await revoke.close();
@@ -178,7 +182,7 @@ await test("the owner grants Lights and the account controls the room", async ()
 });
 
 await test("deleting the account signs it out", async () => {
-  const permissions = await open(owner, "/permissions");
+  const permissions = await open(owner, "/accounts");
   permissions.once("dialog", (dialog) => void dialog.accept());
   await permissions.getByRole("button", { name: "Delete account sarah" }).click();
   await permissions.locator("#accounts-empty").waitFor();
