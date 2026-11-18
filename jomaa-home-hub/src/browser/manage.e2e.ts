@@ -59,7 +59,10 @@ const matter: MatterAdmin & MatterNodes = {
   invoke: () => Promise.resolve(),
   discover: () => Promise.resolve([]),
   register: () => Promise.reject(new Error("unused")),
-  rename: () => Promise.resolve(summary),
+  rename: (_nodeId, name) => {
+    summary.label = name;
+    return Promise.resolve(summary);
+  },
   commission: () => Promise.reject(new Error("unused")),
   setWiFiCredentials: () => Promise.resolve(),
   setThreadDataset: () => Promise.resolve(),
@@ -68,6 +71,17 @@ const matter: MatterAdmin & MatterNodes = {
 const organization = new Organization(":memory:");
 const health = new HealthStore(":memory:");
 health.enroll({ id: "pico-test", name: "Pico" });
+health.record("pico-test", {
+  bootId: "abcdef0123456789",
+  sequence: 0,
+  firmware: "test-firmware",
+  uptimeSeconds: 120,
+  freeHeapBytes: 128000,
+  rssi: -51,
+  ip: "192.168.1.110",
+  status: "healthy",
+  message: "Startup complete",
+});
 const cloudCalls: string[] = [];
 const cloud = await serve((req, res) => {
   cloudCalls.push(req.url ?? "");
@@ -145,13 +159,13 @@ async function openManage() {
   return page;
 }
 
-test("Devices opens first with a compact read-only inventory and one assignment editor", async () => {
+test("Devices opens first with a compact read-only inventory and one details pane", async () => {
   const page = await openManage();
   assert.equal(await page.locator("#devices-tab").getAttribute("aria-selected"), "true");
   assert.ok(await page.locator("#types-panel").isHidden());
   assert.ok(await page.locator("#groups-panel").isHidden());
   assert.equal(await page.locator("#assignment-rows select, #assignment-rows input").count(), 0);
-  assert.equal(await page.locator("#device-editor select").count(), 1);
+  assert.equal(await page.locator("#assigned-type").count(), 0);
   const inventory = await page.locator("#assignment-table-wrap").boundingBox();
   assert.ok(inventory && inventory.y < 350);
   const commandBar = await page.locator(".command-bar").boundingBox();
@@ -159,7 +173,7 @@ test("Devices opens first with a compact read-only inventory and one assignment 
   await page.close();
 });
 
-test("group and category changes persist through the API and refresh the selected row", async () => {
+test("group changes persist through the API and refresh the selected row", async () => {
   const page = await openManage();
   await page.getByRole("button", { name: "Edit Lamp", exact: true }).click();
   const checkbox = page.getByRole("checkbox", { name: "Office", exact: true });
@@ -175,14 +189,6 @@ test("group and category changes persist through the API and refresh the selecte
   const office = state.groups.find((group) => group.name === "Office");
   assert.ok(office);
   assert.ok(state.devices.find((device) => device.key === "target:lamp")?.groupIds.includes(office.id));
-  const type = state.types.find((type) => type.name === "Light strips");
-  assert.ok(type);
-  await page.locator("#assigned-type").selectOption(type.id);
-  await until(async () => {
-    const response = (await (await fetch(origin + "/api/manage", { headers: setupHeaders })).json()) as typeof state;
-    return response.devices.find((device) => device.key === "target:lamp")?.typeId === type.id;
-  });
-  await until(async () => (await page.locator("#assignment-rows tr.selected").innerText()).includes("Light strips"));
   assert.ok((await page.locator("#assignment-rows tr.selected").innerText()).includes("Office"));
   await page.locator("#device-search").fill("pico");
   assert.equal(await page.locator("#assignment-rows tr").count(), 1);
@@ -202,7 +208,7 @@ test("arrow keys select devices, Enter edits, and Escape returns to the list", a
   assert.equal(await page.evaluate<string>("document.activeElement?.id"), second);
   assert.equal(await page.locator("#assignment-rows .device-select").nth(1).getAttribute("aria-pressed"), "true");
   await page.keyboard.press("Enter");
-  assert.equal(await page.evaluate<string>("document.activeElement?.id"), "assigned-type");
+  assert.equal(await page.evaluate<string>("document.activeElement?.id"), "device-name");
   await page.keyboard.press("Escape");
   assert.equal(await page.evaluate<string>("document.activeElement?.id"), second);
   await page.keyboard.press("End");
@@ -309,14 +315,17 @@ test("a failed read after saving locks editing until Refresh retrieves the saved
       await route.fulfill({ status: 500, json: { error: "Read unavailable" } });
     } else await route.continue();
   });
-  await page.locator("#assigned-type").selectOption({ label: "Light strips" });
+  const checkbox = page.getByRole("checkbox", { name: "Office", exact: true });
+  await checkbox.setChecked(!(await checkbox.isChecked()));
   await page.locator("#notice.error", { hasText: "Changes saved, but refresh failed" }).waitFor();
-  assert.ok(await page.locator("#assigned-type").isDisabled());
+  assert.ok(await checkbox.isDisabled());
   assert.ok(await page.locator("#refresh").isEnabled());
   await page.locator("#refresh").click();
   await page.locator("#notice", { hasText: "Refreshed." }).waitFor();
-  assert.ok(await page.locator("#assigned-type").isEnabled());
-  assert.equal(await page.locator("#assigned-type option:checked").textContent(), "Light strips");
+  assert.ok(await checkbox.isEnabled());
+  assert.ok(await checkbox.isChecked());
+  await checkbox.uncheck();
+  await page.locator("#notice.success").waitFor();
   await page.close();
 });
 
@@ -349,24 +358,25 @@ test("an expired session during a save returns to sign-in with a visible message
     if (route.request().method() === "POST") await route.fulfill({ status: 401, json: { error: "Unauthorized" } });
     else await route.continue();
   });
-  await page.locator("#assigned-type").selectOption("");
+  const checkbox = page.getByRole("checkbox", { name: "Office", exact: true });
+  await checkbox.setChecked(!(await checkbox.isChecked()));
   await page.locator("#login-section:not([hidden])").waitFor();
   assert.ok(await page.locator("#management").isHidden());
   assert.ok((await page.locator("#notice").textContent())?.includes("Sign in to continue"));
   await page.close();
 });
 
-test("keyboard hints follow focus through search, assignments, and renaming", async () => {
+test("keyboard hints follow focus through search, details, and renaming", async () => {
   const page = await openManage();
   assert.ok((await page.locator("#command-hints").innerText()).includes("Tabs"));
   await page.keyboard.press("/");
   await page.locator("#device-search").fill("pico");
   assert.ok((await page.locator("#command-hints").innerText()).includes("Clear search"));
   await page.keyboard.press("ArrowDown");
-  assert.ok((await page.locator("#command-hints").innerText()).includes("Assignments"));
+  assert.ok((await page.locator("#command-hints").innerText()).includes("Details"));
   await page.keyboard.press("Enter");
-  assert.ok((await page.locator("#command-hints").innerText()).includes("Category"));
-  await page.keyboard.press("Tab");
+  assert.ok((await page.locator("#command-hints").innerText()).includes("Save"));
+  await page.getByRole("checkbox", { name: "Office", exact: true }).focus();
   assert.ok((await page.locator("#command-hints").innerText()).includes("Toggle group"));
   await page.locator("#types-tab").click();
   await page.getByRole("button", { name: "Rename type Light strips", exact: true }).click();
@@ -381,10 +391,38 @@ test("Govee status is checked through its cloud and never uses Pico enrollment c
   assert.ok((await row.innerText()).includes("online"));
   assert.ok(cloudCalls.every((path) => path === "/router/api/v1/device/state"));
   await page.getByRole("button", { name: "Edit Lamp", exact: true }).click();
-  await page.locator("#health-open").click();
   await page.locator("#govee-detail:not([hidden])").waitFor();
   assert.ok((await page.locator("#govee-facts").innerText()).includes("Govee cloud"));
   assert.ok(await page.locator("#edit-form").isHidden());
   assert.ok(await page.locator("#rotate").isHidden());
+  await page.close();
+});
+
+test("device names save from Details for Govee, Matter and health reporters", async () => {
+  const page = await openManage();
+  for (const [oldName, name, key] of [
+    ["Lamp", "Desk Lamp", "target:lamp"],
+    ["coffee-table", "Coffee Strip", "matter:3"],
+    ["Pico", "Office Pico", "health:pico-test"],
+  ] as const) {
+    await page.getByRole("button", { name: `Edit ${oldName}`, exact: true }).click();
+    await page.locator("#device-name").fill(name);
+    await page.locator("#save-device-name").click();
+    await page.locator("#notice.success").waitFor();
+    await page.getByRole("button", { name: `Edit ${name}`, exact: true }).waitFor();
+    assert.equal(await page.locator("#selected-name").textContent(), name);
+    const state = (await (await fetch(origin + "/api/manage", { headers: setupHeaders })).json()) as {
+      devices: Array<{ key: string; name: string }>;
+    };
+    assert.equal(state.devices.find((device) => device.key === key)?.name, name);
+  }
+  await page.reload();
+  await page.getByRole("button", { name: "Edit Desk Lamp", exact: true }).waitFor();
+  await page.getByRole("button", { name: "Edit Office Pico", exact: true }).click();
+  assert.equal(await page.locator("#health-tab, #health-panel, #assigned-type").count(), 0);
+  assert.equal(await page.locator("#health-logs").getAttribute("open"), null);
+  await page.locator("#health-logs summary").click();
+  await page.locator("#log-rows", { hasText: "Startup complete" }).waitFor();
+  assert.ok(await page.locator("#no-logs").isHidden());
   await page.close();
 });

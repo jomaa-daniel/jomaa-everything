@@ -142,7 +142,7 @@ button:hover {
 }
 .device-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 38%);
   align-items: start;
   gap: var(--gutter);
   padding-top: 0.5lh;
@@ -256,7 +256,7 @@ td:first-child {
   overflow-wrap: anywhere;
 }
 #selected-source {
-  margin: 0 0 24px;
+  margin: 0 0 16px;
   font-size: 12px;
 }
 fieldset {
@@ -270,18 +270,8 @@ legend {
   font-size: 13px;
   font-weight: 600;
 }
-#assigned-type {
-  width: 100%;
-  font-size: 13px;
-}
-.reported {
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
 .group-options {
-  margin-top: 24px;
+  margin-top: 16px;
 }
 .group-options legend {
   margin-bottom: 10px;
@@ -309,9 +299,73 @@ legend {
   color: var(--accent);
   font-weight: 600;
 }
-.editor-hint {
-  margin: 24px 0 0;
+.heading-actions,
+.detail-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.detail-form {
+  margin: 16px 0;
+}
+.detail-form label {
+  display: block;
+  margin-bottom: 6px;
+}
+.detail-input input,
+.detail-input select {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+.detail-input button {
+  flex-shrink: 0;
+}
+#device-editor section {
+  border: 0;
+  margin: 16px 0 0;
+  padding: 0;
+}
+#device-editor dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+  font-size: 12px;
+}
+.detail-section {
+  border-top: 1px solid var(--border-quiet);
+  padding: 12px 0;
+  font-size: 12px;
+}
+.detail-section summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+.detail-section .table-wrap {
+  overflow: auto;
+  margin-top: 12px;
+}
+.detail-section table {
+  table-layout: auto;
   font-size: 11px;
+}
+.detail-section th,
+.detail-section td {
+  padding: 8px;
+}
+.detail-section th {
+  width: auto;
+}
+.detail-section .detail-heading {
+  gap: 8px;
+  margin: 12px 0;
+}
+.detail-section .actions {
+  flex-wrap: wrap;
+}
+.detail-section .i2c-live {
+  max-height: 280px;
 }
 #editor-back {
   display: none;
@@ -448,7 +502,7 @@ kbd {
 }
 @media (max-width: 1000px) {
   .device-workspace {
-    grid-template-columns: minmax(0, 1fr) 260px;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 40%);
   }
   #device-editor {
     padding: 16px;
@@ -522,6 +576,9 @@ kbd {
   }
   thead {
     display: none;
+  }
+  .detail-section thead {
+    display: table-header-group;
   }
   #assignment-rows tr {
     display: grid;

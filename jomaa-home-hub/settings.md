@@ -60,12 +60,12 @@ reruns the deployment workflow.
 
 ## Health view
 
-`health` controls the unified device health view.
+`health` controls device status and logs in Devices and Details.
 
-| Setting                 | Meaning                                                       |
-| ----------------------- | ------------------------------------------------------------- |
-| `health.refreshSeconds` | Interval between inventory refreshes while Health is visible. |
-| `health.historyLimit`   | Number of health reports requested per history page.          |
+| Setting                 | Meaning                                                        |
+| ----------------------- | -------------------------------------------------------------- |
+| `health.refreshSeconds` | Interval between inventory refreshes while Devices is visible. |
+| `health.historyLimit`   | Number of health reports requested per history page.           |
 
 `health.discoveryRefreshSeconds` is the interval between Matter discovery requests while the discovery dialog is open.
 

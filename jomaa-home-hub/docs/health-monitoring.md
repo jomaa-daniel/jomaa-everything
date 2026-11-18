@@ -9,7 +9,7 @@ so health reporting works while the Matter controller is starting or when the hu
 - MicroPython health firmware for **Pico W / Pico 2 W**, or an RP2040 board with an **ESP8285** on UART0 (GP0/GP1, 115200 baud).
 - A provisioning script that prepares firmware, Wi-Fi settings, and a dedicated credential. USB installation is an explicit option.
 - Automatic registration on the first authenticated report, persistent inventory, and SQLite health history.
-- A minimal management page at **`/devices`**: search, status filter, enrollment, details, history, rename, report interval, credential replacement, and access revocation.
+- The **`/manage`** Devices page: search, enrollment, inline details, history, rename, report interval, credential replacement, and access revocation.
 
 ## Run the hub
 
@@ -23,7 +23,7 @@ node --env-file=.env dist/main.js --config config.json
 ```
 
 The build copies the management page into `dist/web`. Include that directory when packaging the compiled hub.
-Open `https://jomaa.org/manage#health` and sign in with the hub password or an account with the `devices` scope.
+Open `/manage` and sign in with the hub password or an account with the `devices` scope.
 Add device scans the home network for Matter devices advertising for pairing or
 sharing. Scans continue while the discovery window is open. Pair and register on
 a discovered device opens the setup-code form. Successful network pairing stores
@@ -33,12 +33,12 @@ Matter names can be edited in device details. The hub stores these names and
 contact timestamps in its Matter data. Last seen comes from successful Matter
 communication; uptime is the device's General Diagnostics report. Available
 nodes are checked every 30 seconds. Unsupported uptime displays Unavailable.
-Inventory rows include Type, Capabilities and Group. Matter rows describe
-reported device types and functions and list their configured rooms, including
-nested groups. Health reporter rows identify their reporting role.
-Matter lights and plugs can be assigned to an existing group or No group from
-their details. Saving updates the configured targets and room fan-out.
-The hub's root URL redirects to `/devices`, including on the Cloudflare hostname.
+Inventory rows show category, groups, and status. Details includes hardware
+facts and capabilities for Matter devices and reporting data for health reporters.
+The owner and accounts with `manage` assign groups using checkboxes in Details.
+Accounts with only `devices` can assign Matter lights and plugs to one existing
+group or No group. Saving updates the configured targets and room fan-out.
+The hub subdomain's root URL redirects to `/manage`; the main site opens `/home`.
 
 The native hub stores health history in `data/health.sqlite`, shared between
 releases through the deployment state directory.
@@ -50,7 +50,7 @@ For a local development instance that cannot contact any lights, save this layou
 ```
 
 Run `node --env-file=.env dist/main.js --no-matter --config /path/to/dev-config.json` and open
-`http://127.0.0.1:8085/devices`. Local development supports inventory management; device health reports still require HTTPS.
+`http://127.0.0.1:8085/manage`. Local development supports inventory management; device health reports still require HTTPS.
 
 | Environment variable    | Default              | Purpose                                                                    |
 | ----------------------- | -------------------- | -------------------------------------------------------------------------- |
@@ -205,7 +205,7 @@ For browser verification, use an isolated local hub with test devices instead of
 
 # Raw I²C logs
 
-Open a device in Device health to view its raw I²C captures. The live view updates as the hub receives captures, reconnects with a fresh history snapshot, and supports pausing the view and loading older captures. Pausing the view leaves device capture running.
+Select a device in Devices and expand Raw I²C logs in Details to view its captures. The live view updates as the hub receives captures, reconnects with a fresh history snapshot, and supports pausing the view and loading older captures. Pausing the view leaves device capture running.
 
 The hub receives captures at `POST /api/devices/DEVICE_ID/i2c` over verified HTTPS using that device's bearer credential. The JSON fields are:
 
@@ -224,7 +224,7 @@ Captures occupy `i2c_logs` in the same SQLite connection and database as `health
 
 ## Connection status for other devices
 
-The Health inventory also lists Govee lights and Matter devices. Govee aliveness
+The Devices inventory also lists Govee lights and Matter devices. Govee aliveness
 comes from its cloud online flag, independently of the power setting. Matter
 uses the controller connection state. These devices do not send Pico health
 reports. Cloud errors or missing online flags produce unknown status; successful

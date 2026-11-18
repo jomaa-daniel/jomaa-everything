@@ -57,12 +57,25 @@ def edit_group(config: Path, root: Path, action: str, group_id: str | None, name
         return layout
 
 
+def rename_device(config: Path, root: Path, device_id: str, name: str) -> dict:
+    with locked_layout(config) as (path, previous, layout):
+        device = next((device for device in layout["devices"] if device["id"] == device_id), None)
+        if device is None:
+            raise ValueError("Device not found")
+        device["name"] = name
+        validate_layout(root, layout)
+        save_layout(path, previous, layout)
+        return layout
+
+
 if __name__ == "__main__":
     try:
         body = json.load(sys.stdin)
         if body["action"] == "assign":
             result = assign(Path(sys.argv[1]), Path(sys.argv[2]), body["nodeId"], body["endpoints"],
                             body["name"], body["groupIds"], body["targetIds"])
+        elif body["action"] == "device.rename":
+            result = rename_device(Path(sys.argv[1]), Path(sys.argv[2]), body["id"], body["name"])
         else:
             result = edit_group(Path(sys.argv[1]), Path(sys.argv[2]), body["action"], body["id"], body["name"])
         print(json.dumps(result))

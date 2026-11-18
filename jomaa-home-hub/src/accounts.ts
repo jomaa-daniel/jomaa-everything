@@ -10,7 +10,7 @@ export const scopes = [
   {
     id: "devices",
     name: "Device health",
-    description: "View health reports, pair Matter devices, and issue device credentials in the Health tab at /manage.",
+    description: "View device details, logs, and pairing at /manage.",
   },
   { id: "manage", name: "Device organization", description: "Edit types, groups, and assignments at /manage." },
 ] as const;

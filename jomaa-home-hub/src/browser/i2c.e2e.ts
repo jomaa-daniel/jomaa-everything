@@ -44,11 +44,12 @@ await test("device details show live raw captures, condensed idle spans, pause, 
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   try {
-    await page.goto(origin + "/manage#health");
+    await page.goto(origin + "/manage");
     assert.equal(await page.title(), "Devices · Jomaa Home");
     await page.locator("#password").fill(password);
     await page.locator("#login-form button").click();
-    await page.getByRole("button", { name: "Stream Pico", exact: true }).click();
+    await page.getByRole("button", { name: "Edit Stream Pico", exact: true }).click();
+    await page.locator("#i2c-section summary").click();
     await page.locator("#i2c-status", { hasText: "Live" }).waitFor();
     const empty = { bootId: "abcdef0123456789", sequence: 0, bus: 0, startUs: 0, endUs: 1000000, data: "", dropped: 0 };
     store.i2c.record("pico-test", empty);
@@ -73,12 +74,14 @@ await test("device details show live raw captures, condensed idle spans, pause, 
     await page.locator("#i2c-live", { hasText: "7 capture units lost" }).waitFor();
     await page.setViewportSize({ width: 390, height: 844 });
     assert.ok(await page.locator("#i2c-pause").isVisible());
-    await page.getByRole("button", { name: "Other Pico", exact: true }).click();
+    await page.locator("#editor-back").click();
+    await page.getByRole("button", { name: "Edit Other Pico", exact: true }).click();
+    await page.locator("#i2c-section summary").click();
     await page.locator("#i2c-status", { hasText: "Live" }).waitFor();
     await page.locator("#i2c-empty").waitFor();
     assert.equal(await page.locator(".i2c-entry").count(), 0);
-    await page.locator("#close-detail").click();
-    assert.ok(!(await page.locator("#detail").isVisible()));
+    await page.locator("#editor-back").click();
+    assert.ok(await page.locator("#device-editor").isHidden());
     assert.deepEqual(errors, []);
   } finally {
     await browser.close();

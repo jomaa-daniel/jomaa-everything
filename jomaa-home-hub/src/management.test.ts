@@ -80,7 +80,7 @@ test("management edits categories, rooms and assignments without changing report
     (await (await fetch(origin + "/api/manage", { headers })).json()) as {
       types: Array<{ id: string; name: string }>;
       groups: Array<{ id: string; name: string }>;
-      devices: Array<{ key: string; typeId: string | null; reportedType: string; groupIds: string[] }>;
+      devices: Array<{ key: string; name: string; typeId: string | null; reportedType: string; groupIds: string[] }>;
     };
   const save = (body: unknown) =>
     fetch(origin + "/api/manage", { method: "POST", headers, body: JSON.stringify(body) });
@@ -111,6 +111,10 @@ test("management edits categories, rooms and assignments without changing report
       { action: "device.assign", key: "matter:3", typeId: "missing" },
       { action: "device.assign", key: "matter:3", groupIds: "wrong" },
       { action: "device.assign", key: "matter:3", groupIds: ["missing"] },
+      { action: "device.rename", key: "target:missing", name: "New name" },
+      { action: "device.rename", key: "health:pico-test", name: "New name" },
+      { action: "device.rename", key: "target:lamp", name: " " },
+      { action: "device.rename", key: "target:lamp", name: "x".repeat(81) },
     ])
       assert.equal((await save(body)).status, 400);
     assert.equal(
@@ -138,6 +142,9 @@ test("management edits categories, rooms and assignments without changing report
     assert.deepEqual(hub.directGroupsForTarget("lamp"), [office.id]);
     assert.equal((await save({ action: "device.assign", key: "target:lamp", groupIds: ["living-room"] })).status, 200);
     assert.equal(organization.assignedType("target:lamp")?.id, type.id);
+    assert.equal((await save({ action: "device.rename", key: "target:lamp", name: "Desk Lamp" })).status, 200);
+    assert.equal((await read()).devices.find((device) => device.key === "target:lamp")?.name, "Desk Lamp");
+    assert.deepEqual(hub.directGroupsForTarget("lamp"), ["living-room"]);
     const concurrent = await Promise.all([
       save({ action: "device.assign", key: "matter:3", typeId: type.id, groupIds: [office.id] }),
       save({ action: "type.delete", id: type.id }),
@@ -158,6 +165,7 @@ test("management edits categories, rooms and assignments without changing report
     const persisted = parseConfig(readFileSync(path, "utf8"));
     assert.equal(persisted.rooms.length, 1);
     assert.deepEqual(persisted.rooms[0]?.members, ["lamp"]);
+    assert.equal(persisted.devices.find((device) => device.id === "lamp")?.name, "Desk Lamp");
   } finally {
     health.close();
     organization.close();

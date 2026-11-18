@@ -14,16 +14,17 @@
   </head>
   <body class="tui-page organization-page">
     <header>
-      <a href="/home">Jomaa Home <span class="header-path">/ organization</span></a
+      <a href="/home">Jomaa Home <span class="header-path">/ devices</span></a
       ><button id="logout" class="quiet" hidden>Sign out</button>
     </header>
     <main>
       <div class="heading">
         <div>
           <h1>Devices</h1>
-          <p>Assign devices to categories and groups.</p>
         </div>
-        <button id="refresh" hidden>Refresh</button>
+        <div class="heading-actions">
+          <button id="add" class="primary" hidden>Add device</button><button id="refresh" hidden>Refresh</button>
+        </div>
       </div>
       <section id="login-section" hidden>
         <form id="login-form" class="login">
@@ -46,9 +47,6 @@
           <button id="groups-tab" role="tab" aria-selected="false" aria-controls="groups-panel" tabindex="-1">
             Groups <span id="group-count" class="count"></span>
           </button>
-          <button id="health-tab" role="tab" aria-selected="false" aria-controls="health-panel" tabindex="-1">
-            Health <span id="health-count" class="count"></span>
-          </button>
           <button id="imaging-tab" role="tab" aria-selected="false" aria-controls="imaging-panel" tabindex="-1">
             Imaging
           </button>
@@ -57,12 +55,7 @@
           <div class="device-toolbar">
             <div class="search-field">
               <label for="device-search"><kbd>/</kbd><span class="sr-only">Search devices</span></label
-              ><input
-                id="device-search"
-                type="search"
-                placeholder="Search devices, categories, groups…"
-                autocomplete="off"
-              />
+              ><input id="device-search" type="search" placeholder="Search devices…" autocomplete="off" />
             </div>
             <span id="visible-count" class="muted"></span>
           </div>
@@ -86,26 +79,83 @@
               <p id="devices-empty" class="empty" hidden>No devices are available.</p>
               <p id="devices-no-match" class="empty" hidden>No devices match that search. Press Esc to clear it.</p>
             </div>
-            <aside id="device-editor" aria-labelledby="assignments-title selected-name" hidden>
+            <aside id="device-editor" aria-labelledby="details-title selected-name" hidden>
               <div class="pane-heading">
-                <h2 id="assignments-title">Assignments</h2>
+                <h2 id="details-title">Details</h2>
                 <span id="selection-position"></span>
               </div>
               <button id="editor-back" class="quiet">← Devices</button>
-              <h3 id="selected-name"></h3>
+              <h3 id="selected-name" tabindex="-1"></h3>
               <p id="selected-source" class="muted"></p>
+              <form id="device-rename" class="detail-form">
+                <label for="device-name">Name</label>
+                <div class="detail-input">
+                  <input id="device-name" required maxlength="80" /><button id="save-device-name">Save</button>
+                </div>
+              </form>
               <fieldset id="editor-fields">
-                <legend class="sr-only">Device assignments</legend>
-                <label for="assigned-type">Category</label
-                ><select id="assigned-type"></select>
-                <p class="reported">Hardware type: <span id="reported-type"></span></p>
+                <legend class="sr-only">Device groups</legend>
                 <fieldset class="group-options">
                   <legend>Groups</legend>
                   <div id="assigned-groups"></div>
                 </fieldset>
               </fieldset>
-              <p class="editor-hint muted">Changes save immediately.</p>
-              <button id="health-open" class="quiet" hidden>Health &amp; diagnostics →</button>
+              <section id="detail" hidden aria-label="Health details">
+                <dl id="device-facts"></dl>
+                <details id="health-logs" class="detail-section">
+                  <summary>Health logs</summary>
+                  <div class="table-wrap">
+                    <table aria-label="Health logs">
+                      <thead>
+                        <tr>
+                          <th>Received</th>
+                          <th>Health</th>
+                          <th>Free heap</th>
+                          <th>Message</th>
+                        </tr>
+                      </thead>
+                      <tbody id="log-rows"></tbody>
+                    </table>
+                  </div>
+                  <p id="no-logs" hidden>No reports yet.</p>
+                  <button id="more" hidden>Load older reports</button>
+                </details>
+                <details id="i2c-section" class="detail-section">
+                  <summary>Raw I²C logs</summary>
+                  <div class="detail-heading">
+                    <p id="i2c-status" role="status" aria-live="polite">Connecting…</p>
+                    <button id="i2c-pause" type="button">Pause</button>
+                  </div>
+                  <div id="i2c-live" class="i2c-live" tabindex="0" data-native-arrows aria-label="Raw I²C logs"></div>
+                  <p id="i2c-empty">No captures yet.</p>
+                  <button id="i2c-more" type="button" hidden>Load older captures</button>
+                </details>
+                <details class="detail-section">
+                  <summary>Settings &amp; access</summary>
+                  <form id="edit-form" class="detail-form">
+                    <label for="device-interval">Report interval (seconds)</label>
+                    <div class="detail-input">
+                      <input id="device-interval" type="number" min="15" max="3600" required /><button>Save</button>
+                    </div>
+                  </form>
+                  <div class="actions">
+                    <button id="rotate">Replace credential</button
+                    ><button id="revoke" class="danger">Revoke access</button>
+                  </div>
+                </details>
+              </section>
+              <section id="matter-detail" hidden aria-label="Matter details">
+                <dl id="matter-facts"></dl>
+                <form id="matter-group-form" class="detail-form" hidden>
+                  <label for="matter-group">Group</label>
+                  <div class="detail-input">
+                    <select id="matter-group">
+                      <option value="">No group</option></select
+                    ><button id="save-matter-group">Save</button>
+                  </div>
+                </form>
+              </section>
+              <section id="govee-detail" hidden aria-label="Govee details"><dl id="govee-facts"></dl></section>
             </aside>
           </div>
         </section>
@@ -169,189 +219,9 @@
             </section>
           </div>
         </section>
-        <section id="health-panel" role="tabpanel" aria-labelledby="health-tab" hidden>
-          <div class="toolbar">
-            <h2>Device health</h2>
-            <button id="add" class="primary" hidden>Add device</button>
-          </div>
-          <section id="inventory" hidden aria-label="Device inventory">
-            <div class="toolbar">
-              <p id="summary"></p>
-              <div class="filters">
-                <button id="clear-filters" hidden>Clear filters</button><button id="health-refresh">Refresh</button>
-              </div>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Device</th>
-                    <th>
-                      <div id="column-filter-type" class="column-filter">
-                        <div class="column-filter-heading">
-                          <span>Type</span
-                          ><span class="filter-control">
-                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                              <path d="M4 5h16l-6 7v6l-4 2v-8L4 5Z" />
-                            </svg>
-                            <select id="select-filter-type" class="column-filter-select" aria-label="Filter by type">
-                              <option value="null">All</option>
-                            </select>
-                          </span>
-                        </div>
-                        <span id="type-filter-value" class="column-filter-value">All</span>
-                      </div>
-                    </th>
-                    <th>
-                      <div id="column-filter-capabilities" class="column-filter">
-                        <div class="column-filter-heading">
-                          <span>Capabilities</span
-                          ><span class="filter-control">
-                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                              <path d="M4 5h16l-6 7v6l-4 2v-8L4 5Z" />
-                            </svg>
-                            <select
-                              id="select-filter-capabilities"
-                              class="column-filter-select"
-                              aria-label="Filter by capabilities"
-                            >
-                              <option value="null">All</option>
-                            </select>
-                          </span>
-                        </div>
-                        <span id="capabilities-filter-value" class="column-filter-value">All</span>
-                      </div>
-                    </th>
-                    <th>
-                      <div id="column-filter-group" class="column-filter">
-                        <div class="column-filter-heading">
-                          <span>Group</span
-                          ><span class="filter-control">
-                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                              <path d="M4 5h16l-6 7v6l-4 2v-8L4 5Z" />
-                            </svg>
-                            <select id="select-filter-group" class="column-filter-select" aria-label="Filter by group">
-                              <option value="null">All</option>
-                            </select>
-                          </span>
-                        </div>
-                        <span id="group-filter-value" class="column-filter-value">All</span>
-                      </div>
-                    </th>
-                    <th>
-                      <div id="column-filter-status" class="column-filter">
-                        <div class="column-filter-heading">
-                          <span>Status</span
-                          ><span class="filter-control">
-                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                              <path d="M4 5h16l-6 7v6l-4 2v-8L4 5Z" />
-                            </svg>
-                            <select
-                              id="select-filter-status"
-                              class="column-filter-select"
-                              aria-label="Filter by status"
-                            >
-                              <option value="null">All</option>
-                            </select>
-                          </span>
-                        </div>
-                        <span id="status-filter-value" class="column-filter-value">All</span>
-                      </div>
-                    </th>
-                    <th>Last seen</th>
-                    <th>Uptime</th>
-                    <th>Signal</th>
-                  </tr>
-                </thead>
-                <tbody id="device-rows" data-tui-nav="grid"></tbody>
-              </table>
-            </div>
-            <p id="empty" hidden>No devices yet. Add a device to get started.</p>
-            <p class="muted" id="retention"></p>
-          </section>
-          <section id="detail" hidden aria-label="Selected device">
-            <div class="detail-heading">
-              <h2 id="detail-title"></h2>
-              <button id="close-detail">Close details</button>
-            </div>
-            <dl id="device-facts"></dl>
-            <form id="edit-form" class="edit">
-              <div><label for="device-name">Name</label><input id="device-name" required maxlength="80" /></div>
-              <div>
-                <label for="device-interval">Report interval (seconds)</label
-                ><input id="device-interval" type="number" min="15" max="3600" required />
-              </div>
-              <button class="primary">Save</button>
-            </form>
-            <div class="actions">
-              <button id="rotate">Replace credential</button><button id="revoke" class="danger">Revoke access</button>
-            </div>
-            <section id="i2c-section" aria-labelledby="i2c-title">
-              <div class="detail-heading">
-                <h3 id="i2c-title">Raw I²C stream</h3>
-                <button id="i2c-pause" type="button">Pause live view</button>
-              </div>
-              <p id="i2c-status" role="status" aria-live="polite">Connecting…</p>
-              <p class="muted">Empty captures are condensed. Raw bytes are shown in hexadecimal.</p>
-              <div id="i2c-live" class="i2c-live" tabindex="0" data-native-arrows aria-label="Raw I²C logs"></div>
-              <p id="i2c-empty">No captures received yet.</p>
-              <button id="i2c-more" type="button" hidden>Load older captures</button>
-            </section>
-            <h3>Health history</h3>
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Received</th>
-                    <th>Health</th>
-                    <th>Free heap</th>
-                    <th>Message</th>
-                  </tr>
-                </thead>
-                <tbody id="log-rows"></tbody>
-              </table>
-            </div>
-            <p id="no-logs" hidden>No health reports received yet.</p>
-            <button id="more" hidden>Load older reports</button>
-          </section>
-          <section id="matter-detail" hidden aria-label="Selected Matter device">
-            <div class="detail-heading">
-              <h2 id="matter-detail-title"></h2>
-              <button id="close-matter-detail">Close details</button>
-            </div>
-            <dl id="matter-facts"></dl>
-            <form id="matter-name-form" class="edit">
-              <div>
-                <label for="matter-name">Name in this hub</label>
-                <input id="matter-name" required maxlength="80" />
-              </div>
-              <button id="save-matter-name" class="primary">Save name</button>
-            </form>
-            <form id="matter-group-form" class="edit">
-              <div>
-                <label for="matter-group">Group</label>
-                <select id="matter-group">
-                  <option value="">No group</option>
-                </select>
-              </div>
-              <button id="save-matter-group" class="primary">Save group</button>
-            </form>
-          </section>
-          <section id="govee-detail" class="tui-pane" hidden aria-label="Selected Govee device">
-            <div class="detail-heading">
-              <h2 id="govee-detail-title"></h2>
-              <button id="close-govee-detail">Close details</button>
-            </div>
-            <dl id="govee-facts"></dl>
-            <p class="muted">
-              Connection status is read from Govee's cloud. This check sends no commands to the light.
-            </p>
-          </section>
-        </section>
         <section id="types-panel" class="collection-panel" role="tabpanel" aria-labelledby="types-tab" hidden>
           <div class="collection-heading">
             <h2>Custom categories</h2>
-            <p class="muted">Organize devices without changing their hardware type.</p>
           </div>
           <form id="type-create" class="create-form">
             <label class="sr-only" for="type-name">New type name</label
@@ -365,7 +235,6 @@
         <section id="groups-panel" class="collection-panel" role="tabpanel" aria-labelledby="groups-tab" hidden>
           <div class="collection-heading">
             <h2>Groups</h2>
-            <p class="muted">Groups of lights also appear in the Lights picker.</p>
           </div>
           <form id="group-create" class="create-form">
             <label class="sr-only" for="group-name">New group name</label

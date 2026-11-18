@@ -99,25 +99,29 @@ test("Permission grid arrows move between accounts and scopes without granting a
 });
 
 test("health-only accounts use the unified page without organization controls", async () => {
-  const page = await pageAt("/manage#health", false);
+  const page = await pageAt("/manage", false);
   await page.locator("#password").fill(password);
   await page.locator("#username").fill("alpha");
   await page.locator("#login-form button").click();
-  await page.locator("#inventory:not([hidden])").waitFor();
-  assert.ok(await page.locator("#devices-tab").isHidden());
+  await page.locator("#assignment-rows tr").first().waitFor();
+  assert.ok(await page.locator("#devices-tab").isVisible());
   assert.ok(await page.locator("#types-tab").isHidden());
-  const rows = page.locator("#device-rows button");
+  const rows = page.locator("#assignment-rows button");
   await rows.first().focus();
   await page.keyboard.press("ArrowDown");
   assert.ok(await rows.nth(1).evaluate(isFocused));
-  assert.ok(await page.locator("#detail").isHidden());
+  assert.ok(await page.locator("#editor-fields").isHidden());
   await page.keyboard.press("Enter");
   await page.locator("#detail:not([hidden])").waitFor();
+  await page.locator("#device-name").fill("Health-only Pico");
+  await page.locator("#save-device-name").click();
+  await page.getByRole("button", { name: "Edit Health-only Pico", exact: true }).waitFor();
+  assert.equal(await page.locator("#selected-name").textContent(), "Health-only Pico");
 });
 
 test("text input arrows retain editing, Alt arrows move fields, and modal navigation stays inside", async () => {
-  const page = await pageAt("/manage#health");
-  await page.locator("#inventory:not([hidden])").waitFor();
+  const page = await pageAt("/manage");
+  await page.locator("#assignment-rows tr").first().waitFor();
   await page.locator("#add").click();
   await page.locator("#manual-enroll").click();
   const name = page.locator("#enroll-name");
@@ -134,13 +138,12 @@ test("text input arrows retain editing, Alt arrows move fields, and modal naviga
   assert.ok(await page.locator("#enroll-dialog").isHidden());
 });
 
-test("health edits appear in the organization inventory when returning to Devices", async () => {
-  const page = await pageAt("/manage#health");
-  await page.getByRole("button", { name: "First Pico", exact: true }).click();
+test("renaming in Details updates the device inventory immediately", async () => {
+  const page = await pageAt("/manage");
+  await page.getByRole("button", { name: "Edit First Pico", exact: true }).click();
   await page.locator("#device-name").fill("Renamed Pico");
-  await page.locator("#edit-form button").click();
-  await page.getByRole("button", { name: "Renamed Pico", exact: true }).waitFor();
-  await page.locator("#devices-tab").click();
+  await page.locator("#save-device-name").click();
+  assert.ok(await page.locator("#devices-panel").isVisible());
   await page.getByRole("button", { name: "Edit Renamed Pico", exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "Edit First Pico", exact: true }).count(), 0);
 });

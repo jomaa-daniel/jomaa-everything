@@ -3,7 +3,7 @@ import { loadHealth, resetHealth, closeHealth, selectHealth } from "/manage/heal
 import { PicoPanel } from "/manage/picos.js";
 const $ = (id) => document.getElementById(id);
 const picoPanel = new PicoPanel(() => signedIn(false));
-const tabs = ["devices", "types", "groups", "health", "imaging"];
+const tabs = ["devices", "types", "groups", "imaging"];
 const requestedTab = () => (tabs.includes(location.hash.slice(1)) ? location.hash.slice(1) : "devices");
 const sourceLabels = { matter: "Matter", govee: "Govee", health: "Health reporter" };
 let catalog = { types: [], groups: [], devices: [] };
@@ -16,6 +16,7 @@ let editingKey = null;
 let pending = false;
 let catalogStale = false;
 const drafts = new Map();
+const deviceDrafts = new Map();
 let canManage = false;
 let canHealth = false;
 const healthStates = new Map();
@@ -38,7 +39,7 @@ function updateCommands() {
     updateUIHints();
     return;
   }
-  if (activeTab === "health" || activeTab === "imaging") {
+  if (activeTab === "imaging") {
     updateUIHints();
     return;
   }
@@ -61,9 +62,9 @@ function updateCommands() {
     commands =
       target.type === "checkbox"
         ? [["Space", "Toggle group"]]
-        : target === $("assigned-type")
-          ? [["↑↓", "Category"]]
-          : [["Enter", "Activate"]];
+        : target.matches("input")
+          ? [["Enter", "Save"]]
+          : [["Enter", "Open"]];
     commands.push(["Tab", "Next"], ["Esc", "Devices"]);
   } else if (target.closest(".editing")) {
     commands = [
@@ -79,8 +80,8 @@ function updateCommands() {
   } else if (activeTab === "devices") {
     commands = [
       ["↑↓", "Select"],
-      ["Enter", "Edit"],
-      ["Tab", "Assignments"],
+      ["Enter", "Details"],
+      ["Tab", "Details"],
       ["/", "Search"],
     ];
   } else {
@@ -108,6 +109,7 @@ function signedIn(value) {
     generation++;
     catalog = { types: [], groups: [], devices: [] };
     drafts.clear();
+    deviceDrafts.clear();
     editingKey = selectedKey = null;
     editorOpen = pending = catalogStale = false;
     searchQuery = "";
@@ -116,9 +118,9 @@ function signedIn(value) {
   }
 }
 
-async function api(path, data) {
+async function api(path, data, method = "POST") {
   const response = await fetch(path, {
-    method: data === undefined ? "GET" : "POST",
+    method: data === undefined ? "GET" : method,
     credentials: "same-origin",
     cache: "no-store",
     headers: data === undefined ? {} : { "Content-Type": "application/json" },
@@ -139,6 +141,8 @@ function error(reason) {
 
 function setBusy() {
   $("editor-fields").disabled = pending || catalogStale;
+  $("device-name").disabled = pending || catalogStale;
+  $("save-device-name").disabled = pending || catalogStale;
   $("refresh").disabled = pending;
   for (const container of ["type-create", "group-create", "type-list", "group-list"]) {
     for (const control of $(container).querySelectorAll("input, button")) control.disabled = pending || catalogStale;
@@ -157,24 +161,26 @@ async function load() {
   const session = await api("/api/session");
   canManage = session.owner || session.scopes.includes("manage");
   canHealth = session.owner || session.scopes.includes("devices");
-  for (const tab of tabs) $(tab + "-tab").hidden = ["health", "imaging"].includes(tab) ? !canHealth : !canManage;
+  for (const tab of tabs)
+    $(tab + "-tab").hidden = tab === "devices" ? false : tab === "imaging" ? !canHealth : !canManage;
   if (!canManage && !canHealth) {
     signedIn(false);
     throw new Error("Your account has no device access. Ask the hub owner to grant it.");
   }
-  const result = canManage ? await api("/api/manage") : { types: [], groups: [], devices: [] };
+  const result = canManage ? await api("/api/manage") : { ...catalog, types: [] };
   if (current !== generation) return;
   catalog = result;
   catalogStale = false;
   signedIn(true);
   render();
   if (canHealth) await loadHealth();
+  else resetHealth();
   render();
-  showTab($(activeTab + "-tab").hidden ? (canManage ? "devices" : "health") : activeTab);
+  showTab($(activeTab + "-tab").hidden ? "devices" : activeTab);
   restoreFocus(focused);
 }
 
-async function update(data) {
+async function update(data, path = "/api/manage", method = "POST") {
   if (pending || catalogStale) return false;
   const current = generation;
   const focused = document.activeElement?.id;
@@ -182,9 +188,9 @@ async function update(data) {
   setBusy();
   notice("Saving…");
   try {
-    await api("/api/manage", data);
+    await api(path, data, method);
     if (current !== generation) return false;
-    if (data.action.endsWith(".rename") || data.action.endsWith(".delete")) {
+    if (data.action?.endsWith(".rename") || data.action?.endsWith(".delete")) {
       drafts.delete(editingKey);
       editingKey = null;
     }
@@ -209,7 +215,7 @@ async function update(data) {
     if (current === generation) {
       pending = false;
       setBusy();
-      const renamed = data.id && `${data.action.split(".")[0]}:${data.id}:rename`;
+      const renamed = data.id && data.action && `${data.action.split(".")[0]}:${data.id}:rename`;
       if (document.activeElement === document.body || document.activeElement?.id === focused) {
         restoreFocus($(focused) ? focused : renamed || `${selectedKey}:select`);
       }
@@ -222,8 +228,7 @@ function plural(count, singular) {
 }
 
 function showTab(tab, focus = false) {
-  const refreshDevices = activeTab === "health" && tab === "devices" && canManage && !$("management").hidden;
-  if (tab !== "health") closeHealth();
+  if (tab !== "devices") closeHealth();
   activeTab = tab;
   if (!$("management").hidden) history.replaceState(null, "", "#" + tab);
   for (const name of tabs) {
@@ -234,18 +239,7 @@ function showTab(tab, focus = false) {
   }
   updateCommands();
   if (focus) $(tab + "-tab").focus();
-  if (tab === "health" && canHealth && !$("management").hidden) loadHealth().catch(error);
-  if (refreshDevices) refreshCatalog().catch(error);
-}
-
-async function refreshCatalog() {
-  const current = generation;
-  const result = await api("/api/manage");
-  if (current !== generation) return;
-  const focused = document.activeElement?.id;
-  catalog = result;
-  render();
-  restoreFocus(focused);
+  if (tab === "devices" && canHealth && !$("management").hidden) selectHealth(selectedKey);
 }
 
 function renderList(kind, values) {
@@ -344,7 +338,7 @@ function selectDevice(key, open = false) {
   renderDevices();
   if (open) {
     if (pending || catalogStale) $("selected-name").scrollIntoView({ block: "nearest" });
-    else $("assigned-type").focus({ preventScroll: true });
+    else ($("device-rename").hidden ? $("selected-name") : $("device-name")).focus({ preventScroll: true });
   } else {
     restoreFocus(key + ":select");
     $(key + ":select")?.scrollIntoView({ block: "nearest" });
@@ -353,6 +347,7 @@ function selectDevice(key, open = false) {
 
 function closeEditor() {
   editorOpen = false;
+  closeHealth();
   $("device-workspace").classList.remove("editor-open");
   restoreFocus(selectedKey + ":select");
   $(selectedKey + ":select")?.scrollIntoView({ block: "nearest" });
@@ -362,22 +357,17 @@ function renderEditor() {
   const device = catalog.devices.find((device) => device.key === selectedKey);
   $("device-editor").hidden = !device;
   $("device-workspace").classList.toggle("editor-open", editorOpen && !!device);
-  if (!device) return;
+  if (!device) {
+    selectHealth(null);
+    return;
+  }
   $("selected-name").textContent = device.name;
   $("selected-source").textContent = sourceLabels[device.source] || device.source;
-  $("health-open").hidden = !canHealth;
-  $("reported-type").textContent = device.reportedType;
-  const type = $("assigned-type");
-  type.replaceChildren();
-  const hardware = element("option", "Use hardware type");
-  hardware.value = "";
-  type.append(hardware);
-  for (const value of catalog.types) {
-    const option = element("option", value.name);
-    option.value = value.id;
-    type.append(option);
-  }
-  type.value = device.typeId || "";
+  $("device-rename").hidden = !(canHealth || (canManage && device.source === "govee"));
+  $("device-name").value = deviceDrafts.get(device.key) ?? device.name;
+  $("editor-fields").hidden = !canManage;
+  $("matter-group-form").hidden = canManage;
+  if (canHealth) selectHealth(device.key);
   const groups = $("assigned-groups");
   groups.replaceChildren();
   for (const group of catalog.groups) {
@@ -490,22 +480,35 @@ async function saveAssignment() {
   const device = catalog.devices.find((device) => device.key === selectedKey);
   if (!device || pending || catalogStale) return;
   const data = { action: "device.assign", key: device.key };
-  const typeId = $("assigned-type").value || null;
   const groupIds = [...$("assigned-groups").querySelectorAll("input:checked")].map((input) => input.value);
-  if (typeId !== device.typeId) data.typeId = typeId;
   if (JSON.stringify([...groupIds].sort()) !== JSON.stringify([...device.groupIds].sort())) data.groupIds = groupIds;
-  if (data.typeId === undefined && data.groupIds === undefined) return;
+  if (data.groupIds === undefined) return;
   await update(data);
 }
 
-$("assigned-type").addEventListener("change", saveAssignment);
-$("health-open").addEventListener("click", () => {
-  const key = selectedKey;
-  showTab("health", true);
-  selectHealth(key).catch(error);
+$("device-name").addEventListener("input", () => deviceDrafts.set(selectedKey, $("device-name").value));
+$("device-rename").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const device = catalog.devices.find((device) => device.key === selectedKey);
+  if (!device) return;
+  const name = $("device-name").value.trim();
+  let saved;
+  if (device.source === "govee") saved = await update({ action: "device.rename", key: device.key, name });
+  else {
+    const path =
+      device.source === "matter"
+        ? `/api/matter/nodes/${device.key.slice("matter:".length)}/name`
+        : `/api/devices/${encodeURIComponent(device.key.slice("health:".length))}`;
+    saved = await update({ name }, path, "PATCH");
+  }
+  if (saved) {
+    deviceDrafts.delete(device.key);
+    renderEditor();
+  }
 });
 document.addEventListener(sessionEndEvent, () => signedIn(false));
 document.addEventListener("health-data", (event) => {
+  const focused = document.activeElement?.id;
   healthStates.clear();
   statusDetails.clear();
   for (const device of event.detail.goveeDevices) {
@@ -515,10 +518,38 @@ document.addEventListener("health-data", (event) => {
   for (const device of event.detail.devices) healthStates.set("health:" + device.id, device.status);
   for (const device of event.detail.matterNodes)
     healthStates.set("matter:" + device.nodeId, device.available ? "online" : "offline");
-  $("health-count").textContent =
-    event.detail.devices.length + event.detail.matterNodes.length + event.detail.goveeDevices.length;
-  if (canManage) renderDevices();
+  const inventory = [
+    ...event.detail.goveeDevices.map((device) => ({
+      ...device,
+      key: "target:" + device.id,
+      source: "govee",
+      reportedType: device.type,
+    })),
+    ...event.detail.matterNodes.map((device) => ({
+      ...device,
+      key: "matter:" + device.nodeId,
+      name: device.label || device.product || `Matter device ${device.nodeId}`,
+      source: "matter",
+      reportedType: device.type,
+    })),
+    ...event.detail.devices.map((device) => ({
+      ...device,
+      key: "health:" + device.id,
+      source: "health",
+      reportedType: "Health reporter",
+    })),
+  ].map((device) => ({ ...device, typeId: device.assignedType?.id ?? null }));
+  catalog = {
+    ...catalog,
+    groups: event.detail.groups,
+    devices: inventory,
+    matterConnected: event.detail.matterConnected,
+  };
+  renderDevices();
+  $("device-count").textContent = catalog.devices.length;
+  restoreFocus(focused);
 });
+document.addEventListener("device-selected", (event) => selectDevice(event.detail, true));
 document.addEventListener("focusin", updateCommands);
 $("editor-back").addEventListener("click", closeEditor);
 $("login-form").addEventListener("submit", async (event) => {
@@ -545,7 +576,7 @@ $("logout").addEventListener("click", async () => {
     setBusy();
     await api("/api/logout", {});
     signedIn(false);
-    notice("Sign in to organize your devices.");
+    notice("Sign in to manage devices.");
     $("password").focus();
   } catch (reason) {
     error(reason);
@@ -623,6 +654,6 @@ for (const kind of ["type", "group"]) {
 load()
   .then(() => notice("Ready."))
   .catch((reason) => {
-    if (reason.status === 401) notice("Sign in to organize your devices.");
+    if (reason.status === 401) notice("Sign in to manage devices.");
     else error(reason);
   });

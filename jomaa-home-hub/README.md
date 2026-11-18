@@ -136,22 +136,23 @@ for five minutes without asking the hub again.
 The locally managed Cloudflare tunnel also routes hostname `jomaa.org`, paths `/`,
 `/home`, `/manage`, `/lights`, `/accounts`, `/join`, `/secrets` (including assets), and the pages' API requests to the hub on port 8080. Its proxied DNS record
 points to the same tunnel as `hub.jomaa.org`. The apex `/` redirects to `/home`;
-the hub subdomain's `/` continues to open device health.
+the hub subdomain's `/` opens Devices.
 
 ## Device organization
 
 `https://jomaa.org/manage` manages custom device types, groups, and assignments
 for configured Govee lights, paired Matter devices, and health reporters. It
 needs the owner or an account with the `manage` or `devices` scope. Organization
-actions require `manage`; health and diagnostics require `devices`. The Devices tab opens a
-compact inventory with an editor for the selected device. Category and group
-changes save immediately. The Types and Groups tabs create, rename, and delete
-categories and groups. The Health tab preserves enrollment, Matter discovery,
-health history, and live I2C captures. The standalone `/devices` page is not served.
-Arrow keys select device rows, Enter opens the editor,
-`/` focuses search, and Escape returns to the list or cancels a rename.
-On phones, selecting a device opens its editor with a button to return to the
-inventory. The bottom bar shows commands for the focused control and save results.
+actions require `manage`; health and diagnostics require `devices`. The Devices
+tab opens a compact inventory and a Details pane with renaming, groups, and
+connection facts. Health logs, raw I²C logs, report settings, and credentials
+expand within that pane. Group changes save immediately. The Types and Groups
+tabs create, rename, and delete categories and groups. Add device opens Matter
+discovery and health reporter enrollment. The Imaging tab manages USB Picos.
+Arrow keys select device rows, Enter opens Details, `/` focuses search, and
+Escape returns to the list or cancels a rename. On phones, Details replaces the
+inventory and provides a return button. The bottom bar shows keyboard commands
+and save results.
 The dark palette, titled panes, and focus indicators are described in
 [Organization design](docs/organization-design.md).
 
@@ -482,7 +483,7 @@ for Govee-only homes and tests.
 
 ## Wi-Fi device health
 
-The hub includes a device inventory, SQLite health history, and a management page at `https://jomaa.org/manage#health`.
+The hub includes a device inventory, SQLite health history, and a management page at `/manage`.
 Add device opens a network discovery window for Matter devices advertising for
 pairing or sharing. It scans while open, lists device names, addresses and
 pairing availability, and stops when closed. Scan again retries discovery.

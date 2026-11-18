@@ -707,6 +707,14 @@ export class Api {
           throw new HttpError(400, "Name must contain 1 to 80 characters");
         await this.#applyLayout(path, { action, id, name });
         if (action === "group.delete" && id) organization.removeGroup(id);
+      } else if (action === "device.rename") {
+        fields.only("action", "key", "name").required("key", "name");
+        const key = fields.string("key") ?? "";
+        const device = this.#managementDevices().find((device) => device.key === key && device.source === "govee");
+        if (!device) throw new HttpError(400, "Govee device not found");
+        const name = (fields.string("name") ?? "").trim();
+        if (!name || name.length > 80) throw new HttpError(400, "Name must contain 1 to 80 characters");
+        await this.#applyLayout(path, { action, id: key.slice("target:".length), name });
       } else if (action === "device.assign") {
         fields.only("action", "key", "typeId", "groupIds").required("key");
         if (!fields.has("typeId") && !fields.has("groupIds"))

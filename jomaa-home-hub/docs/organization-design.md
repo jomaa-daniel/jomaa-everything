@@ -1,7 +1,7 @@
 # Device organization design
 
-The `/manage` page combines device organization and health. Its organization view uses two titled panes: Devices and Assignments. Devices
-opens first; Types, Groups, and Health have their own tabs. At narrow widths, opening
+The `/manage` page combines device organization and health. Its organization view uses two titled panes: Devices and Details. Devices
+opens first; Types, Groups, and Imaging have their own tabs. At narrow widths, opening
 a device replaces the inventory with its editor and provides a return button.
 
 ## Color and focus
@@ -15,18 +15,18 @@ lighter colors to maintain readable contrast on the dark surface.
 - `--accent` marks focused panes, keys, and controls.
 - `--selected` marks the selected row when the inventory does not have focus.
 - A focused inventory uses an inverted cyan selection with dark text and a
-  selection arrow. Selection persists when focus moves to Assignments.
+  selection arrow. Selection persists when focus moves to Details.
 - `--success`, `--warning`, and `--error` indicate results, accompanied by text
   and a symbol. Category colors accompany category names.
 
 Spacing uses a shared gutter measured in monospace character widths. Square
 borders and titles embedded in pane edges distinguish the two regions.
-Native selects and checkboxes retain their browser and keyboard behavior.
+Native inputs, checkboxes, and expandable sections retain their browser and keyboard behavior.
 
 ## Keyboard feedback
 
 The footer stays visible and shows commands for the focused control. It
-changes between tabs, search, device selection, categories, group checkboxes,
+changes between tabs, search, device selection, group checkboxes, logs,
 and rename inputs. Save results share the footer with those commands.
 
 ## References

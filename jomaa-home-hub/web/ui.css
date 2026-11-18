@@ -433,27 +433,6 @@ body.tui-page {
   background: var(--raised);
   border-color: var(--warning);
 }
-.organization-page #health-panel {
-  padding-top: 1lh;
-  min-width: 0;
-}
-.organization-page #health-panel table {
-  table-layout: auto;
-}
-.organization-page #health-panel #detail,
-.organization-page #health-panel #matter-detail {
-  border: 1px solid var(--border);
-  padding: 1lh 2ch;
-  margin-top: 1lh;
-}
-.organization-page #health-panel dl {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 1lh 2ch;
-}
-.organization-page #health-panel .table-wrap {
-  max-width: 100%;
-}
 .organization-page .health-state.online {
   color: var(--success);
 }
@@ -477,9 +456,6 @@ body.tui-page {
   width: 16%;
 }
 @media (max-width: 700px) {
-  .organization-page #health-panel dl {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .organization-page #assignment-rows td:nth-child(4) {
     grid-column: 1/-1;
   }
