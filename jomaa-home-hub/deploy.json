@@ -81,6 +81,7 @@
         "/manage/picos.css",
         "/api/picos",
         "/api/picos/catalog",
+        "/api/picos/selected/state",
         "/api/picos/selected/flash",
         "/api/picos/runs/result"
       ]

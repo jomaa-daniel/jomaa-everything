@@ -49,6 +49,9 @@
           <button id="health-tab" role="tab" aria-selected="false" aria-controls="health-panel" tabindex="-1">
             Health <span id="health-count" class="count"></span>
           </button>
+          <button id="imaging-tab" role="tab" aria-selected="false" aria-controls="imaging-panel" tabindex="-1">
+            Imaging
+          </button>
         </div>
         <section id="devices-panel" role="tabpanel" aria-labelledby="devices-tab">
           <div class="device-toolbar">
@@ -105,6 +108,8 @@
               <button id="health-open" class="quiet" hidden>Health &amp; diagnostics →</button>
             </aside>
           </div>
+        </section>
+        <section id="imaging-panel" role="tabpanel" aria-labelledby="imaging-tab" hidden>
           <div id="usb-picos" class="pico-split" hidden>
             <section class="pico-cell pico-card" aria-labelledby="pico-title">
               <div class="detail-heading">
@@ -122,7 +127,7 @@
               </div>
               <p id="pico-identity" class="device-id"></p>
               <p id="pico-description" class="muted"></p>
-              <p class="muted">Choose the functionality to install from jomaa-images.</p>
+              <p class="muted">Installed functions are selected. Choose the functionality for the image.</p>
               <p id="pico-panel-status" role="status" aria-live="polite"></p>
               <button id="pico-retry" type="button" hidden>Retry</button>
               <form id="pico-form">
@@ -132,14 +137,26 @@
                 </fieldset>
                 <fieldset id="pico-wifi" hidden>
                   <legend>Wi-Fi settings</legend>
-                  <label for="pico-radio">Radio</label
-                  ><select id="pico-radio">
-                    <option value="esp8285">External ESP8285</option>
-                    <option value="native">Native Pico W</option>
-                  </select>
-                  <label for="pico-ssid">Network name</label><input id="pico-ssid" autocomplete="off" />
-                  <label for="pico-password">Network password</label
-                  ><input id="pico-password" type="password" autocomplete="off" />
+                  <div id="pico-saved-wifi" hidden>
+                    <label class="pico-feature">
+                      <input id="pico-use-saved" type="checkbox" />
+                      <span>
+                        <strong>Use saved Wi-Fi settings</strong>
+                        <span id="pico-saved-summary" class="muted"></span>
+                      </span>
+                    </label>
+                  </div>
+                  <fieldset id="pico-wifi-fields">
+                    <legend class="sr-only">New Wi-Fi settings</legend>
+                    <label for="pico-radio">Radio</label
+                    ><select id="pico-radio">
+                      <option value="esp8285">External ESP8285</option>
+                      <option value="native">Native Pico W</option>
+                    </select>
+                    <label for="pico-ssid">Network name</label><input id="pico-ssid" autocomplete="off" />
+                    <label for="pico-password">Network password</label
+                    ><input id="pico-password" type="password" autocomplete="off" />
+                  </fieldset>
                 </fieldset>
                 <p class="pico-erase">Flashing replaces the firmware and erases this Pico's files.</p>
                 <button id="pico-flash" type="submit" class="primary" disabled>Flash image</button>

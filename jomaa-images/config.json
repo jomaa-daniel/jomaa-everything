@@ -7,6 +7,7 @@
   "lockFile": "jomaa-images/data/imaging.lock",
   "trustedCaFile": null,
   "commandTimeoutSeconds": 30,
+  "inspectionTimeoutSeconds": 180,
   "flashTimeoutSeconds": 600,
   "verificationSeconds": 180,
   "usbTimeoutSeconds": 60,

@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
 
@@ -28,6 +29,9 @@ MAX_PERCENT = 100
 MAX_GPIO = 28
 SSID_MAX_BYTES = 32
 PASSWORD_MAX_BYTES = 64
+DEVICE_CONFIG_FILE = "device_config.json"
+WIFI_CONFIG_FILE = "wifi_config.json"
+IMAGE_FILE = "image.json"
 
 
 class ImageError(ValueError):
@@ -36,7 +40,7 @@ class ImageError(ValueError):
 
 def load_config(path=CONFIG_FILE):
     config = json.loads(Path(path).read_text())
-    for key in ("commandTimeoutSeconds", "flashTimeoutSeconds", "verificationSeconds", "usbTimeoutSeconds",
+    for key in ("commandTimeoutSeconds", "inspectionTimeoutSeconds", "flashTimeoutSeconds", "verificationSeconds", "usbTimeoutSeconds",
                 "returnTimeoutSeconds", "pollMilliseconds", "retentionHours", "maxOutputBytes",
                 "maxRequestBytes", "healthReports", "healthIntervalSeconds"):
         if type(config.get(key)) is not int or config[key] <= 0:
@@ -120,10 +124,10 @@ def validate_request(value, config):
         wifi = value["wifi"]
         if (not isinstance(wifi, dict) or set(wifi) != {"ssid", "password", "transport"}
                 or wifi["transport"] not in ("esp8285", "native")
-                or not isinstance(wifi["ssid"], str) or not isinstance(wifi["password"], str)
+                or not isinstance(wifi["ssid"], str) or (wifi["password"] is not None and not isinstance(wifi["password"], str))
                 or not 1 <= len(wifi["ssid"].encode()) <= SSID_MAX_BYTES
-                or len(wifi["password"].encode()) > PASSWORD_MAX_BYTES
-                or any(c in wifi["ssid"] + wifi["password"] for c in ("\r", "\n", "\x00"))):
+                or len((wifi["password"] or "").encode()) > PASSWORD_MAX_BYTES
+                or any(c in wifi["ssid"] + (wifi["password"] or "") for c in ("\r", "\n", "\x00"))):
             raise ImageError("Invalid Wi-Fi settings")
     if "fan" in features:
         _, setup = helpers(config)
@@ -213,13 +217,43 @@ def helpers(config):
     return importlib.import_module("setup_wifi"), importlib.import_module("setup_pico")
 
 
+def installed_wifi(installed):
+    config = installed["config"]
+    transport_key = "transport" if installed["configFile"] == WIFI_CONFIG_FILE else "wifi_transport"
+    wifi = {"ssid": config.get("wifi_ssid"), "password": config.get("wifi_password"),
+            "transport": config.get(transport_key)}
+    if (not isinstance(wifi["ssid"], str) or not 1 <= len(wifi["ssid"].encode()) <= SSID_MAX_BYTES
+            or not isinstance(wifi["password"], str) or len(wifi["password"].encode()) > PASSWORD_MAX_BYTES
+            or wifi["transport"] not in ("native", "esp8285")
+            or any(c in wifi["ssid"] + wifi["password"] for c in ("\r", "\n", "\x00"))):
+        return None
+    return wifi
+
+
+def installed_state(installed, config):
+    wifi = installed_wifi(installed)
+    selected = installed["features"]
+    if selected is None:
+        selected = ["wifi"] if wifi else []
+        if wifi and installed["configFile"] == DEVICE_CONFIG_FILE and installed["config"].get("token"):
+            selected.append("health")
+            if "stream.py" in installed["files"]:
+                selected.append("i2c")
+    if not isinstance(selected, list) or any(not isinstance(x, str) for x in selected):
+        raise ImageError("The installed image manifest is invalid")
+    return {"features": [x["id"] for x in config["features"] if x["id"] in selected],
+            "wifi": {"ssid": wifi["ssid"], "transport": wifi["transport"]} if wifi else None}
+
+
 def prepare(output, request, config, device_config=None, certificate=None):
     request = validate_request(request, config)
+    if request["wifi"] is not None and request["wifi"]["password"] is None:
+        raise ImageError("Saved Wi-Fi settings must be read from the selected Pico before preparation")
     wifi, setup = helpers(config)
     module = setup.provisioner()
     output.mkdir(mode=0o700, parents=True)
     image = {"features": request["features"], "installId": uuid.uuid4().hex}
-    private_json(output / "image.json", image)
+    private_json(output / IMAGE_FILE, image)
     private_json(output / "image_settings.json", config["telemetry"])
     shutil.copyfile(FIRMWARE / "main.py", output / "main.py")
     shutil.copyfile(FIRMWARE / "image_status.py", output / "image_status.py")
@@ -230,7 +264,7 @@ def prepare(output, request, config, device_config=None, certificate=None):
         runtime = json.loads(module.STREAM_SETTINGS.read_text())
         runtime["maxDataBytes"] = json.loads((module.FIRMWARE.parents[2] / "settings.json").read_text())["i2c"]["maxDataBytes"]
         selected = request["wifi"]
-        private_json(output / "device_config.json", {"wifi_ssid": selected["ssid"],
+        private_json(output / DEVICE_CONFIG_FILE, {"wifi_ssid": selected["ssid"],
                      "wifi_password": selected["password"], "wifi_transport": selected["transport"],
                      **({"runtime": runtime} if "health" not in request["features"] else {}),
                      **(device_config or {})})
@@ -273,9 +307,13 @@ class Host:
         return result.stdout
 
     def inspect(self, port):
-        output = self.usb(port, "resume", "exec", "import machine,binascii,json,os; "
-                "c=json.load(open('device_config.json')) if 'device_config.json' in os.listdir() else {}; "
-                "print('JOMAA_IMAGE:'+json.dumps({'uniqueId':binascii.hexlify(machine.unique_id()).decode(),'config':c}))")
+        output = self.usb(port, "resume", "exec", f"""import machine,binascii,json,os
+files=os.listdir()
+config_file={DEVICE_CONFIG_FILE!r} if {DEVICE_CONFIG_FILE!r} in files else {WIFI_CONFIG_FILE!r} if {WIFI_CONFIG_FILE!r} in files else None
+c=json.load(open(config_file)) if config_file else {{}}
+features=json.load(open({IMAGE_FILE!r}))['features'] if {IMAGE_FILE!r} in files else None
+print('JOMAA_IMAGE:'+json.dumps({{'uniqueId':binascii.hexlify(machine.unique_id()).decode(),'config':c,'configFile':config_file,'features':features,'files':files}}))
+""")
         for line in output.splitlines():
             if line.startswith(MARKER):
                 value = json.loads(line[len(MARKER):])
@@ -321,7 +359,14 @@ class Host:
             self.console_port = target["port"]
             self.console_uid = uid
             old_config = inspected["config"]
+            if request["wifi"] is not None and request["wifi"]["password"] is None:
+                saved = installed_wifi(inspected)
+                if saved is None or any(saved[key] != request["wifi"][key] for key in ("ssid", "transport")):
+                    raise ImageError("Saved Wi-Fi settings changed or are unavailable; reopen the Pico panel")
+                request = validate_request({**request, "wifi": saved}, self.config)
             existing.pop(uid, None)
+        elif request["wifi"] is not None and request["wifi"]["password"] is None:
+            raise ImageError("Saved Wi-Fi settings require a Pico running MicroPython")
         if "health" in request["features"]:
             self.authenticate()
             if uid:
@@ -507,15 +552,44 @@ class Host:
         raise ImageError("Image verification did not complete before its deadline")
 
 
-def execute(target_id, request, config, emit, host=None):
-    request = validate_request(request, config)
+@contextlib.contextmanager
+def usb_lock(config):
     lock_path = ROOT / config["lockFile"]
     lock_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     with os.fdopen(os.open(lock_path, os.O_WRONLY | os.O_CREAT, 0o600), "w") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            raise ImageError("Another imaging command is active on this USB host") from None
+            raise ImageError("Another USB imaging operation is active on this host") from None
+        yield
+
+
+def inspect_state(target_id, config, host=None):
+    with usb_lock(config):
+        target = next((x for x in discover(config, private=True) if x["id"] == target_id), None)
+        if target is None:
+            raise ImageError("The selected Pico is no longer connected")
+        if target["mode"] == "bootsel" or not target["available"]:
+            return {"features": [], "wifi": None}
+        directory = ROOT / config["runDirectory"]
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        host = host or Host(config)
+        with tempfile.TemporaryDirectory(dir=directory) as temporary:
+            host.bootstrap(Path(temporary))
+            try:
+                installed = host.inspect(target["port"])
+                if installed["uniqueId"] != target["uniqueId"]:
+                    raise ImageError("Selected USB identity changed; refresh the USB inventory")
+                return installed_state(installed, config)
+            finally:
+                connected = host.wifi.ports().get(target["uniqueId"])
+                if connected:
+                    host.usb(host.wifi.stable_port(target["uniqueId"], connected), "resume", "reset")
+
+
+def execute(target_id, request, config, emit, host=None):
+    request = validate_request(request, config)
+    with usb_lock(config):
         _execute_locked(target_id, request, config, emit, host)
 
 
@@ -546,7 +620,7 @@ def _execute_locked(target_id, request, config, emit, host):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("catalog", "discover", "prepare", "flash"))
+    parser.add_argument("action", choices=("catalog", "discover", "state", "prepare", "flash"))
     parser.add_argument("--config", type=Path, default=CONFIG_FILE)
     parser.add_argument("--target")
     parser.add_argument("--output", type=Path)
@@ -559,6 +633,10 @@ def main(argv=None):
             emit({"features": config["features"], "defaultWifiTransport": config["defaultWifiTransport"]})
         elif args.action == "discover":
             emit({"targets": discover(config)})
+        elif args.action == "state":
+            if not args.target:
+                raise ImageError("Select a Pico target")
+            emit(inspect_state(args.target, config))
         else:
             raw = sys.stdin.buffer.read(config["maxRequestBytes"] + 1)
             if len(raw) > config["maxRequestBytes"]:

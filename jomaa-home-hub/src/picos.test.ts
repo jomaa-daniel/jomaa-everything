@@ -65,6 +65,9 @@ class Imager implements PicoImager {
   catalog(): Promise<{ features: Feature[]; defaultWifiTransport: "native" | "esp8285" }> {
     return Promise.resolve({ features, defaultWifiTransport: "esp8285" });
   }
+  state() {
+    return Promise.resolve({ features: ["wifi"], wifi: { ssid: "saved-network", transport: "native" as const } });
+  }
   async flash(_id: string, request: FlashRequest, emit: (event: unknown) => void): Promise<void> {
     this.calls.push(request);
     await new Promise<void>((resolve) => {
@@ -108,7 +111,16 @@ test("Pico APIs require Devices access before discovering or launching, and refu
     assert.equal((await fetch(origin + "/api/picos")).status, 401);
     assert.equal((await fetch(origin + "/api/picos", { headers: { Authorization: `Bearer ${guest}` } })).status, 403);
     assert.equal(imager.discoveries, 0);
+    assert.equal((await fetch(origin + "/api/picos/runtime-test/state")).status, 401);
+    assert.equal(
+      (await fetch(origin + "/api/picos/runtime-test/state", { headers: { Authorization: `Bearer ${guest}` } })).status,
+      403,
+    );
     const owner = { Authorization: `Bearer ${sessionToken(password)}` };
+    const state = await fetch(origin + "/api/picos/runtime-test/state", { headers: owner });
+    assert.equal(state.status, 200);
+    assert.equal(state.headers.get("cache-control"), "no-store");
+    assert.deepEqual(await state.json(), { features: ["wifi"], wifi: { ssid: "saved-network", transport: "native" } });
     const refused = await fetch(origin + "/api/picos/runtime-test/flash", {
       method: "POST",
       headers: { ...owner, "Content-Type": "application/json", Origin: "https://elsewhere.test" },
@@ -238,6 +250,38 @@ test("USB mode changes retain a board's latest results", async () => {
   await tick();
   imager.targets = [{ ...target, id: runtimeTargetId }];
   assert.equal((await runs.inventory()).targets[0]?.latestRunId, run.id);
+});
+
+test("saved Wi-Fi requests retain the network and transport without persisting a password", async () => {
+  const imager = new Imager();
+  const runs = new PicoRuns(imager, imageSettings(), null);
+  const request = { features: ["wifi"], wifi: { ssid: "saved-network", password: null, transport: "native" } };
+  const run = await runs.start(target.id, request);
+  assert.deepEqual(imager.calls[0], request);
+  assert.equal(run.wifiTransport, "native");
+  await assert.rejects(runs.state(target.id), (error: unknown) => error instanceof PicoError && error.status === 409);
+  imager.events = [{ type: "result", status: "failed", message: "Fixture stopped" }];
+  imager.release();
+  await tick();
+  assert.deepEqual(await runs.state(target.id), await imager.state());
+});
+
+test("inspection prevents a concurrent flash and releases its lock after failure", async () => {
+  const imager = new Imager();
+  let reject: (reason: Error) => void = () => {};
+  imager.state = () =>
+    new Promise((_resolve, failure) => {
+      reject = failure;
+    });
+  const runs = new PicoRuns(imager, imageSettings(), null);
+  const inspected = runs.state(target.id);
+  await assert.rejects(runs.start(target.id, { features: ["temperature"], wifi: null }));
+  reject(new Error("USB failure"));
+  await assert.rejects(inspected);
+  await runs.start(target.id, { features: ["temperature"], wifi: null });
+  imager.events = passedTemperature;
+  imager.release();
+  await tick();
 });
 
 test("the component adapter refuses malformed process output", async () => {

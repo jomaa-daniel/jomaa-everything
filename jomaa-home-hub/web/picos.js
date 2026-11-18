@@ -21,6 +21,8 @@ export class PicoPanel {
     this.hostRun = null;
     this.timer = null;
     this.loading = false;
+    this.savedWifi = null;
+    $("pico-use-saved").addEventListener("change", () => this.controls());
     $("pico-refresh").addEventListener("click", () => this.refresh());
     $("pico-close").addEventListener("click", () => this.close(true));
     $("pico-panel").addEventListener("keydown", (event) => {
@@ -107,6 +109,7 @@ export class PicoPanel {
     this.timer = null;
     $("pico-panel").hidden = true;
     $("pico-password").value = "";
+    this.savedWifi = null;
     if (restoreFocus && this.signedIn && this.opener?.isConnected) this.opener.focus();
     this.target = null;
     this.run = null;
@@ -127,6 +130,8 @@ export class PicoPanel {
     this.run = null;
     this.loading = true;
     this.features = [];
+    this.savedWifi = null;
+    $("pico-use-saved").checked = false;
     this.selectedFeatures.clear();
     $("pico-identity").textContent = target.uniqueId || target.name;
     $("pico-description").textContent = target.description;
@@ -134,7 +139,7 @@ export class PicoPanel {
     $("pico-ssid").value = "";
     $("pico-password").value = "";
     $("pico-results").hidden = true;
-    $("pico-panel-status").textContent = "Loading image options…";
+    $("pico-panel-status").textContent = "Reading installed settings…";
     $("pico-retry").hidden = true;
     this.markSelected();
     if ($("pico-panel").hidden) {
@@ -148,7 +153,6 @@ export class PicoPanel {
       this.features = catalog.features;
       $("pico-radio").value = catalog.defaultWifiTransport;
       for (const feature of this.features) {
-        if (feature.default) this.select(feature.id, true);
         const label = node("label", undefined, "pico-feature");
         const input = node("input");
         input.type = "checkbox";
@@ -162,13 +166,39 @@ export class PicoPanel {
         label.append(input, text);
         $("pico-features").append(label);
       }
-      $("pico-panel-status").textContent = target.available ? "" : target.unavailableReason;
+      let state = null;
       if (target.latestRunId) {
         const { run } = await this.api(`/api/picos/runs/${encodeURIComponent(target.latestRunId)}`);
         if (epoch !== this.panelEpoch) return;
         this.showRun(run);
-        if (active(run)) this.poll(epoch);
+        if (active(run)) {
+          $("pico-panel-status").textContent = "";
+          this.poll(epoch);
+          return;
+        }
       }
+      if (target.mode === "runtime" && target.available) {
+        try {
+          state = await this.api(`/api/picos/${encodeURIComponent(target.id)}/state`);
+        } catch (error) {
+          if (epoch !== this.panelEpoch) return;
+          $("pico-panel-status").textContent = `${error.message}. Enter settings manually or Retry.`;
+          $("pico-retry").hidden = false;
+        }
+        if (epoch !== this.panelEpoch) return;
+      }
+      for (const feature of this.features) {
+        if (state ? state.features.includes(feature.id) : feature.default) this.select(feature.id, true);
+      }
+      if (state?.wifi) {
+        this.savedWifi = state.wifi;
+        $("pico-ssid").value = state.wifi.ssid;
+        $("pico-radio").value = state.wifi.transport;
+        $("pico-use-saved").checked = true;
+        $("pico-saved-summary").textContent =
+          `${state.wifi.ssid} · ${state.wifi.transport === "esp8285" ? "External ESP8285" : "Native Pico W"}`;
+      }
+      if ($("pico-retry").hidden) $("pico-panel-status").textContent = target.available ? "" : target.unavailableReason;
     } catch (error) {
       if (epoch === this.panelEpoch) {
         $("pico-panel-status").textContent = error.message;
@@ -198,9 +228,13 @@ export class PicoPanel {
     for (const input of $("pico-features").querySelectorAll("input"))
       input.checked = this.selectedFeatures.has(input.value);
     $("pico-options").disabled = this.loading || busy;
-    $("pico-wifi").disabled = busy;
+    $("pico-wifi").disabled = this.loading || busy;
     $("pico-wifi").hidden = !this.selectedFeatures.has("wifi");
-    $("pico-ssid").required = this.selectedFeatures.has("wifi");
+    const reuseWifi = this.savedWifi && $("pico-use-saved").checked;
+    $("pico-saved-wifi").hidden = !this.savedWifi;
+    $("pico-wifi-fields").hidden = !!reuseWifi;
+    $("pico-wifi-fields").disabled = !!reuseWifi;
+    $("pico-ssid").required = this.selectedFeatures.has("wifi") && !reuseWifi;
     $("pico-flash").disabled =
       !this.target?.available ||
       !this.features.length ||
@@ -212,8 +246,10 @@ export class PicoPanel {
 
   showRun(run) {
     this.run = run;
-    if (run.wifiTransport !== null) $("pico-radio").value = run.wifiTransport;
-    this.selectedFeatures = new Set(run.features);
+    if (active(run)) {
+      if (run.wifiTransport !== null) $("pico-radio").value = run.wifiTransport;
+      this.selectedFeatures = new Set(run.features);
+    }
     this.hostRun = active(run) ? run.id : null;
     if (this.target) this.target.latestRunId = run.id;
     $("pico-results").hidden = false;
@@ -258,7 +294,9 @@ export class PicoPanel {
     const body = {
       features: selected.map((x) => x.id),
       wifi: this.selectedFeatures.has("wifi")
-        ? { ssid: $("pico-ssid").value, password: $("pico-password").value, transport: $("pico-radio").value }
+        ? this.savedWifi && $("pico-use-saved").checked
+          ? { ...this.savedWifi, password: null }
+          : { ssid: $("pico-ssid").value, password: $("pico-password").value, transport: $("pico-radio").value }
         : null,
     };
     this.submitting = true;

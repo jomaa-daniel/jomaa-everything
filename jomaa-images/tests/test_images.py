@@ -100,6 +100,97 @@ class ImagesTests(unittest.TestCase):
             (usb / "idVendor").write_text("ffff")
             self.assertEqual(images.discover(config), [])
 
+    def installed(self, config_file=images.DEVICE_CONFIG_FILE, features=None):
+        return {"uniqueId": "5303284720e42a9c", "configFile": config_file,
+                "config": {"wifi_ssid": "saved-network", "wifi_password": "private-saved-fixture",
+                           "transport" if config_file == images.WIFI_CONFIG_FILE else "wifi_transport": "native",
+                           "token": "private-device-token"},
+                "features": features, "files": ["main.py", "stream.py"]}
+
+    def test_state_reads_current_images_and_bench_installations_without_exposing_secrets(self):
+        for source, features, expected in (
+                (images.DEVICE_CONFIG_FILE, ["wifi", "temperature"], ["wifi", "temperature"]),
+                (images.DEVICE_CONFIG_FILE, None, ["health", "wifi", "i2c"]),
+                (images.WIFI_CONFIG_FILE, None, ["wifi"])):
+            with self.subTest(source=source, features=features):
+                state = images.installed_state(self.installed(source, features), self.config)
+                self.assertEqual(state, {"features": expected, "wifi": {"ssid": "saved-network", "transport": "native"}})
+                self.assertNotIn("private", json.dumps(state))
+
+    def test_inspection_restarts_only_selected_board_and_cleans_temporary_tools_on_failure(self):
+        target = {"id": "selected", "mode": "runtime", "uniqueId": "5303284720e42a9c",
+                  "available": True, "port": "selected-port"}
+        host = Mock()
+        host.wifi.ports.return_value = {target["uniqueId"]: "selected-port", "other": "other-port"}
+        host.wifi.stable_port.return_value = "selected-port"
+        with patch.object(images, "ROOT", self.path), patch.object(images, "discover", return_value=[target]):
+            host.inspect.return_value = self.installed(features=["wifi"])
+            state = images.inspect_state(target["id"], self.config, host)
+            self.assertEqual(state["features"], ["wifi"])
+            host.usb.assert_called_once_with("selected-port", "resume", "reset")
+            host.inspect.assert_called_once_with("selected-port")
+            host.usb.reset_mock()
+            host.inspect.side_effect = images.ImageError("Unresponsive console")
+            with self.assertRaises(images.ImageError):
+                images.inspect_state(target["id"], self.config, host)
+            host.usb.assert_called_once_with("selected-port", "resume", "reset")
+            self.assertEqual(list((self.path / self.config["runDirectory"]).iterdir()), [])
+            with images.usb_lock(self.config), self.assertRaises(images.ImageError):
+                images.inspect_state(target["id"], self.config, host)
+            target["mode"] = "bootsel"
+            host.reset_mock()
+            self.assertEqual(images.inspect_state(target["id"], self.config, host), {"features": [], "wifi": None})
+            host.bootstrap.assert_not_called()
+            host.inspect.assert_not_called()
+
+    def test_saved_wifi_is_read_before_erasure_and_installed_with_original_password(self):
+        installed = self.installed(features=["wifi"])
+        uid = installed["uniqueId"]
+        target = {"id": "selected", "mode": "runtime", "uniqueId": uid, "port": "selected-port"}
+        bootsel = {"id": "boot", "mode": "bootsel", "device": "selected-block", "mount": str(self.path)}
+        host = images.Host(self.config)
+        host.bootstrap = Mock()
+        host.inspect = Mock(return_value=installed)
+        host.mount = Mock(return_value=self.path)
+        host.verify = Mock()
+        erased = []
+        def usb(port, *args):
+            if args[0:2] == ("resume", "exec"):
+                erased.append(port)
+                installed["config"]["wifi_password"] = "erased"
+        host.usb = Mock(side_effect=usb)
+        request = {"features": ["wifi"], "wifi": {"ssid": "saved-network", "password": None, "transport": "native"}}
+        with patch.object(host.wifi, "ports", return_value={uid: "selected-port"}), \
+                patch.object(host.wifi, "download", return_value=b"firmware"), \
+                patch.object(host.wifi, "validate_firmware"), patch.object(host.wifi, "enter_bootsel"), \
+                patch.object(host.wifi, "flash"), patch.object(host.wifi, "returning_port", return_value=(uid, "selected-port")), \
+                patch.object(images, "discover", side_effect=[[target], [bootsel]]):
+            events = []
+            host.reimage(target, request, self.path, events.append)
+        self.assertEqual(erased, ["selected-port"])
+        device = json.loads((self.path / "prepared/device_config.json").read_text())
+        self.assertEqual(device["wifi_password"], "private-saved-fixture")
+        self.assertEqual(device["wifi_ssid"], "saved-network")
+        self.assertEqual(device["wifi_transport"], "native")
+        self.assertIsNone(request["wifi"]["password"])
+        self.assertNotIn("private-saved-fixture", json.dumps(events))
+
+    def test_changed_saved_wifi_is_refused_before_firmware_writes_or_erasure(self):
+        host = images.Host(self.config)
+        host.bootstrap = Mock()
+        host.inspect = Mock(return_value=self.installed(features=["wifi"]))
+        host.usb = Mock()
+        request = {"features": ["wifi"], "wifi": {"ssid": "stale-network", "password": None, "transport": "native"}}
+        target = {"uniqueId": "5303284720e42a9c", "port": "selected-port"}
+        with patch.object(host.wifi, "ports", return_value={}), patch.object(host.wifi, "download") as download:
+            with self.assertRaises(images.ImageError):
+                host.reimage(target, request, self.path, lambda event: None)
+            download.assert_not_called()
+            host.usb.assert_not_called()
+        with self.assertRaises(images.ImageError):
+            images.prepare(self.path / "unresolved", request, self.config)
+        self.assertFalse((self.path / "unresolved").exists())
+
     def test_disabled_i2c_starts_no_collector(self):
         source = HERE.parent / "jomaa-home-hub/devices/pico-health/main.py"
         namespace = runpy.run_path(str(source))

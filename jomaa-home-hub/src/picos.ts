@@ -39,8 +39,12 @@ export interface PicoTarget {
 export type WifiTransport = (typeof wifiTransports)[number];
 export interface WifiSettings {
   ssid: string;
-  password: string;
+  password: string | null;
   transport: WifiTransport;
+}
+export interface PicoState {
+  features: string[];
+  wifi: Omit<WifiSettings, "password"> | null;
 }
 export interface FlashRequest {
   features: string[];
@@ -78,6 +82,7 @@ export interface ImageRun {
 export interface PicoImager {
   discover(): Promise<PicoTarget[]>;
   catalog(): Promise<{ features: Feature[]; defaultWifiTransport: WifiTransport }>;
+  state(targetId: string): Promise<PicoState>;
   /** Flashes the target, passing each structured event it reports, unvalidated, to emit. */
   flash(targetId: string, request: FlashRequest, emit: (event: unknown) => void): Promise<void>;
 }
@@ -87,6 +92,7 @@ export interface ImageSettings {
   pollMilliseconds: number;
   retentionHours: number;
   commandTimeoutSeconds: number;
+  inspectionTimeoutSeconds: number;
   flashTimeoutSeconds: number;
   maxOutputBytes: number;
   maxRequestBytes: number;
@@ -118,6 +124,7 @@ export function imageSettings(): ImageSettings {
     pollMilliseconds: positive("pollMilliseconds"),
     retentionHours: positive("retentionHours"),
     commandTimeoutSeconds: positive("commandTimeoutSeconds"),
+    inspectionTimeoutSeconds: positive("inspectionTimeoutSeconds"),
     flashTimeoutSeconds: positive("flashTimeoutSeconds"),
     maxOutputBytes: positive("maxOutputBytes"),
     maxRequestBytes: positive("maxRequestBytes"),
@@ -153,11 +160,11 @@ function wifiSettings(value: unknown): WifiSettings {
   const transport = wifi.string("transport");
   if (
     ssid === null ||
-    password === null ||
+    (password === null && wifi.value("password") !== null) ||
     Buffer.byteLength(ssid) < 1 ||
     Buffer.byteLength(ssid) > ssidMaxBytes ||
-    Buffer.byteLength(password) > passwordMaxBytes ||
-    /[\r\n\0]/.test(ssid + password) ||
+    Buffer.byteLength(password ?? "") > passwordMaxBytes ||
+    /[\r\n\0]/.test(ssid + (password ?? "")) ||
     !oneOf(wifiTransports, transport)
   )
     throw new PicoError(400, "Invalid Wi-Fi settings");
@@ -288,7 +295,11 @@ export class ImageCommand implements PicoImager {
       };
       const timer = setTimeout(
         stop,
-        (flash ? this.settings.flashTimeoutSeconds : this.settings.commandTimeoutSeconds) * 1000,
+        (flash
+          ? this.settings.flashTimeoutSeconds
+          : args[0] === "state"
+            ? this.settings.inspectionTimeoutSeconds
+            : this.settings.commandTimeoutSeconds) * 1000,
       );
       child.stdout.on("data", (chunk: Buffer) => {
         size += chunk.length;
@@ -383,6 +394,26 @@ export class ImageCommand implements PicoImager {
   }
   async flash(targetId: string, request: FlashRequest, emit: (event: unknown) => void): Promise<void> {
     await this.command(["flash", "--target", targetId], { request, emit });
+  }
+  async state(targetId: string): Promise<PicoState> {
+    const f = new Fields(await this.command(["state", "--target", targetId], null), "Pico state")
+      .only("features", "wifi")
+      .required("features", "wifi");
+    const features = f.list("features");
+    if (features.some((x) => typeof x !== "string") || new Set(features).size !== features.length)
+      throw new PicoError(503, "Invalid installed image features");
+    const value = f.value("wifi");
+    let wifi: PicoState["wifi"] = null;
+    if (value !== null) {
+      const saved = new Fields(value, "saved Wi-Fi").only("ssid", "transport").required("ssid", "transport");
+      const settings = wifiSettings({
+        ssid: saved.string("ssid"),
+        transport: saved.string("transport"),
+        password: null,
+      });
+      wifi = { ssid: settings.ssid, transport: settings.transport };
+    }
+    return { features: features.filter((x): x is string => typeof x === "string"), wifi };
   }
 }
 
@@ -489,6 +520,15 @@ export class PicoRuns {
     } catch (error) {
       this.busy = false;
       throw error;
+    }
+  }
+  async state(targetId: string): Promise<PicoState> {
+    if (this.busy) throw new PicoError(409, "Another USB imaging operation is active; retry after it completes");
+    this.busy = true;
+    try {
+      return await this.imager.state(targetId);
+    } finally {
+      this.busy = false;
     }
   }
   private async execute(run: ImageRun, request: FlashRequest): Promise<void> {

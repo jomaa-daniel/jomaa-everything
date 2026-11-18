@@ -12,6 +12,7 @@
 | `lockFile` | Private host lock shared by command-line and browser imaging runs. |
 | `trustedCaFile` | Trusted root CA file, PEM or DER; null selects the OS-verified hub chain and requires Python with `get_verified_chain`. |
 | `commandTimeoutSeconds` | Discovery, catalog and host command deadline. |
+| `inspectionTimeoutSeconds` | Deadline for reading the selected Pico's installed settings, including USB tool preparation and restart. |
 | `flashTimeoutSeconds` | Whole imaging subprocess deadline. |
 | `verificationSeconds` | Deadline for observations from the installed startup. |
 | `usbTimeoutSeconds` | Deadline for a USB console operation. |
@@ -62,6 +63,6 @@
 | `features[].label` | Checkbox label. |
 | `features[].description` | Function description shown beside the checkbox. |
 | `features[].requires` | Prerequisite function IDs. |
-| `features[].default` | Initial checkbox state. |
+| `features[].default` | Initial checkbox state when installed settings are unavailable, such as in BOOTSEL mode. |
 
 Firmware source and trusted digest are read from the existing bench tool's firmware settings. I²C pins, sampling and transport limits are read from the existing Pico stream settings; the receiver's byte limit is read from the hub settings. A runtime image uses the selected physical radio; a Pico W firmware label does not identify an external radio.

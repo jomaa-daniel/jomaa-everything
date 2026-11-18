@@ -177,6 +177,7 @@ export class Api {
       route("GET", "/api/session", null, this.#session),
       route("GET", "/api/picos", "devices", this.#picoInventory),
       route("GET", "/api/picos/catalog", "devices", this.#picoCatalog),
+      route("GET", "/api/picos/{targetId}/state", "devices", this.#picoState),
       route("POST", "/api/picos/{targetId}/flash", "devices", this.#picoFlash),
       route("GET", "/api/picos/runs/{runId}", "devices", this.#picoRun),
       route("GET", "/api/invites", "owner", this.#inviteList),
@@ -327,6 +328,16 @@ export class Api {
       writeJSON(res, 200, await this.#images().imager.catalog());
     } catch {
       throw new PicoError(503, "Image options could not load; check the imaging setup and retry");
+    }
+  }
+
+  async #picoState({ res, params }: RequestContext): Promise<void> {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      writeJSON(res, 200, await this.#images().state(params[0] ?? ""));
+    } catch (error) {
+      if (error instanceof PicoError) throw error;
+      throw new PicoError(503, "Installed settings could not load; retry or enter image settings manually");
     }
   }
 

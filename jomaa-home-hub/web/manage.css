@@ -72,6 +72,7 @@ button:hover {
 }
 .tabs {
   display: flex;
+  flex-wrap: wrap;
   border-bottom: 1px solid var(--border-quiet);
   gap: 4px;
 }

@@ -9,7 +9,7 @@ import { Hub } from "../hub.js";
 import { Organization } from "../organization.js";
 import { silentLog } from "../log.js";
 import type { MatterAdmin } from "../matter/nodes.js";
-import { ImageCommand, imageSettings, PicoRuns, type PicoImager } from "../picos.js";
+import { ImageCommand, imageSettings, PicoRuns, type PicoImager, type PicoState, type WifiSettings } from "../picos.js";
 import { serve } from "../testing.js";
 
 const matter: MatterAdmin = {
@@ -24,7 +24,7 @@ const matter: MatterAdmin = {
   removeNode: () => Promise.resolve(),
 };
 
-await test("USB Pico split view selects image functions, confirms erasure, resumes a run and renders results on desktop and mobile", async () => {
+await test("Imaging tab selects installed Pico functions, reuses saved Wi-Fi and resumes runs on desktop and mobile", async () => {
   const settings = { ...imageSettings(), pollMilliseconds: 30 };
   const catalog = await new ImageCommand(settings).catalog();
   const target = {
@@ -42,17 +42,25 @@ await test("USB Pico split view selects image functions, confirms erasure, resum
   };
   let flashes = 0;
   let selected: string[] = [];
+  let selectedWifi: WifiSettings | null = null;
+  let installed: PicoState = { features: [], wifi: null };
   let events: unknown[] = [];
   const imager: PicoImager = {
     discover: () => Promise.resolve([target]),
     catalog: () => Promise.resolve(catalog),
+    state: () => Promise.resolve(installed),
     flash: async (_id, request, emit) => {
       flashes++;
       selected = request.features;
+      selectedWifi = request.wifi;
       await new Promise<void>((resolve) => {
         finish = resolve;
       });
       for (const event of events) emit(event);
+      installed = {
+        features: request.features,
+        wifi: request.wifi && { ssid: request.wifi.ssid, transport: request.wifi.transport },
+      };
     },
   };
   const store = new HealthStore(":memory:");
@@ -81,11 +89,14 @@ await test("USB Pico split view selects image functions, confirms erasure, resum
     assert.ok(await page.locator("#usb-picos").isHidden());
     await page.locator("#password").fill(password);
     await page.locator("#login-form button").click();
-    await page.getByRole("button", { name: /Jerry USB Pico/ }).waitFor();
+    await page.getByRole("tab", { name: "Imaging" }).waitFor();
     assert.match((await page.locator("#assignment-rows").textContent()) ?? "", /Existing device/);
-    const inventoryBox = await page.locator("#device-workspace").boundingBox();
-    const cardBox = await page.locator("#usb-picos").boundingBox();
-    assert.ok(inventoryBox && cardBox && cardBox.y >= inventoryBox.y + inventoryBox.height);
+    assert.ok(await page.locator("#usb-picos").isHidden());
+    await page.getByRole("tab", { name: "Imaging" }).click();
+    assert.ok(await page.locator("#devices-panel").isHidden());
+    assert.ok(await page.locator("#imaging-panel #usb-picos").isVisible());
+    assert.equal(new URL(page.url()).hash, "#imaging");
+    await page.getByRole("button", { name: /Jerry USB Pico/ }).waitFor();
     await page.getByRole("button", { name: /Jerry USB Pico/ }).click();
     const panel = page.locator("#pico-panel");
     await page.getByRole("checkbox", { name: /Health check/ }).waitFor();
@@ -206,6 +217,41 @@ await test("USB Pico split view selects image functions, confirms erasure, resum
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.screenshot({ path: "/tmp/jomaa-fan-desktop.png", fullPage: false });
     await page.locator("#pico-close").click();
+    installed.features = ["wifi", "temperature"];
+    await page.getByRole("button", { name: /Jerry USB Pico/ }).click();
+    await page.getByRole("checkbox", { name: /Use saved Wi-Fi settings/ }).waitFor();
+    assert.ok(await page.getByRole("checkbox", { name: /^Wi-Fi/ }).isChecked());
+    assert.ok(await page.getByRole("checkbox", { name: /Temperature reading/ }).isChecked());
+    assert.ok(!(await page.getByRole("checkbox", { name: /PWM fan control/ }).isChecked()));
+    assert.ok(await page.locator("#pico-use-saved").isChecked());
+    assert.ok(await page.locator("#pico-wifi-fields").isHidden());
+    assert.equal(await page.locator("#pico-password").inputValue(), "");
+    assert.equal(await page.locator("#pico-ssid").inputValue(), "test-network");
+    await page.locator("#pico-use-saved").uncheck();
+    assert.ok(await page.locator("#pico-wifi-fields").isVisible());
+    await page.locator("#pico-ssid").fill("different-network");
+    await page.locator("#pico-password").fill("replacement-fixture");
+    await page.locator("#pico-use-saved").check();
+    await page.screenshot({ path: "/tmp/jomaa-pico-saved-wifi-desktop.png", fullPage: false });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: "/tmp/jomaa-pico-saved-wifi-mobile.png", fullPage: false });
+    page.once("dialog", (dialog) => {
+      void dialog.accept();
+    });
+    await page.locator("#pico-flash").click();
+    await page.locator("#pico-run-status", { hasText: "Imaging in progress" }).waitFor();
+    assert.deepEqual(selected, ["wifi", "temperature"]);
+    assert.deepEqual(selectedWifi, { ssid: "test-network", password: null, transport: catalog.defaultWifiTransport });
+    events = [{ type: "result", status: "failed", message: "Fixture stopped" }];
+    finish();
+    await page.locator("#pico-run-status.pico-error").waitFor();
+    await page.getByRole("tab", { name: /^Health/ }).click();
+    assert.ok(await page.locator("#usb-picos").isHidden());
+    await page.getByRole("tab", { name: "Imaging" }).click();
+    assert.ok(await page.locator("#usb-picos").isVisible());
+    await page.reload();
+    await page.getByRole("button", { name: /Jerry USB Pico/ }).waitFor();
+    assert.equal(await page.getByRole("tab", { name: "Imaging" }).getAttribute("aria-selected"), "true");
     await page.locator("#logout").click();
     await page.locator("#usb-picos").waitFor({ state: "hidden" });
     assert.deepEqual(errors, []);

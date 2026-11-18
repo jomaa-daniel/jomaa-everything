@@ -1,6 +1,8 @@
 # jomaa-images
 
-The Devices page shows USB Picos attached to the Linux hub server. Selecting a board opens the imaging panel with the functions in `config.json`. Health check requires Wi-Fi; I²C raw logging and PWM fan control require both. Temperature reading uses the Pico's internal sensor and emits Celsius over USB. I²C logging performs active reads on the configured buses.
+The Devices page's **Imaging** tab shows USB Picos attached to the Linux hub server. Selecting a runtime board reads its installed image and preselects its functions. Saved Wi-Fi settings are selected automatically; clear **Use saved Wi-Fi settings** to enter a different network or radio. The saved password stays on the host and Pico. Reading installed settings briefly interrupts the selected board and restarts it afterward. BOOTSEL boards use the default functions in `config.json` because their files cannot be read until MicroPython runs.
+
+Health check requires Wi-Fi; I²C raw logging and PWM fan control require both. Temperature reading uses the Pico's internal sensor and emits Celsius over USB. I²C logging performs active reads on the configured buses.
 
 `Flash image` confirms the target and filesystem erasure, then starts a server-owned run. The panel shows progress and each selected function's observed evidence. Closing the panel does not cancel imaging. Run summaries are private and retained according to `retentionHours`; interrupted runs fail on hub restart. Prepared files remain in the private run directory.
 
@@ -24,11 +26,12 @@ Run from the repository root:
 ```
 python3 jomaa-images/images.py catalog
 python3 jomaa-images/images.py discover
+python3 jomaa-images/images.py state --target TARGET_ID
 python3 jomaa-images/images.py prepare --output NEW_PRIVATE_DIRECTORY
 python3 jomaa-images/images.py flash --target TARGET_ID
 ```
 
-Preparation and flashing read one JSON request from stdin, such as `{"features":["temperature"],"wifi":null}`. Wi-Fi images set `wifi` to an object with `ssid`, `password` and `transport` (`esp8285` or `native`); pass credentials through private input, never command-line arguments. `--config FILE` chooses host settings. Preparation opens no USB devices. Flashing performs erasure; it emits structured stage, check and final-result events. Discovery and catalog emit one JSON object.
+Preparation and flashing read one JSON request from stdin, such as `{"features":["temperature"],"wifi":null}`. Wi-Fi images set `wifi` to an object with `ssid`, `password` and `transport` (`esp8285` or `native`); pass credentials through private input, never command-line arguments. Flashing accepts a null `password` to reuse the selected runtime Pico's saved password, with a matching network and transport; an empty string explicitly selects an open network. Saved settings are read and validated before firmware writing or filesystem erasure. `--config FILE` chooses host settings. Preparation opens no USB devices and requires explicit credentials. Flashing performs erasure; it emits structured stage, check and final-result events. Discovery, catalog and state emit one JSON object; state excludes passwords and device tokens.
 
 ## Fan control
 

@@ -3,11 +3,12 @@ import { loadHealth, resetHealth, closeHealth, selectHealth } from "/manage/heal
 import { PicoPanel } from "/manage/picos.js";
 const $ = (id) => document.getElementById(id);
 const picoPanel = new PicoPanel(() => signedIn(false));
-const tabs = ["devices", "types", "groups", "health"];
+const tabs = ["devices", "types", "groups", "health", "imaging"];
+const requestedTab = () => (tabs.includes(location.hash.slice(1)) ? location.hash.slice(1) : "devices");
 const sourceLabels = { matter: "Matter", govee: "Govee", health: "Health reporter" };
 let catalog = { types: [], groups: [], devices: [] };
 let generation = 0;
-let activeTab = location.hash === "#health" ? "health" : "devices";
+let activeTab = requestedTab();
 let searchQuery = "";
 let selectedKey = null;
 let editorOpen = false;
@@ -37,7 +38,7 @@ function updateCommands() {
     updateUIHints();
     return;
   }
-  if (activeTab === "health") {
+  if (activeTab === "health" || activeTab === "imaging") {
     updateUIHints();
     return;
   }
@@ -111,7 +112,7 @@ function signedIn(value) {
     editorOpen = pending = catalogStale = false;
     searchQuery = "";
     $("device-search").value = "";
-    showTab(location.hash === "#health" ? "health" : "devices");
+    showTab(requestedTab());
   }
 }
 
@@ -156,7 +157,7 @@ async function load() {
   const session = await api("/api/session");
   canManage = session.owner || session.scopes.includes("manage");
   canHealth = session.owner || session.scopes.includes("devices");
-  for (const tab of tabs) $(tab + "-tab").hidden = tab === "health" ? !canHealth : !canManage;
+  for (const tab of tabs) $(tab + "-tab").hidden = ["health", "imaging"].includes(tab) ? !canHealth : !canManage;
   if (!canManage && !canHealth) {
     signedIn(false);
     throw new Error("Your account has no device access. Ask the hub owner to grant it.");
@@ -169,7 +170,7 @@ async function load() {
   render();
   if (canHealth) await loadHealth();
   render();
-  showTab(canManage ? (activeTab === "health" && !canHealth ? "devices" : activeTab) : "health");
+  showTab($(activeTab + "-tab").hidden ? (canManage ? "devices" : "health") : activeTab);
   restoreFocus(focused);
 }
 
@@ -221,11 +222,10 @@ function plural(count, singular) {
 }
 
 function showTab(tab, focus = false) {
-  if (tab === "health") $("inventory").after($("usb-picos"));
-  else if (tab === "devices") $("device-workspace").after($("usb-picos"));
   const refreshDevices = activeTab === "health" && tab === "devices" && canManage && !$("management").hidden;
   if (tab !== "health") closeHealth();
   activeTab = tab;
+  if (!$("management").hidden) history.replaceState(null, "", "#" + tab);
   for (const name of tabs) {
     const button = $(name + "-tab");
     button.setAttribute("aria-selected", String(name === tab));
