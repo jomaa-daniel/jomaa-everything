@@ -59,6 +59,15 @@
             </div>
             <span id="visible-count" class="muted"></span>
           </div>
+          <details id="inventory-filters" class="inventory-filters">
+            <summary>Filters <span id="device-summary" class="muted" hidden></span></summary>
+            <div class="filter-fields">
+              <label>Capability<select id="capability-filter"></select></label>
+              <label>Group<select id="group-filter"></select></label>
+              <label id="status-filter-field">Status<select id="status-filter"></select></label>
+              <button id="clear-filters" class="quiet" hidden>Clear filters</button>
+            </div>
+          </details>
           <p id="matter-unavailable" class="alert" hidden>Matter controller offline. Matter devices are unavailable.</p>
           <div id="device-workspace" class="device-workspace">
             <div class="device-list" data-own-arrows role="region" aria-labelledby="inventory-title">
@@ -85,14 +94,40 @@
                 <span id="selection-position"></span>
               </div>
               <button id="editor-back" class="quiet">← Devices</button>
-              <h3 id="selected-name" tabindex="-1"></h3>
+              <div class="detail-name-row">
+                <form id="device-rename">
+                  <h3 id="selected-name" tabindex="-1"></h3>
+                  <label for="device-name" class="sr-only">Name</label>
+                  <input id="device-name" required maxlength="80" hidden />
+                  <button
+                    id="edit-device-name"
+                    type="button"
+                    class="quiet icon-button"
+                    aria-label="Rename device"
+                    aria-expanded="false"
+                    aria-controls="device-name"
+                    hidden
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                      <path d="m16 3 5 5M4 20l5-1L21 7a2.1 2.1 0 0 0-5-5L4 14l-1 7Z" />
+                    </svg>
+                  </button>
+                  <button id="save-device-name" hidden>Save</button>
+                </form>
+                <button
+                  id="detail-refresh"
+                  type="button"
+                  class="quiet icon-button"
+                  aria-label="Refresh device details"
+                  hidden
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <path d="M20 7v5h-5M4 17v-5h5" />
+                    <path d="M5 8a8 8 0 0 1 13-3l2 2M4 17l2 2a8 8 0 0 0 13-3" />
+                  </svg>
+                </button>
+              </div>
               <p id="selected-source" class="muted"></p>
-              <form id="device-rename" class="detail-form">
-                <label for="device-name">Name</label>
-                <div class="detail-input">
-                  <input id="device-name" required maxlength="80" /><button id="save-device-name">Save</button>
-                </div>
-              </form>
               <fieldset id="editor-fields">
                 <legend class="sr-only">Device groups</legend>
                 <fieldset class="group-options">
@@ -104,6 +139,7 @@
                 <dl id="device-facts"></dl>
                 <details id="health-logs" class="detail-section">
                   <summary>Health logs</summary>
+                  <p id="retention" class="muted"></p>
                   <div class="table-wrap">
                     <table aria-label="Health logs">
                       <thead>
@@ -130,7 +166,7 @@
                   <p id="i2c-empty">No captures yet.</p>
                   <button id="i2c-more" type="button" hidden>Load older captures</button>
                 </details>
-                <details class="detail-section">
+                <details id="device-settings" class="detail-section">
                   <summary>Settings &amp; access</summary>
                   <form id="edit-form" class="detail-form">
                     <label for="device-interval">Report interval (seconds)</label>

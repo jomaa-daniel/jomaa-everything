@@ -1,7 +1,7 @@
 // Drives the device organization page in Chrome against the real API and
 // built pages.
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -11,12 +11,13 @@ import { Clicks } from "../clicks.js";
 import { Api, sessionToken } from "../api.js";
 import { parseConfig } from "../config.js";
 import { GoveeClient } from "../govee.js";
-import { HealthStore } from "../health/store.js";
+import { HealthError, HealthStore } from "../health/store.js";
 import { Hub } from "../hub.js";
 import { silentLog } from "../log.js";
 import type { MatterAdmin, MatterNodes, NodeSummary } from "../matter/nodes.js";
 import { Organization } from "../organization.js";
 import { serve } from "../testing.js";
+import { settings } from "../settings.js";
 
 const password = "management-test";
 const directory = mkdtempSync(join(tmpdir(), "manage-browser-"));
@@ -70,7 +71,7 @@ const matter: MatterAdmin & MatterNodes = {
 };
 const organization = new Organization(":memory:");
 const health = new HealthStore(":memory:");
-health.enroll({ id: "pico-test", name: "Pico" });
+const reporterCredential = health.enroll({ id: "pico-test", name: "Pico" });
 health.record("pico-test", {
   bootId: "abcdef0123456789",
   sequence: 0,
@@ -208,7 +209,13 @@ test("arrow keys select devices, Enter edits, and Escape returns to the list", a
   assert.equal(await page.evaluate<string>("document.activeElement?.id"), second);
   assert.equal(await page.locator("#assignment-rows .device-select").nth(1).getAttribute("aria-pressed"), "true");
   await page.keyboard.press("Enter");
+  assert.equal(await page.evaluate<string>("document.activeElement?.id"), "edit-device-name");
+  assert.ok(await page.locator("#device-name").isHidden());
+  await page.keyboard.press("Enter");
   assert.equal(await page.evaluate<string>("document.activeElement?.id"), "device-name");
+  await page.keyboard.press("Escape");
+  assert.ok(await page.locator("#device-name").isHidden());
+  assert.equal(await page.evaluate<string>("document.activeElement?.id"), "edit-device-name");
   await page.keyboard.press("Escape");
   assert.equal(await page.evaluate<string>("document.activeElement?.id"), second);
   await page.keyboard.press("End");
@@ -376,6 +383,7 @@ test("keyboard hints follow focus through search, details, and renaming", async 
   await page.keyboard.press("ArrowDown");
   assert.ok((await page.locator("#command-hints").innerText()).includes("Details"));
   await page.keyboard.press("Enter");
+  await page.keyboard.press("Enter");
   assert.ok((await page.locator("#command-hints").innerText()).includes("Save"));
   await page.getByRole("checkbox", { name: "Office", exact: true }).focus();
   assert.ok((await page.locator("#command-hints").innerText()).includes("Toggle group"));
@@ -407,11 +415,17 @@ test("device names save from Details for Govee, Matter and health reporters", as
     ["Pico", "Office Pico", "health:pico-test"],
   ] as const) {
     await page.getByRole("button", { name: `Edit ${oldName}`, exact: true }).click();
+    assert.ok(await page.locator("#device-name").isHidden());
+    await page.locator("#edit-device-name").click();
+    assert.ok(await page.locator("#edit-device-name").isHidden());
     await page.locator("#device-name").fill(name);
     await page.locator("#save-device-name").click();
     await page.locator("#notice.success").waitFor();
     await page.getByRole("button", { name: `Edit ${name}`, exact: true }).waitFor();
     assert.equal(await page.locator("#selected-name").textContent(), name);
+    assert.ok(await page.locator("#device-name").isHidden());
+    assert.ok(await page.locator("#save-device-name").isHidden());
+    assert.ok(await page.locator("#edit-device-name").isVisible());
     const state = (await (await fetch(origin + "/api/manage", { headers: setupHeaders })).json()) as {
       devices: Array<{ key: string; name: string }>;
     };
@@ -425,5 +439,145 @@ test("device names save from Details for Govee, Matter and health reporters", as
   await page.locator("#health-logs summary").click();
   await page.locator("#log-rows", { hasText: "Startup complete" }).waitFor();
   assert.ok(await page.locator("#no-logs").isHidden());
+  await page.close();
+});
+
+test("Details includes the health inventory diagnostics and filters", async () => {
+  summary.available = false;
+  const page = await openManage();
+  try {
+    await page.locator("#inventory-filters > summary").click();
+    await page.locator("#status-filter option", { hasText: "offline" }).waitFor({ state: "attached" });
+    await page.locator("#status-filter").selectOption({ label: "offline" });
+    assert.equal(await page.locator("#assignment-rows tr").count(), 1);
+    assert.ok((await page.locator("#assignment-rows").innerText()).includes("Coffee Strip"));
+    await page.locator("#clear-filters").click();
+    await page.locator("#group-filter").selectOption({ label: "Office" });
+    const grouped = await page.locator("#assignment-rows tr").allTextContents();
+    assert.ok(grouped.length > 0 && grouped.every((text) => text.includes("Office")));
+    await page.locator("#capability-filter").selectOption({ label: "Health reporting" });
+    assert.equal(await page.locator("#assignment-rows tr").count(), 1);
+    await page.getByRole("button", { name: "Edit Office Pico", exact: true }).click();
+    const healthFacts = await page.locator("#device-facts").innerText();
+    for (const label of ["First report", "Report interval", "Signal", "Free heap", "Capabilities"])
+      assert.ok(healthFacts.includes(label), label);
+    await page.locator("#clear-filters").click();
+    await page.getByRole("button", { name: "Edit Coffee Strip", exact: true }).click();
+    const matterFacts = await page.locator("#matter-facts").innerText();
+    for (const label of ["Uptime reported", "Bridge", "Lights and plugs", "Capabilities", "Category"])
+      assert.ok(matterFacts.includes(label), label);
+    await page.getByRole("button", { name: "Edit Desk Lamp", exact: true }).click();
+    const goveeFacts = await page.locator("#govee-facts").innerText();
+    for (const label of ["Capabilities", "Groups", "Status source", "Checked", "Result"])
+      assert.ok(goveeFacts.includes(label), label);
+    assert.equal(await page.locator("#assigned-type, #health-tab").count(), 0);
+  } finally {
+    summary.available = true;
+    await page.close();
+  }
+});
+
+test("a rejected name save keeps editing; Escape returns to the pencil", async () => {
+  const page = await openManage();
+  await page.getByRole("button", { name: "Edit Desk Lamp", exact: true }).click();
+  assert.ok(await page.locator("#device-name").isHidden());
+  await page.locator("#edit-device-name").click();
+  await page.locator("#device-name").fill("Rejected name");
+  await page.route("**/api/manage", async (route) => {
+    if (route.request().method() === "POST") await route.fulfill({ status: 500, json: { error: "Rename rejected" } });
+    else await route.continue();
+  });
+  await page.locator("#save-device-name").click();
+  await page.locator("#notice.error", { hasText: "Rename rejected" }).waitFor();
+  assert.equal(await page.locator("#device-name").inputValue(), "Rejected name");
+  assert.ok(await page.locator("#save-device-name").isVisible());
+  assert.ok(await page.locator("#edit-device-name").isHidden());
+  await page.locator("#device-name").press("Escape");
+  assert.equal(await page.locator("#selected-name").textContent(), "Desk Lamp");
+  assert.ok(await page.locator("#device-name").isHidden());
+  assert.ok(await page.locator("#edit-device-name").isVisible());
+  await page.close();
+});
+
+test("health history pages persist when reopened and Details refresh retrieves the newest reports", async () => {
+  const previousNow = health.now;
+  const count = settings.health.historyLimit + 2;
+  let now = Date.now() - count * 6000;
+  health.now = () => now;
+  health.enroll({ id: "pico-history", name: "History Pico" });
+  const report = {
+    bootId: "fedcba9876543210",
+    sequence: 0,
+    firmware: "history-test",
+    uptimeSeconds: 60,
+    freeHeapBytes: 100000,
+    status: "healthy",
+  };
+  for (let sequence = 0; sequence < count; sequence++) {
+    health.record("pico-history", { ...report, sequence, message: `Report ${sequence}` });
+    now += 6000;
+  }
+  const page = await openManage();
+  try {
+    await page.getByRole("button", { name: "Edit History Pico", exact: true }).click();
+    await page.locator("#health-logs > summary").click();
+    await page.locator("#more:not([hidden])").waitFor();
+    assert.equal(await page.locator("#log-rows tr").count(), settings.health.historyLimit);
+    await page.locator("#more").click();
+    await until(async () => (await page.locator("#log-rows tr").count()) === count);
+    await page.locator("#health-logs > summary").click();
+    await page.locator("#health-logs > summary").click();
+    assert.equal(await page.locator("#log-rows tr").count(), count);
+    health.record("pico-history", { ...report, sequence: count, message: "Newest report" });
+    await page.locator("#detail-refresh").click();
+    await page.locator("#notice", { hasText: "Refreshed." }).waitFor();
+    assert.ok((await page.locator("#log-rows tr").first().innerText()).includes("Newest report"));
+    assert.equal(await page.locator("#log-rows tr").count(), settings.health.historyLimit);
+    assert.ok((await page.locator("#retention").innerText()).includes(`${health.retentionDays} days`));
+  } finally {
+    health.now = previousNow;
+    await page.close();
+  }
+});
+
+test("report settings and the credential lifecycle work from Details", async () => {
+  const page = await openManage();
+  await page.getByRole("button", { name: "Edit Office Pico", exact: true }).click();
+  await page.locator("#device-settings > summary").click();
+  await page.locator("#device-interval").fill("120");
+  await page.locator("#edit-form button").click();
+  await page.locator("#device-facts", { hasText: "120s" }).waitFor();
+  assert.equal(health.get("pico-test").intervalSeconds, 120);
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
+  await page.locator("#rotate").click();
+  await page.locator("#credential-dialog").waitFor();
+  const token = await page.locator("#credential-value").inputValue();
+  assert.notEqual(token, reporterCredential.token);
+  health.authenticate("pico-test", token);
+  assert.throws(() => {
+    health.authenticate("pico-test", reporterCredential.token);
+  }, HealthError);
+  const downloading = page.waitForEvent("download");
+  await page.locator("#download-credential").click();
+  const download = await downloading;
+  const file = join(directory, "credential.json");
+  await download.saveAs(file);
+  const credential = JSON.parse(readFileSync(file, "utf8")) as { id: string; token: string };
+  assert.deepEqual(credential, { id: "pico-test", token });
+  await page.locator("#close-credential").click();
+  await page.locator("#health-logs > summary").click();
+  await page.locator("#log-rows", { hasText: "Startup complete" }).waitFor();
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
+  await page.locator("#revoke").click();
+  await page.locator("#device-facts", { hasText: "revoked" }).waitFor();
+  assert.ok(await page.locator("#revoke").isDisabled());
+  assert.throws(() => {
+    health.authenticate("pico-test", token);
+  }, HealthError);
+  assert.ok((await page.locator("#log-rows").innerText()).includes("Startup complete"));
   await page.close();
 });

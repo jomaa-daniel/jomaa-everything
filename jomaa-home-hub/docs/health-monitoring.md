@@ -34,7 +34,11 @@ contact timestamps in its Matter data. Last seen comes from successful Matter
 communication; uptime is the device's General Diagnostics report. Available
 nodes are checked every 30 seconds. Unsupported uptime displays Unavailable.
 Inventory rows show category, groups, and status. Details includes hardware
-facts and capabilities for Matter devices and reporting data for health reporters.
+facts and capabilities for Matter and Govee devices and reporting data for health
+reporters, including first report, last report, signal, heap, and interval. The
+pencil beside the name enables renaming. Filters select capabilities, groups,
+and status. Refresh in Details updates connection facts and health history.
+History pages remain loaded when the log section is closed and reopened.
 The owner and accounts with `manage` assign groups using checkboxes in Details.
 Accounts with only `devices` can assign Matter lights and plugs to one existing
 group or No group. Saving updates the configured targets and room fan-out.

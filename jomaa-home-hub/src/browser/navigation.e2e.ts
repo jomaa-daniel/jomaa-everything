@@ -114,6 +114,7 @@ test("health-only accounts use the unified page without organization controls", 
   await page.keyboard.press("Enter");
   await page.locator("#detail:not([hidden])").waitFor();
   await page.getByRole("button", { name: "Edit Second Pico", exact: true }).click();
+  await page.locator("#edit-device-name").click();
   await page.locator("#device-name").fill("Health-only Pico");
   await page.locator("#save-device-name").click();
   await page.getByRole("button", { name: "Edit Health-only Pico", exact: true }).waitFor();
@@ -142,6 +143,7 @@ test("text input arrows retain editing, Alt arrows move fields, and modal naviga
 test("renaming in Details updates the device inventory immediately", async () => {
   const page = await pageAt("/manage");
   await page.getByRole("button", { name: "Edit First Pico", exact: true }).click();
+  await page.locator("#edit-device-name").click();
   await page.locator("#device-name").fill("Renamed Pico");
   await page.locator("#save-device-name").click();
   assert.ok(await page.locator("#devices-panel").isVisible());

@@ -49,7 +49,7 @@ await test("device details show live raw captures, condensed idle spans, pause, 
     await page.locator("#password").fill(password);
     await page.locator("#login-form button").click();
     await page.getByRole("button", { name: "Edit Stream Pico", exact: true }).click();
-    await page.locator("#i2c-section summary").click();
+    await page.locator("#i2c-section > summary").click();
     await page.locator("#i2c-status", { hasText: "Live" }).waitFor();
     const empty = { bootId: "abcdef0123456789", sequence: 0, bus: 0, startUs: 0, endUs: 1000000, data: "", dropped: 0 };
     store.i2c.record("pico-test", empty);
@@ -72,11 +72,23 @@ await test("device details show live raw captures, condensed idle spans, pause, 
     await page.locator("#i2c-pause").click();
     await page.locator("#i2c-live", { hasText: "FF EE DD" }).waitFor();
     await page.locator("#i2c-live", { hasText: "7 capture units lost" }).waitFor();
+    store.i2c.record("pico-test", {
+      ...empty,
+      sequence: 4,
+      startUs: 4000000,
+      endUs: 5000000,
+      data: "00".repeat(100),
+    });
+    await page.locator(".i2c-encoding > summary").click();
+    assert.equal(
+      await page.locator(".i2c-encoding code").textContent(),
+      store.i2c.logs("pico-test").logs[0]?.condensed,
+    );
     await page.setViewportSize({ width: 390, height: 844 });
     assert.ok(await page.locator("#i2c-pause").isVisible());
     await page.locator("#editor-back").click();
     await page.getByRole("button", { name: "Edit Other Pico", exact: true }).click();
-    await page.locator("#i2c-section summary").click();
+    await page.locator("#i2c-section > summary").click();
     await page.locator("#i2c-status", { hasText: "Live" }).waitFor();
     await page.locator("#i2c-empty").waitFor();
     assert.equal(await page.locator(".i2c-entry").count(), 0);

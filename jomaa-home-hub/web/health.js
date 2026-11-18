@@ -22,6 +22,9 @@ let inventoryGeneration = 0;
 let refreshInventoryGeneration = 0;
 let sessionGeneration = 0;
 let showingOlder = false;
+let logsLoaded = false;
+let logsLoading = false;
+let logGeneration = 0;
 let scanController = null;
 let scanTimer = null;
 let scanGeneration = 0;
@@ -111,11 +114,16 @@ function renderMatterDetail() {
   for (const [label, value] of [
     ["Matter node", device.nodeId],
     ["Reported type", device.type],
+    ["Category", device.assignedType?.name || device.type],
     ["Connection", device.available ? "Connected" : "Offline"],
     ["Last seen", device.lastSeen === null ? "Not seen yet" : stamp(device.lastSeen)],
     ["Reported uptime", device.uptimeSeconds === null ? "Unavailable" : duration(device.uptimeSeconds)],
+    ["Uptime reported", device.uptimeObservedAt === null ? "Unavailable" : stamp(device.uptimeObservedAt)],
     ["Manufacturer", device.vendor || "—"],
     ["Product", device.product || "—"],
+    ["Bridge", device.isBridge ? "Yes" : "No"],
+    ["Lights and plugs", device.lightEndpoints.length],
+    ["Groups", device.groups.join(", ") || "—"],
     ["Capabilities", device.capabilities.join(", ") || "—"],
   ]) {
     const fact = node("div");
@@ -168,10 +176,14 @@ function renderDetail() {
     ["Status", device.status],
     ["Firmware", device.latest?.firmware || "—"],
     ["IP address", device.latest?.ip || "—"],
+    ["First report", stamp(device.registeredAt)],
     ["Last seen", stamp(device.lastSeen)],
     ["Uptime", duration(device.latest?.uptimeSeconds)],
     ["Signal", device.latest?.rssi === undefined ? "—" : `${device.latest.rssi} dBm`],
     ["Free heap", device.latest ? `${Math.round(device.latest.freeHeapBytes / 1024)} KB` : "—"],
+    ["Report interval", `${device.intervalSeconds}s`],
+    ["Capabilities", "Health reporting"],
+    ["Groups", device.groups.join(", ") || "—"],
   ]) {
     const fact = node("div");
     fact.append(node("dt", label), node("dd", value));
@@ -208,6 +220,7 @@ async function refreshInventory() {
   groups = result.groups;
   captureSettings = result.i2c;
   healthSettings = result.health;
+  $("retention").textContent = `${result.retentionDays} days retained · ${healthSettings.refreshSeconds}s refresh`;
   if (pollTimer === null) pollTimer = setInterval(poll, healthSettings.refreshSeconds * 1000);
   signedIn(true);
   render();
@@ -217,28 +230,39 @@ async function refreshInventory() {
 async function logs(append = false) {
   const id = selected;
   const generation = detailsGeneration;
-  if (!id || !healthSettings || !$("health-logs").open) return;
-  const result = await api(
-    `/api/devices/${encodeURIComponent(id)}/logs?limit=${healthSettings.historyLimit}${append && cursor ? `&before=${cursor}` : ""}`,
-  );
-  if (selected !== id || generation !== detailsGeneration) return;
-  showingOlder = append;
-  if (!append) $("log-rows").replaceChildren();
-  for (const entry of result.logs) {
-    const row = node("tr");
-    const stateCell = node("td");
-    stateCell.append(status(entry.heartbeat.status));
-    row.append(
-      node("td", stamp(entry.receivedAt)),
-      stateCell,
-      node("td", `${Math.round(entry.heartbeat.freeHeapBytes / 1024)} KB`),
-      node("td", entry.heartbeat.message || "—"),
+  if (!id || !healthSettings || !$("health-logs").open || (append && (cursor === null || logsLoading))) return;
+  const revision = ++logGeneration;
+  logsLoading = true;
+  $("more").disabled = true;
+  try {
+    const result = await api(
+      `/api/devices/${encodeURIComponent(id)}/logs?limit=${healthSettings.historyLimit}${append && cursor ? `&before=${cursor}` : ""}`,
     );
-    $("log-rows").append(row);
+    if (selected !== id || generation !== detailsGeneration || revision !== logGeneration) return;
+    logsLoaded = true;
+    showingOlder = append;
+    if (!append) $("log-rows").replaceChildren();
+    for (const entry of result.logs) {
+      const row = node("tr");
+      const stateCell = node("td");
+      stateCell.append(status(entry.heartbeat.status));
+      row.append(
+        node("td", stamp(entry.receivedAt)),
+        stateCell,
+        node("td", `${Math.round(entry.heartbeat.freeHeapBytes / 1024)} KB`),
+        node("td", entry.heartbeat.message || "—"),
+      );
+      $("log-rows").append(row);
+    }
+    cursor = result.nextCursor;
+    $("more").hidden = cursor === null;
+    $("no-logs").hidden = $("log-rows").children.length > 0;
+  } finally {
+    if (revision === logGeneration) {
+      logsLoading = false;
+      $("more").disabled = false;
+    }
   }
-  cursor = result.nextCursor;
-  $("more").hidden = cursor === null;
-  $("no-logs").hidden = $("log-rows").children.length > 0;
 }
 
 function select(id) {
@@ -249,6 +273,9 @@ function select(id) {
   dirty = false;
   cursor = null;
   showingOlder = false;
+  logsLoaded = logsLoading = false;
+  logGeneration++;
+  $("more").disabled = false;
   $("log-rows").replaceChildren();
   render();
   logs().catch(error);
@@ -288,6 +315,11 @@ function renderCaptures() {
       ),
     );
     if (entry.dropped) item.append(node("strong", `${entry.dropped} capture units lost`, "i2c-gap"));
+    if (entry.data && !entry.condensed.startsWith("hex:")) {
+      const encoding = node("details", undefined, "i2c-encoding");
+      encoding.append(node("summary", "Stored data"), node("code", entry.condensed));
+      item.append(encoding);
+    }
     $("i2c-live").append(item);
   }
   $("i2c-empty").hidden = entries.length > 0;
@@ -474,7 +506,7 @@ $("matter-pair-form").addEventListener("submit", async (event) => {
 });
 
 $("health-logs").addEventListener("toggle", () => {
-  if ($("health-logs").open) logs().catch(error);
+  if ($("health-logs").open && !logsLoaded) logs().catch(error);
 });
 $("i2c-section").addEventListener("toggle", () => {
   if ($("i2c-section").open) startCaptures();
@@ -540,12 +572,17 @@ $("device-interval").addEventListener("input", () => {
 $("edit-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = event.submitter;
+  const id = selected;
+  const generation = sessionGeneration;
+  if (!id || button.disabled) return;
   button.disabled = true;
   try {
-    await api(`/api/devices/${encodeURIComponent(selected)}`, "PATCH", {
+    await api(`/api/devices/${encodeURIComponent(id)}`, "PATCH", {
       intervalSeconds: Number($("device-interval").value),
     });
-    dirty = false;
+    if (generation !== sessionGeneration) return;
+    inventoryGeneration++;
+    if (selected === id) dirty = false;
     $("notice").textContent = "Device saved.";
     await refresh();
   } catch (reason) {
@@ -626,9 +663,10 @@ $("download-credential").addEventListener("click", () => {
   link.download = `${credential.id}-credential.json`;
   link.click();
 });
-export async function loadHealth() {
+export async function loadHealth(refreshHistory = false) {
   inventoryGeneration++;
   await refresh();
+  if (refreshHistory || !showingOlder) await logs();
   startCaptures();
 }
 export function resetHealth() {
@@ -671,7 +709,7 @@ function poll() {
   )
     refresh()
       .then(() => {
-        if (!showingOlder) return logs();
+        if (!showingOlder && !logsLoading) return logs();
       })
       .catch(error);
 }
@@ -689,10 +727,15 @@ function renderGoveeDetail() {
   if (!device) return;
   $("govee-facts").replaceChildren();
   for (const [label, value] of [
+    ["Device ID", device.id],
+    ["Type", device.type],
+    ["Category", device.assignedType?.name || device.type],
+    ["Capabilities", device.capabilities.join(", ") || "—"],
+    ["Groups", device.groups.join(", ") || "—"],
     ["Status source", device.statusSource],
     ["Connection", device.status],
     ["Checked", stamp(device.checkedAt)],
-    ...(device.reason ? [["Result", device.reason]] : []),
+    ["Result", device.reason || "Cloud connection flag received"],
   ]) {
     const fact = node("div");
     fact.append(node("dt", label), node("dd", value));

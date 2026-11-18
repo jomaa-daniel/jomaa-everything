@@ -140,6 +140,34 @@ button:hover {
   font-size: 12px;
   white-space: nowrap;
 }
+.inventory-filters {
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+.inventory-filters summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.filter-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+}
+.filter-fields label {
+  flex: 1 1 140px;
+  margin: 0;
+}
+.filter-fields select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+}
+#device-summary {
+  margin-left: 12px;
+  font-size: 12px;
+}
 .device-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 38%);
@@ -258,6 +286,33 @@ td:first-child {
 #selected-source {
   margin: 0 0 16px;
   font-size: 12px;
+}
+.detail-name-row,
+#device-rename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+#device-rename {
+  flex: 1;
+}
+#device-rename h3,
+#device-rename input {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.detail-name-row button {
+  flex-shrink: 0;
+}
+.icon-button {
+  padding: 6px;
+}
+.icon-button svg {
+  display: block;
+  width: 16px;
+  height: 16px;
 }
 fieldset {
   border: 0;
@@ -784,6 +839,10 @@ button:disabled {
 }
 @media (max-width: 700px) {
   #devices-panel:has(.editor-open) .device-toolbar {
+    display: none;
+  }
+  #devices-panel:has(.editor-open) .inventory-filters,
+  #devices-panel:has(.editor-open) #device-summary {
     display: none;
   }
   .device-workspace {

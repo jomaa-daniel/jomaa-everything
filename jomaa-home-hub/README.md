@@ -145,8 +145,10 @@ for configured Govee lights, paired Matter devices, and health reporters. It
 needs the owner or an account with the `manage` or `devices` scope. Organization
 actions require `manage`; health and diagnostics require `devices`. The Devices
 tab opens a compact inventory and a Details pane with renaming, groups, and
-connection facts. Health logs, raw I²C logs, report settings, and credentials
-expand within that pane. Group changes save immediately. The Types and Groups
+connection facts. The pencil beside the name opens an input and Save button;
+saving returns to the name and pencil. Health logs, raw I²C logs, report settings,
+and credentials expand within that pane. Filters select capabilities, groups,
+and status. Details refresh updates status and the displayed history. Group changes save immediately. The Types and Groups
 tabs create, rename, and delete categories and groups. Add device opens Matter
 discovery and health reporter enrollment. The Imaging tab manages USB Picos.
 Arrow keys select device rows, Enter opens Details, `/` focuses search, and

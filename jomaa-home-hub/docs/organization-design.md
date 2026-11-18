@@ -3,6 +3,10 @@
 The `/manage` page combines device organization and health. Its organization view uses two titled panes: Devices and Details. Devices
 opens first; Types, Groups, and Imaging have their own tabs. At narrow widths, opening
 a device replaces the inventory with its editor and provides a return button.
+The name is text with a pencil action. Editing replaces it with an input and
+Save action; saving or cancelling returns to the text and pencil. Details holds
+diagnostics, paginated health history, live I²C captures, and reporting settings.
+Inventory filters select capabilities, groups, and status.
 
 ## Color and focus
 

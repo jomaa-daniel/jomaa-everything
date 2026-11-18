@@ -11,6 +11,7 @@ let generation = 0;
 let activeTab = requestedTab();
 let searchQuery = "";
 let selectedKey = null;
+let renamingKey = null;
 let editorOpen = false;
 let editingKey = null;
 let pending = false;
@@ -21,6 +22,8 @@ let canManage = false;
 let canHealth = false;
 const healthStates = new Map();
 const statusDetails = new Map();
+const inventoryFilters = { capability: null, group: null, status: null };
+const emptyFilter = "";
 
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -58,14 +61,24 @@ function updateCommands() {
       ["Esc", searchQuery ? "Clear search" : "Devices"],
       ["Tab", "Next"],
     ];
+  } else if (target.closest("#inventory-filters")) {
+    commands = [
+      ["↑↓", "Filter"],
+      ["Tab", "Next"],
+    ];
   } else if (target.closest("#device-editor")) {
     commands =
       target.type === "checkbox"
         ? [["Space", "Toggle group"]]
-        : target.matches("input")
+        : target.matches("input") || target === $("save-device-name")
           ? [["Enter", "Save"]]
-          : [["Enter", "Open"]];
-    commands.push(["Tab", "Next"], ["Esc", "Devices"]);
+          : target === $("edit-device-name")
+            ? [["Enter", "Rename"]]
+            : [["Enter", "Activate"]];
+    commands.push(
+      ["Tab", "Next"],
+      ["Esc", renamingKey === selectedKey && target.closest("#device-rename") ? "Cancel" : "Devices"],
+    );
   } else if (target.closest(".editing")) {
     commands = [
       ["Enter", target.tagName === "INPUT" ? "Save" : "Activate"],
@@ -110,6 +123,10 @@ function signedIn(value) {
     catalog = { types: [], groups: [], devices: [] };
     drafts.clear();
     deviceDrafts.clear();
+    renamingKey = null;
+    for (const key of Object.keys(inventoryFilters)) inventoryFilters[key] = null;
+    healthStates.clear();
+    statusDetails.clear();
     editingKey = selectedKey = null;
     editorOpen = pending = catalogStale = false;
     searchQuery = "";
@@ -143,6 +160,8 @@ function setBusy() {
   $("editor-fields").disabled = pending || catalogStale;
   $("device-name").disabled = pending || catalogStale;
   $("save-device-name").disabled = pending || catalogStale;
+  $("edit-device-name").disabled = pending || catalogStale;
+  $("detail-refresh").disabled = pending;
   $("refresh").disabled = pending;
   for (const container of ["type-create", "group-create", "type-list", "group-list"]) {
     for (const control of $(container).querySelectorAll("input, button")) control.disabled = pending || catalogStale;
@@ -155,7 +174,7 @@ function restoreFocus(id) {
   if (control && !control.closest("[hidden]") && !control.disabled) control.focus({ preventScroll: true });
 }
 
-async function load() {
+async function load(refreshHistory = false) {
   const current = generation;
   const focused = document.activeElement?.id;
   const session = await api("/api/session");
@@ -168,12 +187,18 @@ async function load() {
     throw new Error("Your account has no device access. Ask the hub owner to grant it.");
   }
   const result = canManage ? await api("/api/manage") : { ...catalog, types: [] };
+  if (canManage)
+    result.devices = result.devices.map((device) => ({
+      ...device,
+      groups: result.groups.filter((group) => device.groupIds.includes(group.id)).map((group) => group.name),
+      assignedType: result.types.find((type) => type.id === device.typeId) ?? null,
+    }));
   if (current !== generation) return;
   catalog = result;
   catalogStale = false;
   signedIn(true);
   render();
-  if (canHealth) await loadHealth();
+  if (canHealth) await loadHealth(refreshHistory);
   else resetHealth();
   render();
   showTab($(activeTab + "-tab").hidden ? "devices" : activeTab);
@@ -323,22 +348,75 @@ function cancelRename() {
 function visibleDevices() {
   const query = searchQuery.toLowerCase();
   return catalog.devices.filter((device) => {
-    const assigned = catalog.types.find((type) => type.id === device.typeId)?.name ?? "";
-    const groups = catalog.groups
-      .filter((group) => device.groupIds.includes(group.id))
-      .map((group) => group.name)
-      .join(" ");
-    return `${device.name} ${device.source} ${device.reportedType} ${assigned} ${groups}`.toLowerCase().includes(query);
+    const assigned = device.assignedType?.name ?? "";
+    const groups = deviceGroups(device);
+    const capabilities = device.capabilities;
+    return (
+      `${device.name} ${device.key} ${device.source} ${device.reportedType} ${assigned} ${groups.join(" ")} ${capabilities.join(" ")}`
+        .toLowerCase()
+        .includes(query) &&
+      (inventoryFilters.capability === null ||
+        (capabilities.length ? capabilities : [emptyFilter]).includes(inventoryFilters.capability)) &&
+      (inventoryFilters.group === null || (groups.length ? groups : [emptyFilter]).includes(inventoryFilters.group)) &&
+      (inventoryFilters.status === null || healthStates.get(device.key) === inventoryFilters.status)
+    );
   });
 }
 
+function deviceGroups(device) {
+  return device.groups;
+}
+
+function renderFilters() {
+  const choices = {
+    capability: catalog.devices.flatMap((device) => (device.capabilities.length ? device.capabilities : [emptyFilter])),
+    group: catalog.devices.flatMap((device) => (deviceGroups(device).length ? deviceGroups(device) : [emptyFilter])),
+    status: [...healthStates.values()],
+  };
+  for (const key of Object.keys(inventoryFilters)) {
+    const select = $(key + "-filter");
+    const values = [null, ...[...new Set(choices[key])].sort()];
+    if (!values.includes(inventoryFilters[key])) values.push(inventoryFilters[key]);
+    const serialized = JSON.stringify(values);
+    if (select.dataset.choices !== serialized) {
+      select.replaceChildren();
+      for (const value of values) {
+        const option = element(
+          "option",
+          value === null ? "All" : value === emptyFilter ? (key === "group" ? "No group" : "Not reported") : value,
+        );
+        option.value = JSON.stringify(value);
+        select.append(option);
+      }
+      select.dataset.choices = serialized;
+    }
+    select.value = JSON.stringify(inventoryFilters[key]);
+  }
+  $("status-filter-field").hidden = !canHealth;
+  $("clear-filters").hidden = Object.values(inventoryFilters).every((value) => value === null);
+  const counts = new Map();
+  for (const state of healthStates.values()) counts.set(state, (counts.get(state) || 0) + 1);
+  $("device-summary").hidden = !canHealth || !counts.size;
+  $("device-summary").textContent = [...counts].map(([state, count]) => `${count} ${state}`).join(" · ");
+}
+
 function selectDevice(key, open = false) {
+  if (key !== selectedKey) {
+    deviceDrafts.delete(renamingKey);
+    renamingKey = null;
+  }
   selectedKey = key;
   editorOpen = open;
   renderDevices();
   if (open) {
     if (pending || catalogStale) $("selected-name").scrollIntoView({ block: "nearest" });
-    else ($("device-rename").hidden ? $("selected-name") : $("device-name")).focus({ preventScroll: true });
+    else
+      (renamingKey === key
+        ? $("device-name")
+        : $("edit-device-name").hidden
+          ? $("selected-name")
+          : $("edit-device-name")
+      ).focus({ preventScroll: true });
   } else {
     restoreFocus(key + ":select");
     $(key + ":select")?.scrollIntoView({ block: "nearest" });
@@ -346,6 +424,9 @@ function selectDevice(key, open = false) {
 }
 
 function closeEditor() {
+  deviceDrafts.delete(renamingKey);
+  renamingKey = null;
+  renderEditor();
   editorOpen = false;
   closeHealth();
   $("device-workspace").classList.remove("editor-open");
@@ -363,7 +444,15 @@ function renderEditor() {
   }
   $("selected-name").textContent = device.name;
   $("selected-source").textContent = sourceLabels[device.source] || device.source;
-  $("device-rename").hidden = !(canHealth || (canManage && device.source === "govee"));
+  const canRename = canHealth || (canManage && device.source === "govee");
+  const editingName = renamingKey === device.key && canRename;
+  $("selected-name").hidden = editingName;
+  $("device-name").hidden = !editingName;
+  $("device-name").required = editingName;
+  $("edit-device-name").hidden = !canRename || editingName;
+  $("edit-device-name").setAttribute("aria-expanded", String(editingName));
+  $("save-device-name").hidden = !editingName;
+  $("detail-refresh").hidden = !canHealth;
   $("device-name").value = deviceDrafts.get(device.key) ?? device.name;
   $("editor-fields").hidden = !canManage;
   $("matter-group-form").hidden = canManage;
@@ -393,14 +482,18 @@ function renderEditor() {
 }
 
 function renderDevices() {
+  renderFilters();
   const visible = visibleDevices();
   if (!visible.some((device) => device.key === selectedKey)) {
+    deviceDrafts.delete(renamingKey);
+    renamingKey = null;
     selectedKey = visible[0]?.key ?? null;
     editorOpen = false;
   }
-  $("visible-count").textContent = searchQuery
-    ? `${visible.length} of ${plural(catalog.devices.length, "device")}`
-    : plural(catalog.devices.length, "device");
+  $("visible-count").textContent =
+    searchQuery || Object.values(inventoryFilters).some((value) => value !== null)
+      ? `${visible.length} of ${plural(catalog.devices.length, "device")}`
+      : plural(catalog.devices.length, "device");
   $("selection-position").textContent = selectedKey
     ? `${visible.findIndex((device) => device.key === selectedKey) + 1} / ${visible.length}`
     : "";
@@ -445,7 +538,7 @@ function renderDevices() {
     }
     categoryName.append(element("span", assigned?.name || device.reportedType));
     category.append(categoryName);
-    const groups = catalog.groups.filter((group) => device.groupIds.includes(group.id)).map((group) => group.name);
+    const groups = deviceGroups(device);
     row.append(name, category, element("td", groups.join(", ") || "—", groups.length ? undefined : "unassigned"));
     const state = healthStates.get(device.key);
     const stateCell = element(
@@ -462,6 +555,7 @@ function renderDevices() {
   $("assignment-table-wrap").hidden = !visible.length;
   $("devices-empty").hidden = !!catalog.devices.length;
   $("devices-no-match").hidden = !(catalog.devices.length && !visible.length);
+  $("devices-no-match").textContent = "No matching devices.";
   $("matter-unavailable").hidden = catalog.matterConnected !== false;
   renderEditor();
 }
@@ -487,10 +581,17 @@ async function saveAssignment() {
 }
 
 $("device-name").addEventListener("input", () => deviceDrafts.set(selectedKey, $("device-name").value));
+$("edit-device-name").addEventListener("click", () => {
+  if (pending || catalogStale || !selectedKey) return;
+  renamingKey = selectedKey;
+  renderEditor();
+  $("device-name").focus();
+  $("device-name").select();
+});
 $("device-rename").addEventListener("submit", async (event) => {
   event.preventDefault();
   const device = catalog.devices.find((device) => device.key === selectedKey);
-  if (!device) return;
+  if (!device || renamingKey !== device.key) return;
   const name = $("device-name").value.trim();
   let saved;
   if (device.source === "govee") saved = await update({ action: "device.rename", key: device.key, name });
@@ -503,7 +604,13 @@ $("device-rename").addEventListener("submit", async (event) => {
   }
   if (saved) {
     deviceDrafts.delete(device.key);
+    if (renamingKey === device.key) renamingKey = null;
+    if (catalogStale) {
+      const savedDevice = catalog.devices.find((entry) => entry.key === device.key);
+      if (savedDevice) savedDevice.name = name;
+    }
     renderEditor();
+    restoreFocus("edit-device-name");
   }
 });
 document.addEventListener(sessionEndEvent, () => signedIn(false));
@@ -537,6 +644,7 @@ document.addEventListener("health-data", (event) => {
       key: "health:" + device.id,
       source: "health",
       reportedType: "Health reporter",
+      capabilities: ["Health reporting"],
     })),
   ].map((device) => ({ ...device, typeId: device.assignedType?.id ?? null }));
   catalog = {
@@ -585,11 +693,22 @@ $("logout").addEventListener("click", async () => {
     setBusy();
   }
 });
-$("refresh").addEventListener("click", () =>
-  load()
-    .then(() => notice("Refreshed."))
-    .catch(error),
-);
+for (const id of ["refresh", "detail-refresh"])
+  $(id).addEventListener("click", () =>
+    load(true)
+      .then(() => notice("Refreshed."))
+      .catch(error),
+  );
+for (const key of Object.keys(inventoryFilters))
+  $(key + "-filter").addEventListener("change", (event) => {
+    inventoryFilters[key] = JSON.parse(event.target.value);
+    editorOpen = false;
+    renderDevices();
+  });
+$("clear-filters").addEventListener("click", () => {
+  for (const key of Object.keys(inventoryFilters)) inventoryFilters[key] = null;
+  renderDevices();
+});
 $("device-search").addEventListener("input", (event) => {
   searchQuery = event.target.value.trim();
   editorOpen = false;
@@ -620,7 +739,12 @@ document.addEventListener("keydown", (event) => {
   const target = event.target;
   if (event.key === "Escape") {
     if (editingKey && activeTab === editingKey.split(":")[0] + "s") cancelRename();
-    else if (target === $("device-search") && searchQuery) {
+    else if (renamingKey && target.closest("#device-rename") && !pending) {
+      deviceDrafts.delete(renamingKey);
+      renamingKey = null;
+      renderEditor();
+      restoreFocus("edit-device-name");
+    } else if (target === $("device-search") && searchQuery) {
       searchQuery = $("device-search").value = "";
       renderDevices();
     } else if (activeTab === "devices") closeEditor();
