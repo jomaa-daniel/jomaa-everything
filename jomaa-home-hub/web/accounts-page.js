@@ -1,4 +1,4 @@
-import { $, api, element, notify, ownerPage } from "/home/accounts.js";
+import { $, api, element, notify, ownerPage, when } from "/home/accounts.js";
 
 function heading(scopes) {
   const cells = ["Account", ...scopes.map((scope) => scope.name)].map((text) => element("th", text));
@@ -8,7 +8,7 @@ function heading(scopes) {
   $("scope-head").replaceChildren(...cells, actions);
 }
 
-function row(account, scopes) {
+function accountRow(account, scopes) {
   const tr = element("tr");
   const boxes = scopes.map((scope) => {
     const box = element("input");
@@ -60,11 +60,60 @@ function row(account, scopes) {
   return tr;
 }
 
-async function load() {
-  const { accounts, scopes } = await api("/api/accounts");
-  heading(scopes);
-  $("account-rows").replaceChildren(...accounts.map((account) => row(account, scopes)));
-  $("accounts-empty").hidden = accounts.length > 0;
+function inviteRow(invite) {
+  const row = element("li");
+  const label = element("span", `Created ${when(invite.createdAt)}, expires ${when(invite.expiresAt)}`);
+  const revoke = element("button", "Revoke", "danger");
+  revoke.setAttribute("aria-label", `Revoke invite created ${when(invite.createdAt)}`);
+  revoke.addEventListener("click", async () => {
+    revoke.disabled = true;
+    try {
+      await api(`/api/invites/${encodeURIComponent(invite.id)}`, "DELETE");
+      notify("Invite revoked.", true);
+      await load();
+    } catch (reason) {
+      notify(reason.message);
+      revoke.disabled = false;
+    }
+  });
+  row.append(label, revoke);
+  return row;
 }
+
+/** Shows every account with its scopes and every unused invite. */
+async function load() {
+  const [{ accounts, scopes }, { invites }] = await Promise.all([api("/api/accounts"), api("/api/invites")]);
+  heading(scopes);
+  $("account-rows").replaceChildren(...accounts.map((account) => accountRow(account, scopes)));
+  $("accounts-empty").hidden = accounts.length > 0;
+  $("invites").replaceChildren(...invites.map(inviteRow));
+  $("invites-empty").hidden = invites.length > 0;
+}
+
+$("create").addEventListener("click", async () => {
+  $("create").disabled = true;
+  try {
+    const { invite, token } = await api("/api/invites", "POST", {});
+    $("link").value = `${location.origin}/join#${token}`;
+    $("copy").disabled = false;
+    $("link").select();
+    notify(`Link created; it expires ${when(invite.expiresAt)} and is shown only once.`, true);
+    await load();
+  } catch (reason) {
+    notify(reason.message);
+  } finally {
+    $("create").disabled = false;
+  }
+});
+
+$("copy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("link").value);
+    notify("Link copied.", true);
+  } catch {
+    $("link").select();
+    notify("Copy failed. Select the link and copy it.");
+  }
+});
 
 ownerPage(load)();

@@ -649,7 +649,7 @@ test("the owner session reports every scope", async () => {
 });
 
 test("account pages are public", async () => {
-  for (const path of ["/invite", "/invite/app.js", "/join", "/join/app.js", "/permissions", "/permissions/app.js"]) {
+  for (const path of ["/accounts", "/accounts/app.js", "/join", "/join/app.js"]) {
     assert.equal((await fetch(e.url + path)).status, 200, path);
   }
   for (const path of ["/home/accounts.js", "/home/accounts.css"]) {
@@ -683,12 +683,11 @@ test("the prefetch list names every page with the files it loads, most-clicked f
   };
   const pages = await listed(anon);
   assert.deepEqual(pages.map((page) => page.path).sort(), [
+    "/accounts",
     "/home",
-    "/invite",
     "/join",
     "/lights",
     "/manage",
-    "/permissions",
     "/secrets",
   ]);
   const assets = (path: string) =>
@@ -700,10 +699,10 @@ test("the prefetch list names every page with the files it loads, most-clicked f
     "/home/ui.js",
     "/home/prefetch.js",
   ]);
-  assert.deepEqual(assets("/permissions"), [
+  assert.deepEqual(assets("/accounts"), [
     "/home/base.css",
     "/home/accounts.css",
-    "/permissions/app.js",
+    "/accounts/app.js",
     "/home/ui.css",
     "/home/ui.js",
     "/home/prefetch.js",

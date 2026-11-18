@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Accounts · Jomaa Home</title>
+    <link rel="stylesheet" href="/home/base.css" />
+    <link rel="stylesheet" href="/home/accounts.css" />
+    <script type="module" src="/accounts/app.js"></script>
+    <link rel="stylesheet" href="/home/ui.css" />
+    <script type="module" src="/home/ui.js"></script>
+    <script type="module" src="/home/prefetch.js"></script>
+  </head>
+  <body class="tui-page">
+    <header><a href="/home">Jomaa Home</a><button id="logout" hidden>Sign out</button></header>
+    <main>
+      <h1>Accounts</h1>
+      <p class="muted">Invite people and choose which pages each account can open. Changes save immediately.</p>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <section id="login-section" hidden>
+        <form id="login-form" class="login">
+          <label for="password">Hub password</label
+          ><input id="password" type="password" autocomplete="current-password" required /><button class="primary">
+            Sign in
+          </button>
+        </form>
+      </section>
+      <p id="not-owner" hidden>Only the hub owner can manage accounts.</p>
+      <div id="content" hidden>
+        <section aria-labelledby="accounts-heading">
+          <h2 id="accounts-heading">Accounts</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr id="scope-head"></tr>
+              </thead>
+              <tbody id="account-rows" data-tui-nav="grid"></tbody>
+            </table>
+          </div>
+          <p id="accounts-empty" class="muted" hidden>No accounts yet.</p>
+        </section>
+        <section aria-labelledby="invites-heading">
+          <h2 id="invites-heading">Invites</h2>
+          <p class="muted">
+            Each link creates one account and expires on the date listed. New accounts have no access until you grant it
+            above.
+          </p>
+          <div class="create-form">
+            <label for="link" class="sr-only">Invite link</label
+            ><input id="link" readonly placeholder="No link yet" /><button id="copy" disabled>Copy</button
+            ><button id="create" class="primary">Create link</button>
+          </div>
+          <ul id="invites" data-tui-nav="vertical" class="management-list"></ul>
+          <p id="invites-empty" class="muted" hidden>No unused invites.</p>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

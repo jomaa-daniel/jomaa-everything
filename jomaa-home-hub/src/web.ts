@@ -13,9 +13,8 @@ export type PageAccess = Scope | "owner" | null | readonly Scope[];
 /** The hub's pages by path, each with its file and who can open it. Each page is also served with a trailing slash. */
 const pageFiles: Record<string, [string, PageAccess]> = {
   "/home": ["home.html", null],
-  "/invite": ["invite.html", "owner"],
+  "/accounts": ["accounts.html", "owner"],
   "/join": ["join.html", null],
-  "/permissions": ["permissions.html", "owner"],
   "/secrets": ["secrets.html", "owner"],
   "/manage": ["manage.html", ["manage", "devices"]],
   "/lights": ["lights.html", "lights"],
@@ -30,9 +29,8 @@ const assetFiles: Record<string, [string, string]> = {
   "/home/accounts.css": ["accounts.css", css],
   "/home/accounts.js": ["accounts.js", js],
   "/home/prefetch.js": ["prefetch.js", js],
-  "/invite/app.js": ["invite.js", js],
+  "/accounts/app.js": ["accounts-page.js", js],
   "/join/app.js": ["join.js", js],
-  "/permissions/app.js": ["permissions.js", js],
   "/secrets/app.js": ["secrets.js", js],
   "/secrets/style.css": ["secrets.css", css],
   "/manage/app.js": ["manage.js", js],

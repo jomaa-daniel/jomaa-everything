@@ -81,7 +81,7 @@ test("Home arrows navigate links, stop at boundaries, and Tab leaves the group",
 });
 
 test("Permission grid arrows move between accounts and scopes without granting access", async () => {
-  const page = await pageAt("/permissions");
+  const page = await pageAt("/accounts");
   const first = page.getByLabel("alpha can open Lights");
   await first.waitFor();
   await first.focus();

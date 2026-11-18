@@ -45,7 +45,7 @@ The page adapts terminal design ideas to HTML controls and responsive CSS:
 
 ## Shared hub controls
 
-Home, Invites, Join, Permissions, Secrets, and Devices use the shared
+Home, Accounts, Join, Secrets, and Devices use the shared
 stylesheet and keyboard controller. Lists and grids support arrow navigation
 without activating actions. Text inputs, selects, ranges, and scrollable logs
 keep native keys. Alt+Up/Down moves between fields and actions. Native modal

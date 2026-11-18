@@ -224,8 +224,7 @@ if (header) {
     ["/home", "Home"],
     ["/manage", "Devices"],
     ["/lights", "Lights"],
-    ["/permissions", "Accounts"],
-    ["/invite", "Invites"],
+    ["/accounts", "Accounts"],
     ["/secrets", "Secrets"],
   ]) {
     const link = document.createElement("a");
