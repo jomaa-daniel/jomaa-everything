@@ -324,6 +324,7 @@ test("a failed read after saving locks editing until Refresh retrieves the saved
   await page.locator("#notice", { hasText: "Refreshed." }).waitFor();
   assert.ok(await checkbox.isEnabled());
   assert.ok(await checkbox.isChecked());
+  await page.unroute("**/api/manage");
   await checkbox.uncheck();
   await page.locator("#notice.success").waitFor();
   await page.close();

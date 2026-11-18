@@ -245,7 +245,7 @@ await test("Imaging tab selects installed Pico functions, reuses saved Wi-Fi and
     events = [{ type: "result", status: "failed", message: "Fixture stopped" }];
     finish();
     await page.locator("#pico-run-status.pico-error").waitFor();
-    await page.getByRole("tab", { name: /^Health/ }).click();
+    await page.getByRole("tab", { name: /^Devices/ }).click();
     assert.ok(await page.locator("#usb-picos").isHidden());
     await page.getByRole("tab", { name: "Imaging" }).click();
     assert.ok(await page.locator("#usb-picos").isVisible());
