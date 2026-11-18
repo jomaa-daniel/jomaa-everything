@@ -102,8 +102,7 @@ state lives in `data/matter`.
 
 ## Home page
 
-`https://jomaa.org/home` links to lights, device health, device organization, accounts, secrets, hub status, the Pico imaging guide,
-and the project documentation. The hub serves the page at `/home` and its CSS under
+`https://jomaa.org/home` links to lights, devices, accounts, and secrets. The hub serves the page at `/home` and its CSS under
 `/home/`; edit `web/home.html` to add another page. It needs no session.
 
 ### Link prefetching
