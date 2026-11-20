@@ -88,6 +88,55 @@ test("non-dimmable devices turn off below 50% and stay unchanged at 50% or above
   }
 });
 
+test("brightness remains available when only a non-dimmable device is on", () => {
+  const { context } = panel();
+  vm.runInContext(
+    `
+    app.observation.devices.bulb.on = false;
+    app.observation.devices.white.on = false;
+    app.observation.devices.bulb.brightness = 40;
+    app.observation.devices.white.brightness = 40;
+  `,
+    context,
+  );
+  assert.equal(vm.runInContext("summarize().brightness.value", context), 40);
+});
+
+test("brightness changes do not turn a non-color light back on after selecting a color", async () => {
+  const { context, calls } = panel();
+  await vm.runInContext('send({ on: true, color: "#ff0000" })', context);
+  calls.length = 0;
+  await vm.runInContext("send({ on: true, brightness: 75 })", context);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+    request("bulb", { on: true, brightness: 75 }),
+  ]);
+  assert.equal(
+    vm.runInContext("app.observation.devices.white.on", context),
+    false,
+  );
+  calls.length = 0;
+  await vm.runInContext("send({ on: true, brightness: 10 })", context);
+  assert.equal(
+    calls.some((call) => call.path.includes("white")),
+    false,
+  );
+  await vm.runInContext("send({ on: true, colorTemperaturePct: 50 })", context);
+  assert.equal(
+    vm.runInContext("app.observation.devices.white.on", context),
+    true,
+  );
+});
+
+test("brightness does not turn on a non-color light whose state is unknown", async () => {
+  const { context, calls } = panel();
+  vm.runInContext("delete app.observation.devices.white", context);
+  await vm.runInContext("send({ on: true, brightness: 75 })", context);
+  assert.equal(
+    calls.some((call) => call.path.includes("white")),
+    false,
+  );
+});
+
 test("power commands reach all devices", async () => {
   const { calls } = await send({ on: false });
   assert.deepEqual(calls, [

@@ -16,7 +16,8 @@ The session stays signed in until it expires.
 
 Color and white-temperature settings turn off devices that cannot apply them.
 Brightness below 50% turns off non-dimmable devices; 50% or higher leaves them
-unchanged.
+unchanged. Brightness changes leave non-color lights off until they are turned
+on with power or a supported white-temperature setting.
 
 The screen fills the viewport from top to bottom:
 

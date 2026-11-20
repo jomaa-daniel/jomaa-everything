@@ -376,7 +376,8 @@ function selection() {
 
 /**
  * The observed devices reduced to what the controls show. Brightness and
- * temperature come from the lit devices, or from all devices when none is lit.
+ * temperature come from lit devices that support each setting, or from all
+ * supporting devices when none of them is lit.
  */
 function summarize() {
   const devices = Object.entries(app.observation?.devices ?? {}).map(
@@ -384,11 +385,13 @@ function summarize() {
   );
   const lit = devices.filter((device) => device.state.on);
   const pick = (feature, field) => {
+    const capable = devices.filter((device) => device.features[feature]);
+    const litCapable = capable.filter((device) => device.state.on);
     const values = [
       ...new Set(
-        (lit.length ? lit : devices)
-          .filter((device) => device.features[feature])
-          .map((device) => device.state[field]),
+        (litCapable.length ? litCapable : capable).map(
+          (device) => device.state[field],
+        ),
       ),
     ];
     return {
@@ -666,7 +669,18 @@ async function send(changes) {
   const view = app.view;
   const devices = selectedDevices();
   const commands = devices.flatMap((id) => {
-    const command = deviceCommand(changes, featuresOf(id));
+    const features = featuresOf(id);
+    if (
+      changes.brightness !== undefined &&
+      changes.color === undefined &&
+      changes.colorTemperaturePct === undefined &&
+      changes.on !== false &&
+      features.brightness &&
+      !features.color &&
+      app.observation?.devices[id]?.on !== true
+    )
+      return [];
+    const command = deviceCommand(changes, features);
     return command ? [{ id, command }] : [];
   });
   const commandsById = new Map(
