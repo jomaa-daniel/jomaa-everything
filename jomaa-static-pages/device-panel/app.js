@@ -337,6 +337,26 @@ const selectedDevices = () => [
   ...new Set(app.selected.flatMap(targetDeviceIds)),
 ];
 
+/** @param {Changes} changes @param {Features} features @returns {Changes | null} */
+function deviceCommand(changes, features) {
+  if (changes.on === false) return { on: false };
+  if (
+    (changes.color !== undefined && !features.color) ||
+    (changes.colorTemperaturePct !== undefined && !features.colorTemperature) ||
+    (changes.brightness !== undefined &&
+      !features.brightness &&
+      changes.brightness < 50)
+  )
+    return { on: false };
+  if (changes.brightness !== undefined && !features.brightness) {
+    const { brightness, ...rest } = changes;
+    if (rest.color === undefined && rest.colorTemperaturePct === undefined)
+      return null;
+    return rest;
+  }
+  return changes;
+}
+
 /** The selected targets combined, or null when nothing is selected. */
 function selection() {
   const chosen = app.selected.flatMap((id) => app.targets.get(id) ?? []);
@@ -644,8 +664,14 @@ function command(changes) {
 async function send(changes) {
   const session = app.session;
   const view = app.view;
-  const ids = [...app.selected];
   const devices = selectedDevices();
+  const commands = devices.flatMap((id) => {
+    const command = deviceCommand(changes, featuresOf(id));
+    return command ? [{ id, command }] : [];
+  });
+  const commandsById = new Map(
+    commands.map(({ id, command }) => [id, command]),
+  );
   const before = app.observation;
   if (before)
     app.observation = {
@@ -653,20 +679,22 @@ async function send(changes) {
       devices: Object.fromEntries(
         Object.entries(before.devices).map(([id, state]) => [
           id,
-          applyChanges(state, changes, featuresOf(id)),
+          commandsById.has(id)
+            ? applyChanges(state, commandsById.get(id), featuresOf(id))
+            : state,
         ]),
       ),
     };
-  app.pending = new Set(devices);
-  for (const id of devices) delete app.failed[id];
+  app.pending = new Set(commands.map(({ id }) => id));
+  for (const { id } of commands) delete app.failed[id];
   app.busy = true;
   announce("Applying…");
   render();
 
   try {
     const results = await Promise.allSettled(
-      ids.map((id) =>
-        api(targetPath(id, "command"), "POST", changes).then(
+      commands.map(({ id, command }) =>
+        api(targetPath(id, "command"), "POST", command).then(
           parseCommandResult,
         ),
       ),
@@ -682,15 +710,10 @@ async function send(changes) {
         failed,
         result.status === "fulfilled"
           ? result.value
-          : Object.fromEntries(
-              targetDeviceIds(ids[index]).map((id) => [
-                id,
-                describe(result.reason),
-              ]),
-            ),
+          : Object.fromEntries([[commands[index].id, describe(result.reason)]]),
       );
     }
-    for (const id of devices) app.pending.delete(id);
+    for (const { id } of commands) app.pending.delete(id);
     Object.assign(app.failed, failed);
     if (app.observation && before)
       for (const id of Object.keys(failed)) {

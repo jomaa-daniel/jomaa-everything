@@ -10,7 +10,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/build-web.mjs",
     "start": "node dist/main.js",
-    "test": "npm run build && node --test --test-concurrency=1 \"dist/**/*.test.js\"",
+    "test": "npm run build && node --test --test-concurrency=1 \"dist/**/*.test.js\" ../jomaa-static-pages/device-panel/app.test.cjs",
     "lint": "eslint .",
     "format": "prettier --write . ../jomaa-static-pages/device-panel",
     "format:check": "prettier --check . ../jomaa-static-pages/device-panel",

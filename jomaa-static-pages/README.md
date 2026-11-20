@@ -14,6 +14,10 @@ https://jomaa.org/lights. It controls rooms with power, brightness, white
 temperature, and color settings, and shares the hub's administrator sign-in.
 The session stays signed in until it expires.
 
+Color and white-temperature settings turn off devices that cannot apply them.
+Brightness below 50% turns off non-dimmable devices; 50% or higher leaves them
+unchanged.
+
 The screen fills the viewport from top to bottom:
 
 - The top row shows the room name on the left, wrapping onto more lines
