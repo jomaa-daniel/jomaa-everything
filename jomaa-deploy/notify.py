@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Request deployment of this verified GitHub Actions run."""
 
+import argparse
 import hashlib
 import hmac
 import json
@@ -12,6 +13,7 @@ import urllib.parse
 import urllib.request
 
 import settings
+import nodes
 
 SUCCESS = ("deployed", "older-revision-ignored")
 PARTIAL = "partial"
@@ -22,14 +24,20 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--node", help="destination installation ID")
+    args = parser.parse_args(argv or [])
     config = settings.CONFIG
     retry = config["notify"]
     try:
         key = os.environ.get("JOMAA_DEPLOY_SECRET", "")
         if len(key) < 32:
             raise ValueError("JOMAA_DEPLOY_SECRET is not configured")
-        url = os.environ.get("JOMAA_DEPLOY_URL") or f"https://{config['webhook']['hostname']}{settings.WEBHOOK_PATH}"
+        destination = nodes.get(config, args.node)
+        if not destination["enabled"]:
+            raise ValueError("destination node is disabled")
+        url = (os.environ.get("JOMAA_DEPLOY_URL") if destination["mode"] == "gateway" else None) or f"https://{destination['hostname']}{settings.WEBHOOK_PATH}"
         parsed = urllib.parse.urlsplit(url)
         if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
             raise ValueError("deployment URL must be HTTPS without credentials or fragment")
@@ -61,9 +69,9 @@ def main() -> int:
         if result.get("sha") != payload["sha"] or result.get("status") not in (*SUCCESS, PARTIAL):
             raise ValueError("unexpected response from deployment receiver")
         print(f"Deployment result: {result['status']} ({payload['sha'][:12]})")
+        for name, status in sorted(result.get("modules", {}).items()):
+            print(f"  {name}: {status}")
         if result["status"] == PARTIAL:
-            for name, status in sorted(result.get("modules", {}).items()):
-                print(f"  {name}: {status}")
             print(f"  ingress: {json.dumps(result.get('ingress', {}))}")
             print(f"  engine: {result.get('engine')}")
             return 1
@@ -74,4 +82,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

@@ -426,8 +426,18 @@ Every request except `/healthz`, `/api/login`, `/api/logout`,
 `/api/invites/check`, and `/api/join` needs `Authorization: Bearer <token>` or
 the login cookie. The owner can use every route. Accounts need the route's
 scope (`lights` for targets, `devices` for Matter and `/api/devices`, `manage`
-for `/api/manage`) and get 403 without it. Invite, account and Secrets routes are
-owner-only.
+for `/api/manage`) on the selected node and get 403 without it. Invite, account
+and Secrets routes are owner-only. The `node` query parameter selects an
+installation; without it the first enabled node granting the requested scope
+is selected. `/api/nodes` lists the caller's available installations.
+
+The shared [node catalog](../jomaa-deploy/nodes.md) defines installations,
+capability policies, Cloudflare destinations, and deployment modules. The
+Accounts page sets grants per home and includes selected grants in each
+invitation. Light and device pages offer a home selector. Restricted nodes
+accept only signed gateway requests for their configured capabilities and
+the exact public routes in their policy. Their deployment receivers use a
+separate signing secret.
 
 | Method | Path                          | Body                                                                      | Does                                                                                          |
 | ------ | ----------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
@@ -435,12 +445,13 @@ owner-only.
 | POST   | `/api/logout`                 |                                                                           | clears the cookie and ends an account session                                                 |
 | GET    | `/api/session`                |                                                                           | `{"owner","username","scopes"}` for the caller                                                |
 | POST   | `/api/invites/check`          | `{"token"}`                                                               | the invite's `expiresAt`, 404 when invalid, used, or expired                                  |
-| POST   | `/api/join`                   | `{"token","username","password"}`                                         | creates an account with no scopes                                                             |
+| POST   | `/api/join`                   | `{"token","username","password"}`                                         | creates an account with the invitation's grants                                               |
 | GET    | `/api/invites`                |                                                                           | unused invites                                                                                |
-| POST   | `/api/invites`                | `{}`                                                                      | creates an invite; returns `{"invite","token"}`                                               |
+| POST   | `/api/invites`                | `{"grants":[{"node","scopes"}]}`                                          | creates an invite; returns `{"invite","token"}`                                               |
 | DELETE | `/api/invites/{id}`           |                                                                           | revokes an invite                                                                             |
-| GET    | `/api/accounts`               |                                                                           | accounts with their scopes, and the scope list                                                |
-| PUT    | `/api/accounts/{user}/scopes` | `{"scopes"}`                                                              | replaces an account's scopes                                                                  |
+| GET    | `/api/accounts`               |                                                                           | accounts with their grants, the scope list and available nodes                                |
+| PUT    | `/api/accounts/{user}/grants` | `{"grants":[{"node","scopes"}]}`                                          | replaces an account's grants                                                                  |
+| GET    | `/api/nodes`                  |                                                                           | installations and scopes available to the caller                                              |
 | DELETE | `/api/accounts/{user}`        |                                                                           | deletes an account and its sessions                                                           |
 | GET    | `/api/secrets`                |                                                                           | each env file's keys in file order with masked values, and whether redeploy is available      |
 | PUT    | `/api/secrets`                | `{"file","changes","password"}`                                           | applies `changes`: `{"key","value"}` sets or adds, `{"key","delete":true}` deletes            |

@@ -39,13 +39,19 @@ export class AccountError extends Error {
   }
 }
 
+export interface Grant {
+  node: string;
+  scopes: Scope[];
+}
+
 export interface Account {
   username: string;
-  scopes: Scope[];
+  grants: Grant[];
   createdAt: number;
 }
 
 export interface Invite {
+  grants: Grant[];
   id: string;
   createdAt: number;
   expiresAt: number;
@@ -106,19 +112,23 @@ export class Accounts {
     if (path !== ":memory:") chmodSync(path, 0o600);
     this.#db.exec(`PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS accounts (username TEXT PRIMARY KEY, password_hash TEXT NOT NULL, created_at INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS account_scopes (username TEXT NOT NULL REFERENCES accounts(username) ON DELETE CASCADE, scope TEXT NOT NULL, PRIMARY KEY(username, scope));
+      CREATE TABLE IF NOT EXISTS account_grants (username TEXT NOT NULL REFERENCES accounts(username) ON DELETE CASCADE, node TEXT NOT NULL, scope TEXT NOT NULL, PRIMARY KEY(username, node, scope));
+      CREATE TABLE IF NOT EXISTS invite_grants (id TEXT NOT NULL REFERENCES invites(id) ON DELETE CASCADE, node TEXT NOT NULL, scope TEXT NOT NULL, PRIMARY KEY(id, node, scope));
       CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, username TEXT NOT NULL REFERENCES accounts(username) ON DELETE CASCADE, expires_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS invites (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);`);
   }
 
   /** Creates a single-use invite. The token is returned once and only its hash is stored. */
-  createInvite(): { invite: Invite; token: string } {
+  createInvite(grants: Grant[] = []): { invite: Invite; token: string } {
     const token = newToken();
     const now = this.now();
-    const invite = { id: randomBytes(8).toString("hex"), createdAt: now, expiresAt: now + inviteLifetimeMs };
+    const invite = { grants, id: randomBytes(8).toString("hex"), createdAt: now, expiresAt: now + inviteLifetimeMs };
     this.#db
       .prepare("INSERT INTO invites VALUES (?, ?, ?, ?)")
       .run(invite.id, digest(token), invite.createdAt, invite.expiresAt);
+    for (const grant of grants)
+      for (const scope of new Set(grant.scopes))
+        this.#db.prepare("INSERT INTO invite_grants VALUES (?, ?, ?)").run(invite.id, grant.node, scope);
     return { invite, token };
   }
 
@@ -128,6 +138,7 @@ export class Accounts {
       .prepare("SELECT id, created_at, expires_at FROM invites WHERE expires_at > ? ORDER BY created_at DESC")
       .all(this.now())
       .map((row) => ({
+        grants: this.#grants("invite_grants", "id", String(row["id"])),
         id: String(row["id"]),
         createdAt: Number(row["created_at"]),
         expiresAt: Number(row["expires_at"]),
@@ -145,10 +156,15 @@ export class Accounts {
       .prepare("SELECT id, created_at, expires_at FROM invites WHERE token_hash=? AND expires_at > ?")
       .get(digest(token), this.now());
     if (!row) throw new AccountError(404, "This invite link is invalid, used, or expired");
-    return { id: String(row["id"]), createdAt: Number(row["created_at"]), expiresAt: Number(row["expires_at"]) };
+    return {
+      grants: this.#grants("invite_grants", "id", String(row["id"])),
+      id: String(row["id"]),
+      createdAt: Number(row["created_at"]),
+      expiresAt: Number(row["expires_at"]),
+    };
   }
 
-  /** Creates an account with no scopes and consumes the invite. */
+  /** Creates an account with the invite grants and consumes the invite. */
   async join(token: string, username: string, password: string): Promise<Account> {
     this.checkInvite(token);
     const name = validUsername(username);
@@ -161,9 +177,12 @@ export class Accounts {
         throw new AccountError(409, "That username is taken");
       const createdAt = this.now();
       this.#db.prepare("INSERT INTO accounts VALUES (?, ?, ?)").run(name, hash, createdAt);
+      for (const grant of invite.grants)
+        for (const scope of grant.scopes)
+          this.#db.prepare("INSERT INTO account_grants VALUES (?, ?, ?)").run(name, grant.node, scope);
       this.#db.prepare("DELETE FROM invites WHERE id=?").run(invite.id);
       this.#db.exec("COMMIT");
-      return { username: name, scopes: [], createdAt };
+      return { username: name, grants: invite.grants, createdAt };
     } catch (error) {
       this.#db.exec("ROLLBACK");
       throw error;
@@ -181,7 +200,11 @@ export class Accounts {
   account(username: string): Account | null {
     const row = this.#db.prepare("SELECT username, created_at FROM accounts WHERE username=?").get(username);
     if (!row) return null;
-    return { username: String(row["username"]), scopes: this.#scopes(username), createdAt: Number(row["created_at"]) };
+    return {
+      username: String(row["username"]),
+      grants: this.#grants("account_grants", "username", username),
+      createdAt: Number(row["created_at"]),
+    };
   }
 
   accounts(): Account[] {
@@ -192,24 +215,25 @@ export class Accounts {
       .filter((account) => account !== null);
   }
 
-  setScopes(username: string, granted: Scope[]): Account {
+  setGrants(username: string, granted: Grant[]): Account {
     username = username.trim().toLowerCase();
     const account = this.account(username);
     if (!account) throw new AccountError(404, "Account not found");
     this.#db.exec("BEGIN");
     try {
-      this.#db.prepare("DELETE FROM account_scopes WHERE username=?").run(username);
-      for (const scope of new Set(granted))
-        this.#db.prepare("INSERT INTO account_scopes VALUES (?, ?)").run(username, scope);
+      this.#db.prepare("DELETE FROM account_grants WHERE username=?").run(username);
+      for (const grant of granted)
+        for (const scope of new Set(grant.scopes))
+          this.#db.prepare("INSERT INTO account_grants VALUES (?, ?, ?)").run(username, grant.node, scope);
       this.#db.exec("COMMIT");
     } catch (error) {
       this.#db.exec("ROLLBACK");
       throw error;
     }
-    return { ...account, scopes: this.#scopes(username) };
+    return { ...account, grants: this.#grants("account_grants", "username", username) };
   }
 
-  /** Deletes the account, its scopes, and its sessions. */
+  /** Deletes the account, its grants, and its sessions. */
   deleteAccount(username: string): void {
     if (this.#db.prepare("DELETE FROM accounts WHERE username=?").run(username.trim().toLowerCase()).changes === 0)
       throw new AccountError(404, "Account not found");
@@ -252,14 +276,15 @@ export class Accounts {
     this.#db.prepare("DELETE FROM invites WHERE expires_at <= ?").run(now);
   }
 
-  #scopes(username: string): Scope[] {
-    const granted = new Set(
-      this.#db
-        .prepare("SELECT scope FROM account_scopes WHERE username=?")
-        .all(username)
-        .map((row) => row["scope"]),
-    );
-    return scopes.map((scope) => scope.id).filter((id) => granted.has(id));
+  #grants(table: "account_grants" | "invite_grants", field: "username" | "id", id: string): Grant[] {
+    const rows = this.#db.prepare(`SELECT node, scope FROM ${table} WHERE ${field}=? ORDER BY node`).all(id);
+    const nodes = [...new Set(rows.map((row) => String(row["node"])))];
+    return nodes.map((node) => ({
+      node,
+      scopes: scopes
+        .map((scope) => scope.id)
+        .filter((scope) => rows.some((row) => row["node"] === node && row["scope"] === scope)),
+    }));
   }
 
   close(): void {

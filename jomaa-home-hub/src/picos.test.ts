@@ -1,3 +1,4 @@
+import { catalog } from "./nodes.js";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -95,7 +96,7 @@ test("Pico APIs require Devices access before discovering or launching, and refu
   const clicks = new Clicks(":memory:");
   const { token } = accounts.createInvite();
   await accounts.join(token, "guest", "guest test password");
-  accounts.setScopes("guest", ["lights"]);
+  accounts.setGrants("guest", [{ node: catalog.defaultNode, scopes: ["lights"] }]);
   const guest = accounts.createSession("guest");
   const password = "pico api owner password";
   const origin = await serve(

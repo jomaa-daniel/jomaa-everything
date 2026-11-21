@@ -228,7 +228,8 @@ if (header) {
     ["/secrets", "Secrets"],
   ]) {
     const link = document.createElement("a");
-    link.href = href;
+    const selectedNode = new URL(location.href).searchParams.get("node");
+    link.href = selectedNode === null ? href : `${href}?node=${encodeURIComponent(selectedNode)}`;
     link.textContent = label;
     if (location.pathname.replace(/\/$/, "") === href) link.setAttribute("aria-current", "page");
     nav.append(link);

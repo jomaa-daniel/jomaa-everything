@@ -28,6 +28,7 @@ const assetFiles: Record<string, [string, string]> = {
   "/home/style.css": ["home.css", css],
   "/home/accounts.css": ["accounts.css", css],
   "/home/accounts.js": ["accounts.js", js],
+  "/home/nodes.js": ["nodes.js", js],
   "/home/prefetch.js": ["prefetch.js", js],
   "/accounts/app.js": ["accounts-page.js", js],
   "/join/app.js": ["join.js", js],

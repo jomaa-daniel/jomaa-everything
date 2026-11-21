@@ -18,6 +18,8 @@ import type { EnvChange } from "./envfile.js";
 import { SecretsError, type EnvFiles } from "./secrets.js";
 import type { DeployWorkflow, GitHubCli } from "./redeploy.js";
 import { settings } from "./settings.js";
+import { Federation, NodeError, delegationHeader, nodeQuery } from "./federation.js";
+import { BodyLimitError, requestBody } from "./request-body.js";
 import { PicoError, type PicoRuns } from "./picos.js";
 import {
   AccountError,
@@ -30,6 +32,7 @@ import {
   type Account,
   type Accounts,
   type Scope,
+  type Grant,
 } from "./accounts.js";
 
 const authCookie = "hub_auth";
@@ -63,8 +66,9 @@ function sameSecret(a: string, b: string): boolean {
 
 type Handler = (ctx: RequestContext) => Promise<void>;
 
-/** Who sent a request: the owner signed in with the hub password, or an invited account. */
-type Principal = { kind: "owner" } | { kind: "account"; account: Account };
+/** The caller: an owner, an invited account, or a delegated node capability. */
+type Principal =
+  { kind: "owner" } | { kind: "account"; account: Account; scopes: Scope[] } | { kind: "delegated"; scope: Scope };
 
 /**
  * What a route needs: a scope, the owner, or nothing beyond what its route
@@ -109,7 +113,8 @@ function access(principal: Principal | null, requires: Requirement): Access {
   if (requires === null) return "allowed";
   if (principal === null) return "signed-out";
   if (principal.kind === "owner") return "allowed";
-  return requires !== "owner" && principal.account.scopes.includes(requires) ? "allowed" : "forbidden";
+  if (principal.kind === "delegated") return requires === principal.scope ? "allowed" : "forbidden";
+  return requires !== "owner" && principal.scopes.includes(requires) ? "allowed" : "forbidden";
 }
 
 function requireAccess(principal: Principal | null, requires: Requirement): void {
@@ -148,6 +153,7 @@ export class Api {
     private readonly clicks: Clicks,
     private readonly log: Log,
     services: ApiServices,
+    private readonly federation: Federation = new Federation(),
   ) {
     this.health = services.health;
     this.layoutPath = services.layoutPath;
@@ -175,6 +181,7 @@ export class Api {
     ];
     this.#authed = [
       route("GET", "/api/session", null, this.#session),
+      route("GET", "/api/nodes", null, this.#nodes),
       route("GET", "/api/picos", "devices", this.#picoInventory),
       route("GET", "/api/picos/catalog", "devices", this.#picoCatalog),
       route("GET", "/api/picos/{targetId}/state", "devices", this.#picoState),
@@ -184,7 +191,7 @@ export class Api {
       route("POST", "/api/invites", "owner", this.#inviteCreate),
       route("DELETE", "/api/invites/{id}", "owner", this.#inviteRevoke),
       route("GET", "/api/accounts", "owner", this.#accountList),
-      route("PUT", "/api/accounts/{username}/scopes", "owner", this.#accountScopes),
+      route("PUT", "/api/accounts/{username}/grants", "owner", this.#accountGrants),
       route("DELETE", "/api/accounts/{username}", "owner", this.#accountDelete),
       route("GET", "/api/secrets", "owner", this.#secretsList),
       route("PUT", "/api/secrets", "owner", this.#secretsSave),
@@ -219,6 +226,7 @@ export class Api {
     });
     this.#dispatch(req, res, gone.signal).catch((err: unknown) => {
       if (
+        err instanceof NodeError ||
         err instanceof HttpError ||
         err instanceof HealthError ||
         err instanceof AccountError ||
@@ -227,6 +235,10 @@ export class Api {
       ) {
         if (err instanceof HealthError && err.status === 429) res.setHeader("Retry-After", "15");
         writeError(res, err.status, err.message);
+        return;
+      }
+      if (err instanceof BodyLimitError) {
+        writeError(res, 413, err.message);
         return;
       }
       if (err instanceof JsonShapeError) {
@@ -239,13 +251,51 @@ export class Api {
   };
 
   async #dispatch(req: IncomingMessage, res: ServerResponse, signal: AbortSignal): Promise<void> {
-    const path = new URL(req.url ?? "/", "http://hub").pathname;
-    if (serveWeb(req, res)) return;
-    const principal = this.#principal(req);
+    const url = new URL(req.url ?? "/", "http://hub");
+    const path = url.pathname;
+    const local = this.federation.local;
+    if (!local.enabled) throw new NodeError(403, "This node is disabled");
+    const route = this.#authed.find((candidate) => candidate.method === req.method && candidate.pattern.test(path));
+    const capability = route?.requires ?? HealthHttp.capability(req);
+    let principal: Principal | null;
+    if (local.mode === "node") {
+      if (this.federation.publicRequest(req)) {
+        if (await this.#serve(this.#public, req, res, path, signal, false, null)) return;
+        if (await this.#healthHttp?.handle(req, res, "signed-out")) return;
+        throw new HttpError(404, "not found");
+      }
+      if (!isScope(capability)) throw new NodeError(403, "This node accepts delegated capabilities only");
+      await this.federation.authenticate(req, capability);
+      principal = { kind: "delegated", scope: capability };
+    } else {
+      if (req.headers[delegationHeader] !== undefined)
+        throw new NodeError(403, "The gateway does not accept delegated requests");
+      if (serveWeb(req, res)) return;
+      principal = this.#principal(req);
+      if (isScope(capability)) {
+        requireAccess(principal, capability);
+        const grants = principal?.kind === "account" ? principal.account.grants : null;
+        const requested = url.searchParams.getAll(nodeQuery);
+        if (requested.length > 1) throw new HttpError(400, "Select one node");
+        const target = this.federation.target(grants, capability, requested[0] ?? null);
+        if (!["GET", "HEAD"].includes(req.method ?? "")) requireSameOrigin(req);
+        if (target.id !== local.id) {
+          await this.federation.forward(req, res, target, capability, signal);
+          return;
+        }
+      }
+    }
     if (
-      await this.#healthHttp?.handle(req, res, access(principal, "devices"), () =>
-        access(this.#principal(req), "devices"),
-      )
+      await this.#healthHttp?.handle(req, res, access(principal, "devices"), () => {
+        if (local.mode === "node") return access(principal, "devices");
+        const current = this.#principal(req);
+        const allowed = access(current, "devices");
+        if (allowed !== "allowed") return allowed;
+        const grants = current?.kind === "account" ? current.account.grants : null;
+        return this.federation.available(grants, "devices").some((node) => node.id === local.id)
+          ? "allowed"
+          : "forbidden";
+      })
     )
       return;
     if (await this.#serve(this.#public, req, res, path, signal, false, principal)) {
@@ -299,7 +349,13 @@ export class Api {
     if (token === "") return null;
     if (sameSecret(token, this.#token)) return { kind: "owner" };
     const account = this.accounts.session(token);
-    return account ? { kind: "account", account } : null;
+    return account
+      ? {
+          kind: "account",
+          account,
+          scopes: [...new Set(this.federation.available(account.grants).flatMap((node) => node.scopes))],
+        }
+      : null;
   }
 
   async #health({ res }: RequestContext): Promise<void> {
@@ -347,15 +403,7 @@ export class Api {
     const images = this.#images();
     if (req.headers["content-type"]?.split(";")[0]?.trim() !== "application/json")
       throw new PicoError(415, "use application/json");
-    const chunks: Buffer[] = [];
-    let size = 0;
-    for await (const chunk of req) {
-      if (!Buffer.isBuffer(chunk)) throw new PicoError(400, "invalid image request");
-      size += chunk.length;
-      if (size > images.settings.maxRequestBytes) throw new PicoError(413, "image request too large");
-      chunks.push(chunk);
-    }
-    const value = parseJson(Buffer.concat(chunks).toString("utf8"));
+    const value = parseJson((await requestBody(req, images.settings.maxRequestBytes)).toString("utf8"));
     writeJSON(res, 202, { run: await images.start(params[0] ?? "", value) });
   }
 
@@ -412,15 +460,30 @@ export class Api {
     if (token !== "" && !sameSecret(token, this.#token)) this.accounts.endSession(token);
   }
 
-  async #session({ res, principal }: RequestContext): Promise<void> {
-    if (principal === null) throw new HttpError(401, "sign in first");
+  #session({ req, res, principal }: RequestContext): Promise<void> {
+    if (principal === null || principal.kind === "delegated") throw new HttpError(401, "sign in first");
+    const granted = this.federation.available(principal.kind === "owner" ? null : principal.account.grants);
+    const requested = new URL(req.url ?? "/", "http://hub").searchParams.get(nodeQuery);
+    if (requested !== null && !granted.some((node) => node.id === requested))
+      throw new HttpError(403, "Node access refused");
+    const effective = [
+      ...new Set(granted.filter((node) => requested === null || node.id === requested).flatMap((node) => node.scopes)),
+    ];
     writeJSON(
       res,
       200,
       principal.kind === "owner"
-        ? { owner: true, username: null, scopes: scopes.map((scope) => scope.id) }
-        : { owner: false, username: principal.account.username, scopes: principal.account.scopes },
+        ? { owner: true, username: null, scopes: effective }
+        : { owner: false, username: principal.account.username, scopes: effective },
     );
+    return Promise.resolve();
+  }
+
+  #nodes({ res, principal }: RequestContext): Promise<void> {
+    if (principal === null || principal.kind === "delegated") throw new HttpError(401, "sign in first");
+    writeJSON(res, 200, {
+      nodes: this.federation.available(principal.kind === "owner" ? null : principal.account.grants),
+    });
     return Promise.resolve();
   }
 
@@ -481,8 +544,8 @@ export class Api {
   /** Returns the invite's token once; the page turns it into a share link. */
   async #inviteCreate({ req, res }: RequestContext): Promise<void> {
     requireSameOrigin(req);
-    (await readBody(req)).only();
-    writeJSON(res, 201, this.accounts.createInvite());
+    const grants = this.#readGrants((await readBody(req)).only("grants"));
+    writeJSON(res, 201, this.accounts.createInvite(grants));
   }
 
   async #inviteRevoke({ req, res, params }: RequestContext): Promise<void> {
@@ -493,20 +556,30 @@ export class Api {
   }
 
   async #accountList({ res }: RequestContext): Promise<void> {
-    writeJSON(res, 200, { accounts: this.accounts.accounts(), scopes });
+    writeJSON(res, 200, { accounts: this.accounts.accounts(), scopes, nodes: this.federation.available(null) });
     return Promise.resolve();
   }
 
-  async #accountScopes({ req, res, params }: RequestContext): Promise<void> {
-    requireSameOrigin(req);
-    const body = (await readBody(req)).only("scopes").required("scopes");
-    if (!Array.isArray(body.value("scopes"))) throw new HttpError(400, "scopes must be a list");
-    const granted = body.list("scopes").map((value) => {
-      if (!isScope(value)) throw new HttpError(400, `unknown scope ${JSON.stringify(value)}`);
-      return value;
+  #readGrants(body: Fields): Grant[] {
+    if (!Array.isArray(body.value("grants"))) throw new HttpError(400, "grants must be a list");
+    const grants = body.list("grants").map((value): Grant => {
+      const grant = new Fields(value, "grant").only("node", "scopes").required("node", "scopes");
+      if (!Array.isArray(grant.value("scopes"))) throw new HttpError(400, "scopes must be a list");
+      const granted = grant.list("scopes").map((scope) => {
+        if (!isScope(scope)) throw new HttpError(400, `unknown scope ${JSON.stringify(scope)}`);
+        return scope;
+      });
+      return { node: grant.string("node") ?? "", scopes: [...new Set(granted)] };
     });
-    const account = this.accounts.setScopes(params[0] ?? "", granted);
-    this.log.info("account scopes changed", { username: account.username, scopes: account.scopes });
+    this.federation.validateGrants(grants);
+    return grants;
+  }
+
+  async #accountGrants({ req, res, params }: RequestContext): Promise<void> {
+    requireSameOrigin(req);
+    const grants = this.#readGrants((await readBody(req)).only("grants").required("grants"));
+    const account = this.accounts.setGrants(params[0] ?? "", grants);
+    this.log.info("account grants changed", { username: account.username, grants: account.grants });
     writeJSON(res, 200, { account });
   }
 
@@ -1021,18 +1094,9 @@ function cookies(req: IncomingMessage): Map<string, string> {
   return out;
 }
 
-/** Reads a JSON object body of at most 64 KiB. */
+/** Reads a bounded JSON object body. */
 async function readBody(req: IncomingMessage): Promise<Fields> {
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of req as AsyncIterable<Buffer>) {
-    size += chunk.length;
-    if (size > maxBodyBytes) {
-      throw new JsonShapeError("too large");
-    }
-    chunks.push(chunk);
-  }
-  return new Fields(parseJson(Buffer.concat(chunks).toString("utf8")), "body");
+  return new Fields(parseJson((await requestBody(req, maxBodyBytes)).toString("utf8")), "body");
 }
 
 function writeJSON(res: ServerResponse, status: number, v: unknown): void {

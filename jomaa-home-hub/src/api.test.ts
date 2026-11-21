@@ -1,3 +1,4 @@
+import { catalog } from "./nodes.js";
 import assert from "node:assert/strict";
 import { before, test } from "node:test";
 import { Api } from "./api.js";
@@ -475,7 +476,7 @@ const accountPassword = "correct horse battery";
 
 /** Creates an invite as the owner, joins with it, and signs in, returning the new account's session token. */
 async function joinAs(env: Env, username: string): Promise<string> {
-  const invite = await call(env, "POST", "/api/invites", "{}");
+  const invite = await call(env, "POST", "/api/invites", '{"grants":[]}');
   assert.equal(invite.status, 201);
   const token = invite.body["token"] as string;
   const anon = { url: env.url, token: "" };
@@ -484,7 +485,7 @@ async function joinAs(env: Env, username: string): Promise<string> {
   assert.equal(joined.status, 201);
   const account = joined.body["account"] as Json;
   assert.equal(account["username"], username);
-  assert.deepEqual(account["scopes"], []);
+  assert.deepEqual(account["grants"], []);
   assert.equal(joined.res.headers.get("set-cookie"), null, "joining leaves the browser's session alone");
   const login = await call(anon, "POST", "/api/login", JSON.stringify({ username, password: accountPassword }));
   const cookie = login.res.headers.get("set-cookie") ?? "";
@@ -495,16 +496,16 @@ async function joinAs(env: Env, username: string): Promise<string> {
 test("accounts with every scope still can't manage accounts or invites", async () => {
   const env = await setup();
   const session = { url: env.url, token: await joinAs(env, "trusted") };
-  const all = JSON.stringify({ scopes: ["lights", "devices", "manage"] });
+  const all = JSON.stringify({ grants: [{ node: catalog.defaultNode, scopes: ["lights", "devices", "manage"] }] });
   assert.equal(
-    (await call(env, "PUT", "/api/accounts/TRUSTED/scopes", all)).status,
+    (await call(env, "PUT", "/api/accounts/TRUSTED/grants", all)).status,
     200,
     "usernames in paths ignore case",
   );
   for (const [method, path, body] of [
-    ["PUT", "/api/accounts/trusted/scopes", all],
+    ["PUT", "/api/accounts/trusted/grants", all],
     ["GET", "/api/accounts", undefined],
-    ["POST", "/api/invites", "{}"],
+    ["POST", "/api/invites", '{"grants":[]}'],
     ["GET", "/api/invites", undefined],
   ] as const) {
     assert.equal((await call(session, method, path, body)).status, 403, `${method} ${path}`);
@@ -558,16 +559,26 @@ test("invited accounts start with no access and gain only granted scopes", async
   }
   assert.match((await call(session, "GET", "/api/targets")).body["error"] as string, /does not have access to Lights/);
 
-  const granted = await call(env, "PUT", "/api/accounts/guest/scopes", JSON.stringify({ scopes: ["lights"] }));
+  const granted = await call(
+    env,
+    "PUT",
+    "/api/accounts/guest/grants",
+    JSON.stringify({ grants: [{ node: catalog.defaultNode, scopes: ["lights"] }] }),
+  );
   assert.equal(granted.status, 200);
-  assert.deepEqual((granted.body["account"] as Json)["scopes"], ["lights"]);
+  assert.deepEqual((granted.body["account"] as Json)["grants"], [{ node: catalog.defaultNode, scopes: ["lights"] }]);
   assert.equal((await call(session, "GET", "/api/targets")).status, 200, "grant applies to the open session");
   assert.equal((await call(session, "POST", "/api/targets/room/command", JSON.stringify({ on: true }))).status, 200);
   assert.equal((await call(session, "GET", "/api/manage")).status, 403);
 
-  const unknown = await call(env, "PUT", "/api/accounts/guest/scopes", JSON.stringify({ scopes: ["admin"] }));
+  const unknown = await call(
+    env,
+    "PUT",
+    "/api/accounts/guest/grants",
+    JSON.stringify({ grants: [{ node: catalog.defaultNode, scopes: ["admin"] }] }),
+  );
   assert.equal(unknown.status, 400, "unknown scopes are refused");
-  assert.equal((await call(env, "PUT", "/api/accounts/guest/scopes", '{"scopes":[]}')).status, 200);
+  assert.equal((await call(env, "PUT", "/api/accounts/guest/grants", '{"grants":[]}')).status, 200);
   assert.equal((await call(session, "GET", "/api/targets")).status, 403, "revoking applies immediately");
 });
 
@@ -591,7 +602,7 @@ test("accounts sign in with a username, sign out, and lose their sessions when d
   };
   const listed = (await call(env, "GET", "/api/accounts")).body["accounts"] as Json[];
   assert.deepEqual(
-    listed.map((account) => [account["username"], account["scopes"]]),
+    listed.map((account) => [account["username"], account["grants"]]),
     [["visitor", []]],
   );
   assert.equal((await call(env, "DELETE", "/api/accounts/visitor")).status, 200);
@@ -602,8 +613,8 @@ test("accounts sign in with a username, sign out, and lose their sessions when d
 test("invites are single-use, revocable, and owner-only", async () => {
   const env = await setup();
   const anon = { url: env.url, token: "" };
-  assert.equal((await call(anon, "POST", "/api/invites", "{}")).status, 401);
-  const created = await call(env, "POST", "/api/invites", "{}");
+  assert.equal((await call(anon, "POST", "/api/invites", '{"grants":[]}')).status, 401);
+  const created = await call(env, "POST", "/api/invites", '{"grants":[]}');
   const token = created.body["token"] as string;
   const id = (created.body["invite"] as Json)["id"] as string;
   const pending = (await call(env, "GET", "/api/invites")).body["invites"] as Json[];
@@ -625,7 +636,7 @@ test("invites are single-use, revocable, and owner-only", async () => {
   assert.equal((await call(anon, "POST", "/api/invites/check", JSON.stringify({ token }))).status, 404);
   assert.deepEqual((await call(env, "GET", "/api/invites")).body["invites"], []);
 
-  const taken = (await call(env, "POST", "/api/invites", "{}")).body["token"] as string;
+  const taken = (await call(env, "POST", "/api/invites", '{"grants":[]}')).body["token"] as string;
   const duplicate = await call(
     anon,
     "POST",
@@ -636,7 +647,7 @@ test("invites are single-use, revocable, and owner-only", async () => {
   const kept = await call(anon, "POST", "/api/invites/check", JSON.stringify({ token: taken }));
   assert.equal(kept.status, 200, "a failed join keeps the invite");
 
-  const revoked = await call(env, "POST", "/api/invites", "{}");
+  const revoked = await call(env, "POST", "/api/invites", '{"grants":[]}');
   const revokedId = (revoked.body["invite"] as Json)["id"] as string;
   assert.equal((await call(env, "DELETE", `/api/invites/${revokedId}`)).status, 200);
   const check = await call(anon, "POST", "/api/invites/check", JSON.stringify({ token: revoked.body["token"] }));
@@ -708,7 +719,7 @@ test("the prefetch list names every page with the files it loads, most-clicked f
     "/home/prefetch.js",
     "/home/accounts.js",
   ]);
-  assert.deepEqual(assets("/lights"), ["/lights/style.css", "/lights/app.js"]);
+  assert.deepEqual(assets("/lights"), ["/lights/style.css", "/lights/app.js", "/home/nodes.js"]);
   for (const page of pages) {
     const bodies = [
       await (await fetch(env.url + page.path)).text(),
@@ -751,12 +762,22 @@ test("the prefetch list names every page with the files it loads, most-clicked f
     ["/home", "/join"],
     "a signed-in account gets only the pages it can open",
   );
-  await call(env, "PUT", "/api/accounts/visitor/scopes", JSON.stringify({ scopes: ["lights"] }));
+  await call(
+    env,
+    "PUT",
+    "/api/accounts/visitor/grants",
+    JSON.stringify({ grants: [{ node: catalog.defaultNode, scopes: ["lights"] }] }),
+  );
   assert.deepEqual(
     (await listed(guest)).map((page) => page.path),
     ["/lights", "/home", "/join"],
   );
-  await call(env, "PUT", "/api/accounts/visitor/scopes", JSON.stringify({ scopes: ["devices"] }));
+  await call(
+    env,
+    "PUT",
+    "/api/accounts/visitor/grants",
+    JSON.stringify({ grants: [{ node: catalog.defaultNode, scopes: ["devices"] }] }),
+  );
   assert.ok(
     (await listed(guest)).some((page) => page.path === "/manage"),
     "health-only accounts discover the unified page",

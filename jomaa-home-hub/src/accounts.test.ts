@@ -1,3 +1,4 @@
+import { catalog } from "./nodes.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { AccountError, Accounts, inviteLifetimeMs, sessionLifetimeMs } from "./accounts.js";
@@ -44,6 +45,9 @@ test("an account keeps its newest sessions up to the configured count", async ()
 test("scopes are stored in a fixed order without duplicates", async () => {
   const accounts = new Accounts(":memory:");
   await accounts.join(accounts.createInvite().token, "sam", "a long enough password");
-  assert.deepEqual(accounts.setScopes("sam", ["manage", "lights", "manage"]).scopes, ["lights", "manage"]);
-  assert.throws(() => accounts.setScopes("nobody", []), AccountError);
+  assert.deepEqual(
+    accounts.setGrants("sam", [{ node: catalog.defaultNode, scopes: ["manage", "lights", "manage"] }]).grants,
+    [{ node: catalog.defaultNode, scopes: ["lights", "manage"] }],
+  );
+  assert.throws(() => accounts.setGrants("nobody", [{ node: catalog.defaultNode, scopes: [] }]), AccountError);
 });

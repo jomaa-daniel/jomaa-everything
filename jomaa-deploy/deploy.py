@@ -25,6 +25,7 @@ from pathlib import Path
 import engine
 import native
 import settings
+import nodes
 from cloudflare_api import CloudflareError
 from modules import VERIFY_JOB, Context, DeployError
 from modules import ingress
@@ -174,15 +175,21 @@ def activate_revision(source: Path, deploy_dir: Path, repo_name: str, sha: str, 
     return result
 
 
-def install(source: Path, deploy_dir: Path, repo: str, tunnel_name: str) -> None:
+def install(source: Path, deploy_dir: Path, repo: str, tunnel_name: str, node_id: str | None = None) -> None:
     sha = run("git", "-C", str(source), "rev-parse", "HEAD", capture=True)
     if run("git", "-C", str(source), "status", "--porcelain", "--untracked-files=no", capture=True):
         raise DeployError("commit tracked changes before installing the deployment receiver")
+    selected_node = nodes.get(CONFIG, node_id, deploy_dir)
+    if not selected_node["enabled"]:
+        raise DeployError("enable the node in the catalog before installation")
     modules, failures = engine.discover(source)
+    modules = nodes.select(modules, selected_node)
     if failures:
         raise DeployError("modules failed to load: " + "; ".join(f"{d}: {e}" for d, e in failures.items()))
     native.init_config(source / "jomaa-home-hub")
     native.provision(source, load_env(source / CONFIG["cloudflare"]["env"]), tunnel_name)
+    identity = deploy_dir / nodes.catalog(CONFIG)["identityFile"]
+    atomic_write(identity, json.dumps({"node": selected_node["id"]}) + "\n")
     secret = deploy_dir / "webhook-secret"
     if not secret.exists():
         fd = os.open(secret, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -357,8 +364,9 @@ def matrix(modules: list) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("install", "serve", "plan", "modules", "activate", "self-check"))
-    parser.add_argument("--tunnel-name", default=CONFIG["tunnel"]["name"],
+    parser.add_argument("command", choices=("install", "serve", "plan", "modules", "nodes", "activate", "self-check"))
+    parser.add_argument("--node", help="installation ID from the shared node catalog")
+    parser.add_argument("--tunnel-name",
                         help="locally managed Cloudflare tunnel for installation")
     parser.add_argument("--repo", default=os.environ.get("JOMAA_DEPLOY_REPO", CONFIG["repo"]))
     parser.add_argument("--json", action="store_true", help="modules: print the check matrix as JSON")
@@ -374,6 +382,15 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repo):
             raise DeployError("repo must be OWNER/REPOSITORY")
+        if args.command == "nodes":
+            entries = [node for node in nodes.catalog(CONFIG)["nodes"] if node["enabled"]]
+            print(json.dumps([{"id": node["id"], "secret": node["deploySecret"]} for node in entries]) if args.json else "\n".join(node["id"] for node in entries))
+            return 0
+        if args.command != "modules":
+            identity_path = deploy_dir / nodes.catalog(CONFIG)["identityFile"]
+            selected_node = nodes.get(CONFIG, args.node, deploy_dir)
+            if identity_path.exists() and nodes.get(CONFIG, deploy_dir=deploy_dir)["id"] != selected_node["id"]:
+                raise DeployError("this installation belongs to another node")
         if args.command in ("plan", "modules"):
             modules, failures = engine.discover(source)
             for directory, error in failures.items():
@@ -385,11 +402,13 @@ def main(argv: list[str] | None = None) -> int:
                     for module in sorted(modules, key=lambda m: (m.phase, m.name)):
                         print(f"{module.name}\t{module.kind}\t{module.directory}\t{module.check_job() or '-'}")
                 return 0
-            routes, conflicts = ingress.ordered_routes(modules, CONFIG)
+            modules = nodes.select(modules, selected_node)
+            node_config = nodes.configuration(CONFIG, selected_node)
+            routes, conflicts = ingress.ordered_routes(modules, node_config)
             print(json.dumps({
                 "modules": {m.name: {"kind": m.kind, "directory": m.directory, "job": m.check_job()}
                             for m in sorted(modules, key=lambda m: (m.phase, m.name))},
-                "ingress": ingress.rules(routes, CONFIG)[0], "conflicts": conflicts,
+                "ingress": ingress.rules(routes, node_config)[0], "conflicts": conflicts,
                 "state": sorted(p for m in modules for p in m.state)}, indent=2))
             return 1 if failures or conflicts else 0
         if args.command == "self-check":
@@ -403,7 +422,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "install":
             with (deploy_dir / "deploy.lock").open("w") as lock:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                install(source, deploy_dir, args.repo, args.tunnel_name)
+                install(source, deploy_dir, args.repo, args.tunnel_name or selected_node["tunnelName"], selected_node["id"])
         else:
             serve(source, deploy_dir, args.repo)
         return 0

@@ -1,3 +1,4 @@
+import { catalog } from "../nodes.js";
 // Drives the Secrets page in Chrome against the real API and built pages,
 // with temporary env files linked into a release the way deployment links
 // them, a fake GitHub CLI and a fake GitHub API: the owner views, reveals,
@@ -101,7 +102,7 @@ const noMatter: MatterAdmin = {
 const accounts = new Accounts(":memory:");
 const { token: invite } = accounts.createInvite();
 await accounts.join(invite, "guest", guestPassword);
-accounts.setScopes("guest", ["lights", "devices", "manage"]);
+accounts.setGrants("guest", [{ node: catalog.defaultNode, scopes: ["lights", "devices", "manage"] }]);
 const api = new Api(new Hub(), noMatter, ownerPassword, accounts, new Clicks(":memory:"), silentLog, {
   health: null,
   layoutPath: null,

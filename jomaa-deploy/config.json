@@ -43,5 +43,6 @@
     "requestTimeoutSeconds": 60,
     "retryDelaySeconds": 5,
     "retryStatuses": [409, 502, 503, 504, 520, 521, 522, 523, 524]
-  }
+  },
+  "nodesFile": "jomaa-deploy/nodes.json"
 }

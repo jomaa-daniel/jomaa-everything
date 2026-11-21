@@ -1,0 +1,18 @@
+{
+  "id": "second-home",
+  "name": "Second home",
+  "enabled": false,
+  "mode": "node",
+  "hostname": "second-home.example.com",
+  "tunnelName": "second-home",
+  "secretEnv": "SECOND_HOME_NODE_SECRET",
+  "deploySecret": "SECOND_HOME_DEPLOY_SECRET",
+  "scopes": ["lights"],
+  "publicRoutes": [["GET", "/healthz"]],
+  "modules": ["hub"],
+  "moduleOverrides": {
+    "hub": {
+      "routes": [{"hostname": "{node.hostname}"}]
+    }
+  }
+}

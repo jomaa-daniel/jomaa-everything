@@ -1,3 +1,4 @@
+import { nodeURL, refreshNodePicker } from "/home/nodes.js";
 import { sessionEndEvent, updateUIHints } from "/home/ui.js";
 import { loadHealth, resetHealth, closeHealth, selectHealth } from "/manage/health.js";
 import { PicoPanel } from "/manage/picos.js";
@@ -136,7 +137,7 @@ function signedIn(value) {
 }
 
 async function api(path, data, method = "POST") {
-  const response = await fetch(path, {
+  const response = await fetch(nodeURL(path), {
     method: data === undefined ? "GET" : method,
     credentials: "same-origin",
     cache: "no-store",
@@ -177,6 +178,7 @@ function restoreFocus(id) {
 async function load(refreshHistory = false) {
   const current = generation;
   const focused = document.activeElement?.id;
+  await refreshNodePicker(["manage", "devices"]);
   const session = await api("/api/session");
   canManage = session.owner || session.scopes.includes("manage");
   canHealth = session.owner || session.scopes.includes("devices");

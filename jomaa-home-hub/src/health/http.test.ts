@@ -1,3 +1,4 @@
+import { catalog } from "../nodes.js";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -162,7 +163,7 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     const guest = accounts.createSession("guest");
     assert.equal((await call("/api/devices", "GET", undefined, guest)).status, 403, "accounts start without access");
     assert.equal((await call("/api/devices/enroll", "POST", { id: "x", name: "X" }, guest)).status, 403);
-    accounts.setScopes("guest", ["devices"]);
+    accounts.setGrants("guest", [{ node: catalog.defaultNode, scopes: ["devices"] }]);
     assert.equal((await call("/api/devices", "GET", undefined, guest)).status, 200, "the devices scope grants access");
     const issued = await call("/api/devices/enroll", "POST", { id: "pico-api", name: "API Pico" }, admin);
     assert.equal(issued.status, 201);
@@ -280,7 +281,7 @@ await test("HTTPS API separates admin and device auth and persists authenticated
     });
     await snapshot;
     assert.match(liveText, /a632001122/);
-    accounts.setScopes("guest", []);
+    accounts.setGrants("guest", [{ node: catalog.defaultNode, scopes: [] }]);
     await call(
       capturePath,
       "POST",

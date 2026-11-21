@@ -1,4 +1,5 @@
 import { sessionEndEvent } from "/home/ui.js";
+import { nodeURL } from "/home/nodes.js";
 const $ = (id) => document.getElementById(id);
 let devices = [];
 let healthSettings = null;
@@ -68,7 +69,7 @@ function signedIn(value) {
 }
 
 async function api(path, method = "GET", data, signal) {
-  const response = await fetch(path, {
+  const response = await fetch(nodeURL(path), {
     method,
     credentials: "same-origin",
     cache: "no-store",
@@ -340,7 +341,7 @@ function startCaptures() {
   const id = selected;
   const generation = captureGeneration;
   $("i2c-status").textContent = "Connecting…";
-  const source = new EventSource(`/api/devices/${encodeURIComponent(id)}/i2c/events`);
+  const source = new EventSource(nodeURL(`/api/devices/${encodeURIComponent(id)}/i2c/events`));
   captureSource = source;
   source.addEventListener("snapshot", (event) => {
     if (generation !== captureGeneration || selected !== id) return;

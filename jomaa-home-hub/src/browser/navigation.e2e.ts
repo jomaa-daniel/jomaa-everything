@@ -1,3 +1,4 @@
+import { catalog } from "../nodes.js";
 import assert from "node:assert/strict";
 import { isFocused } from "./dom.js";
 import { after, test } from "node:test";
@@ -32,7 +33,7 @@ health.enroll({ id: "pico-b", name: "Second Pico" });
 for (const name of ["alpha", "beta"]) {
   await accounts.join(accounts.createInvite().token, name, password);
 }
-accounts.setScopes("alpha", ["devices"]);
+accounts.setGrants("alpha", [{ node: catalog.defaultNode, scopes: ["devices"] }]);
 const origin = await serve(
   new Api(new Hub(), matter, password, accounts, new Clicks(":memory:"), silentLog, {
     health,
@@ -82,20 +83,20 @@ test("Home arrows navigate links, stop at boundaries, and Tab leaves the group",
 
 test("Permission grid arrows move between accounts and scopes without granting access", async () => {
   const page = await pageAt("/accounts");
-  const first = page.getByLabel("alpha can open Lights");
+  const first = page.getByLabel("alpha can open Lights at Home");
   await first.waitFor();
   await first.focus();
   await page.keyboard.press("ArrowRight");
-  assert.ok(await page.getByLabel("alpha can open Device health").evaluate(isFocused));
+  assert.ok(await page.getByLabel("alpha can open Device health at Home").evaluate(isFocused));
   await page.keyboard.press("ArrowDown");
-  assert.ok(await page.getByLabel("beta can open Device health").evaluate(isFocused));
-  assert.deepEqual(accounts.account("alpha")?.scopes, ["devices"]);
-  assert.deepEqual(accounts.account("beta")?.scopes, []);
+  assert.ok(await page.getByLabel("beta can open Device health at Home").evaluate(isFocused));
+  assert.deepEqual(accounts.account("alpha")?.grants[0]?.scopes, ["devices"]);
+  assert.deepEqual(accounts.account("beta")?.grants, []);
   await page.keyboard.press("Space");
   await page.locator("#notice.success").waitFor();
-  assert.deepEqual(accounts.account("beta")?.scopes, ["devices"]);
+  assert.deepEqual(accounts.account("beta")?.grants[0]?.scopes, ["devices"]);
   await page.keyboard.press("ArrowLeft");
-  assert.ok(await page.getByLabel("beta can open Lights").evaluate(isFocused));
+  assert.ok(await page.getByLabel("beta can open Lights at Home").evaluate(isFocused));
 });
 
 test("health-only accounts use the unified page without organization controls", async () => {

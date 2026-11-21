@@ -34,3 +34,9 @@ def load_env(path: Path) -> dict[str, str]:
                 key, _, value = line.partition("=")
                 values[key.strip()] = value.strip().strip("'\"")
     return {**values, **os.environ}
+
+
+def current_node() -> dict:
+    """The installation identity resolved against the shared committed catalog."""
+    import nodes
+    return nodes.get(CONFIG, deploy_dir=deploy_dir())

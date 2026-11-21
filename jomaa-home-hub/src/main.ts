@@ -5,6 +5,8 @@ import { createServer } from "node:http";
 import { createServer as createTLSServer } from "node:https";
 import { readFileSync } from "node:fs";
 import { Api } from "./api.js";
+import { Federation } from "./federation.js";
+import { catalog } from "./nodes.js";
 import { loadConfig, parseListen, usesDriver } from "./config.js";
 import { GoveeClient, defaultBaseURL } from "./govee.js";
 import { Hub } from "./hub.js";
@@ -103,22 +105,36 @@ async function run(log: Log): Promise<void> {
     } catch {
       log.error("USB Pico imaging setup is unavailable", {});
     }
-    const api = new Api(Hub.build(cfg, govee, matter), matter, password, people, followed, log, {
-      health: store,
-      layoutPath: cliOptions.config,
-      organization,
-      secrets: {
-        files: new EnvFiles(fileURLToPath(releaseRoot), settings.secrets.envFiles, deploySettings.hubPasswordMinLength),
-        workflow: new DeployWorkflow({
-          api: deploySettings.githubApi,
-          repo: deploySettings.repo,
-          workflow: deploySettings.workflow,
-          timeoutMs: deploySettings.githubTimeoutSeconds * 1000,
-        }),
-        cli: new GitHubCli(settings.secrets.ghCommand, deploySettings.githubTimeoutSeconds * 1000),
+    const federation = new Federation(catalog, cliOptions.node);
+    const api = new Api(
+      Hub.build(cfg, govee, matter),
+      matter,
+      password,
+      people,
+      followed,
+      log,
+      {
+        health: store,
+        layoutPath: cliOptions.config,
+        organization,
+        secrets: {
+          files: new EnvFiles(
+            fileURLToPath(releaseRoot),
+            settings.secrets.envFiles,
+            deploySettings.hubPasswordMinLength,
+          ),
+          workflow: new DeployWorkflow({
+            api: deploySettings.githubApi,
+            repo: deploySettings.repo,
+            workflow: deploySettings.workflow,
+            timeoutMs: deploySettings.githubTimeoutSeconds * 1000,
+          }),
+          cli: new GitHubCli(settings.secrets.ghCommand, deploySettings.githubTimeoutSeconds * 1000),
+        },
+        picos: images,
       },
-      picos: images,
-    });
+      federation,
+    );
     const cert = process.env["HUB_TLS_CERT"];
     const key = process.env["HUB_TLS_KEY"];
     if (Boolean(cert) !== Boolean(key)) throw new Error("set both HUB_TLS_CERT and HUB_TLS_KEY");

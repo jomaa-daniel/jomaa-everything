@@ -7,10 +7,19 @@ import type { Hub } from "../hub.js";
 import type { Organization } from "../organization.js";
 import { HealthError, type HealthStore } from "./store.js";
 import { settings } from "../settings.js";
+import { requestBody } from "../request-body.js";
 import { Connectivity } from "./connectivity.js";
 
 /** Serves device health to sessions with the devices scope, while pings use only device credentials. */
 export class HealthHttp {
+  /** Route capability metadata; device-authenticated reports have no account scope. */
+  static capability(req: IncomingMessage): "devices" | null | undefined {
+    const path = new URL(req.url ?? "/", "http://hub").pathname;
+    if (path !== "/api/devices" && !path.startsWith("/api/devices/")) return undefined;
+    if (req.method === "POST" && /^\/api\/devices\/[^/]+\/(health|i2c|fan\/report)$/.test(path)) return null;
+    return "devices";
+  }
+
   readonly #limiter = new LoginLimiter();
   readonly #connectivity: Connectivity;
   constructor(
@@ -257,17 +266,10 @@ function requireSecureCredential(req: IncomingMessage): void {
 async function body(req: IncomingMessage, maxBytes = 4096): Promise<Record<string, unknown>> {
   if (req.headers["content-type"]?.split(";")[0]?.trim() !== "application/json")
     throw new HealthError(415, "use application/json");
-  const chunks: Buffer[] = [];
-  let size = 0;
-  for await (const chunk of req) {
-    const bytes = chunk as Buffer;
-    size += bytes.length;
-    if (size > maxBytes) throw new HealthError(413, "device request too large");
-    chunks.push(bytes);
-  }
+  const bytes = await requestBody(req, maxBytes);
   let value: unknown;
   try {
-    value = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    value = JSON.parse(bytes.toString("utf8"));
   } catch {
     throw new HealthError(400, "invalid JSON");
   }

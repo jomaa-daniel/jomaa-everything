@@ -14,6 +14,8 @@ import { Hub } from "../hub.js";
 import { silentLog } from "../log.js";
 import { MatterNotReadyError, type MatterAdmin } from "../matter/nodes.js";
 import { serve } from "../testing.js";
+import { Federation } from "../federation.js";
+import { catalog } from "../nodes.js";
 
 const ownerPassword = "owner password for the browser test";
 const guestPassword = "guest password for the browser test";
@@ -57,13 +59,63 @@ const lamp = new Lamp();
 const hub = new Hub();
 hub.addDevice("test", lamp);
 hub.addRoom(new Group("living-room", "Living room", [lamp]));
-const api = new Api(hub, noMatter, ownerPassword, new Accounts(":memory:"), new Clicks(":memory:"), silentLog, {
-  health: new HealthStore(":memory:"),
-  layoutPath: null,
-  organization: null,
-  secrets: null,
-  picos: null,
+const config = structuredClone(catalog);
+config.nodes.push({
+  id: "remote",
+  name: "Remote",
+  enabled: true,
+  mode: "node",
+  hostname: "remote.example.org",
+  tunnelName: "remote",
+  secretEnv: "REMOTE_KEY",
+  deploySecret: "REMOTE_DEPLOY_KEY",
+  scopes: ["lights"],
+  publicRoutes: [["GET", "/healthz"]],
+  modules: ["hub"],
+  moduleOverrides: {},
 });
+const keys = { REMOTE_KEY: "fixture-node-key-long-enough-for-signing-requests" };
+const remoteLamp = new Lamp();
+const remoteHub = new Hub();
+remoteHub.addDevice("test", remoteLamp);
+remoteHub.addRoom(new Group("living-room", "Remote room", [remoteLamp]));
+const remoteApi = new Api(
+  remoteHub,
+  noMatter,
+  ownerPassword,
+  new Accounts(":memory:"),
+  new Clicks(":memory:"),
+  silentLog,
+  {
+    health: null,
+    layoutPath: null,
+    organization: null,
+    secrets: null,
+    picos: null,
+  },
+  new Federation(config, "remote", keys),
+);
+const remoteOrigin = await serve(remoteApi.handle);
+const transport: typeof fetch = (url, init) => {
+  const target = new URL(typeof url === "string" ? url : url instanceof URL ? url.href : url.url);
+  return fetch(remoteOrigin + target.pathname + target.search, init);
+};
+const api = new Api(
+  hub,
+  noMatter,
+  ownerPassword,
+  new Accounts(":memory:"),
+  new Clicks(":memory:"),
+  silentLog,
+  {
+    health: new HealthStore(":memory:"),
+    layoutPath: null,
+    organization: null,
+    secrets: null,
+    picos: null,
+  },
+  new Federation(config, config.defaultNode, keys, transport),
+);
 const origin = await serve(api.handle);
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const owner = await browser.newContext();
@@ -144,7 +196,7 @@ await test("a new account signs in but can't open any page", async () => {
 
 await test("the accounts page lists the new account and no longer lists the used invite", async () => {
   const page = await open(owner, "/accounts");
-  await page.getByLabel("sarah can open Lights").waitFor();
+  await page.getByLabel("sarah can open Lights at Home").waitFor();
   await page.locator("#invites-empty").waitFor();
   assert.equal(await page.locator("#invites li").count(), 0);
   await page.close();
@@ -152,11 +204,11 @@ await test("the accounts page lists the new account and no longer lists the used
 
 await test("the owner grants Lights and the account controls the room", async () => {
   const permissions = await open(owner, "/accounts");
-  await permissions.getByLabel("sarah can open Lights").check();
+  await permissions.getByLabel("sarah can open Lights at Home").check();
   await permissions.locator("#notice", { hasText: "Saved sarah" }).waitFor();
   await permissions.reload();
-  assert.ok(await permissions.getByLabel("sarah can open Lights").isChecked(), "the grant was saved");
-  assert.ok(!(await permissions.getByLabel("sarah can open Device health").isChecked()));
+  assert.ok(await permissions.getByLabel("sarah can open Lights at Home").isChecked(), "the grant was saved");
+  assert.ok(!(await permissions.getByLabel("sarah can open Device health at Home").isChecked()));
   await permissions.close();
 
   const lights = await open(guest, "/lights");
@@ -171,7 +223,7 @@ await test("the owner grants Lights and the account controls the room", async ()
   await devices.close();
 
   const revoke = await open(owner, "/accounts");
-  await revoke.getByLabel("sarah can open Lights").uncheck();
+  await revoke.getByLabel("sarah can open Lights at Home").uncheck();
   await revoke.locator("#notice", { hasText: "Saved sarah" }).waitFor();
   await revoke.close();
 
@@ -191,6 +243,41 @@ await test("deleting the account signs it out", async () => {
   const devices = await open(guest, "/manage");
   await devices.locator("#login-section").waitFor();
   await devices.close();
+});
+
+await test("a shared link grants selected homes and the home picker routes light commands", async () => {
+  const permissions = await open(owner, "/accounts");
+  await permissions.locator('#invite-grants input[data-node="remote"][data-scope="lights"]').check();
+  await permissions.locator(`#invite-grants input[data-node="${config.defaultNode}"][data-scope="lights"]`).check();
+  await permissions.locator("#create").click();
+  await permissions.locator("#invites li").waitFor();
+  const link = await permissions.locator("#link").inputValue();
+  const join = await open(guest, link.slice(origin.length));
+  await join.locator("#join-form").waitFor();
+  await join.locator("#username").fill("robin");
+  await join.locator("#password").fill(guestPassword);
+  await join.locator("#confirm").fill(guestPassword);
+  await join.locator("#join-form button").click();
+  await join.locator("#done").waitFor();
+  await join.close();
+  const lights = await open(guest, "/lights");
+  await lights.locator("#username").fill("robin");
+  await lights.locator("#password").fill(guestPassword);
+  await lights.locator("#login-form button.primary").click();
+  await lights.locator("#controller").waitFor();
+  assert.equal(await lights.getByLabel("Home", { exact: true }).locator("option").count(), 2);
+  await lights.getByLabel("Home", { exact: true }).selectOption("remote");
+  await lights.locator("#target-title", { hasText: "Remote room" }).waitFor();
+  const localOn = lamp.current.on;
+  await lights.locator("#power-toggle").click();
+  await lights.locator('#power-toggle[aria-checked="true"]').waitFor();
+  assert.equal(remoteLamp.current.on, true);
+  assert.equal(lamp.current.on, localOn);
+  await permissions.reload();
+  assert.ok(await permissions.getByLabel("robin can open Lights at Remote").isChecked());
+  assert.ok(!(await permissions.getByLabel("robin can open Device health at Home").isChecked()));
+  await lights.close();
+  await permissions.close();
 });
 
 await test("no page threw a script error", () => {

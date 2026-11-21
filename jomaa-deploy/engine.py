@@ -17,6 +17,7 @@ import json
 import shutil
 import subprocess
 import sys
+import nodes
 from collections import defaultdict
 from pathlib import Path
 
@@ -215,6 +216,13 @@ def activate(ctx: Context, jobs: dict[str, str | None] | None) -> dict:
     """Deploy every module of ctx.release, switch the current pointer to it if its receiver loads, and report."""
     known = records(ctx.deploy_dir)
     modules, failures = discover(ctx.release)
+    selected_node = nodes.get(ctx.config, deploy_dir=ctx.deploy_dir)
+    modules = nodes.select(modules, selected_node)
+    ctx.config = nodes.configuration(ctx.config, selected_node)
+    if selected_node["modules"] is not None:
+        directories = {m.directory for m in modules}
+        directories.update(r["directory"] for r in known.values() if r["name"] in selected_node["modules"])
+        failures = {directory: error for directory, error in failures.items() if directory in directories}
     results = recover(ctx, known, modules)
     live: dict[str, Module] = {}
     for directory, error in failures.items():

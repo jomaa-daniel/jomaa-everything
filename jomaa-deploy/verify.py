@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 
 import engine
+import nodes
+import settings
 from modules.base import expand
 
 
@@ -19,6 +21,8 @@ def main(argv: list[str] | None = None) -> int:
     root = Path(__file__).resolve().parent.parent
     try:
         modules, failures = engine.discover(root)
+        for node in nodes.catalog(settings.CONFIG)["nodes"]:
+            nodes.select(modules, nodes.get(settings.CONFIG, node["id"]))
         for directory, error in failures.items():
             print(f"{directory} failed to load: {error}", file=sys.stderr)
         selected = [m for m in modules if (not args.names or m.name in args.names)

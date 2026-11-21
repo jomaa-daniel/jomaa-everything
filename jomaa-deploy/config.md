@@ -14,6 +14,7 @@ GitHub Actions secret `JOMAA_DEPLOY_SECRET` holds the same value.
 
 | Key | Type | Meaning |
 | --- | --- | --- |
+| `nodesFile` | repository path | Shared node catalog; see [nodes.md](nodes.md). |
 | `repo` | `OWNER/REPOSITORY` | Repository deployed from `main`, unless `--repo` or `JOMAA_DEPLOY_REPO` names another. |
 | `userAgent` | string | `User-Agent` of requests to GitHub, Cloudflare's downloads, the deployment receiver and health checks. |
 | `webhook` | object | The deployment receiver. |

@@ -1,9 +1,11 @@
 # jomaa-deploy
 
-Deployment for the Jomaa repository on jerry. Every top-level folder with a
+Deployment for the Jomaa repository across the installations in the
+[node catalog](nodes.md). Every top-level folder with a
 `deploy_module.py` is a module: a service, a command, an external origin or a
 set of checks. Pushing to `main` verifies each module on its own, and the
-receiver on jerry deploys the modules whose checks passed and that changed.
+receiver on each enabled installation deploys its selected modules whose
+checks passed and that changed.
 A failing module keeps its previous version and does not hold back the
 others. The Python tools use the standard library.
 

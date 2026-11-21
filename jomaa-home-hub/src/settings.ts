@@ -79,6 +79,7 @@ function parseI2C(value: unknown): I2CSettings {
 
 /** The deployment settings the hub reads from the deployment's config.json. */
 export interface DeploySettings {
+  nodesFile: string;
   repo: string;
   workflow: string;
   githubApi: string;
@@ -145,6 +146,7 @@ export function parseDeploySettings(text: string): DeploySettings {
     "repo",
     "github",
     "hubPasswordMinLength",
+    "nodesFile",
   );
   const github = new Fields(config.value("github"), "deployment config.json github").required(
     "api",
@@ -160,6 +162,7 @@ export function parseDeploySettings(text: string): DeploySettings {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error("deployment config.json repo must be OWNER/REPOSITORY");
   return {
     repo,
+    nodesFile: releasePath(config.string("nodesFile"), "nodesFile"),
     workflow: nonEmpty(github, "workflow", "github.workflow"),
     githubApi: nonEmpty(github, "api", "github.api"),
     githubTimeoutSeconds: positive(github, "timeoutSeconds", "github"),

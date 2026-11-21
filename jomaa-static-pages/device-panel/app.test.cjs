@@ -4,9 +4,9 @@ const { join } = require("node:path");
 const { test } = require("node:test");
 const vm = require("node:vm");
 
-const source = readFileSync(join(__dirname, "app.js"), "utf8").split(
-  '$("login-form").addEventListener',
-)[0];
+const source = readFileSync(join(__dirname, "app.js"), "utf8")
+  .replace(/^import[^\n]+\n/, "")
+  .split('$("login-form").addEventListener')[0];
 
 function panel() {
   const calls = [];

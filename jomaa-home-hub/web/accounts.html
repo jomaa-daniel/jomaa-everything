@@ -15,7 +15,9 @@
     <header><a href="/home">Jomaa Home</a><button id="logout" hidden>Sign out</button></header>
     <main>
       <h1>Accounts</h1>
-      <p class="muted">Invite people and choose which pages each account can open. Changes save immediately.</p>
+      <p class="muted">
+        Invite people and choose which homes and capabilities each account can access. Changes save immediately.
+      </p>
       <p id="notice" role="status" aria-live="polite"></p>
       <section id="login-section" hidden>
         <form id="login-form" class="login">
@@ -42,9 +44,13 @@
         <section aria-labelledby="invites-heading">
           <h2 id="invites-heading">Invites</h2>
           <p class="muted">
-            Each link creates one account and expires on the date listed. New accounts have no access until you grant it
-            above.
+            Each link creates one account and expires on the date listed. Choose the homes and capabilities included in
+            the link. You can change access above at any time.
           </p>
+          <fieldset>
+            <legend>Access included in this link</legend>
+            <div id="invite-grants" class="group-options"></div>
+          </fieldset>
           <div class="create-form">
             <label for="link" class="sr-only">Invite link</label
             ><input id="link" readonly placeholder="No link yet" /><button id="copy" disabled>Copy</button

@@ -1,0 +1,28 @@
+{
+  "defaultNode": "home",
+  "identityFile": "node.json",
+  "transport": {
+    "requestTimeoutSeconds": 360,
+    "maxRequestBytes": 1048576,
+    "maxResponseBytes": 8388608,
+    "delegationLifetimeSeconds": 30,
+    "secretMinLength": 32,
+    "replayLimit": 10000
+  },
+  "nodes": [
+    {
+      "id": "home",
+      "name": "Home",
+      "enabled": true,
+      "mode": "gateway",
+      "hostname": null,
+      "tunnelName": null,
+      "secretEnv": null,
+      "deploySecret": "JOMAA_DEPLOY_SECRET",
+      "scopes": ["lights", "devices", "manage"],
+      "publicRoutes": [["GET", "/healthz"]],
+      "modules": null,
+      "moduleOverrides": {}
+    }
+  ]
+}

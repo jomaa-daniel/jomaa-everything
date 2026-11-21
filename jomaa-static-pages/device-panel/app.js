@@ -1,3 +1,4 @@
+import { nodeURL, refreshNodePicker } from "/home/nodes.js";
 /**
  * @typedef {{ brightness: boolean, colorTemperature: boolean, color: boolean }} Features
  * @typedef {{ id: string, name: string, kind: string, members: string[], features: Features }} Target
@@ -200,7 +201,7 @@ function parseObservation(value) {
  */
 async function api(path, method = "GET", body = null) {
   const session = app.session;
-  const response = await fetch(path, {
+  const response = await fetch(nodeURL(path), {
     method,
     cache: "no-store",
     signal: AbortSignal.timeout(20_000),
@@ -570,6 +571,7 @@ async function refresh(background = false) {
   app.reconnect = false;
   render();
   try {
+    await refreshNodePicker(["lights"]);
     const targets = parseTargets(await api("/api/targets"));
     if (session !== app.session || view !== app.view) return;
     app.authenticated = true;

@@ -21,13 +21,16 @@ jobs:
     outputs:
       modules: ${{ steps.list.outputs.modules }}
       e2e: ${{ steps.e2e.outputs.run }}
+      nodes: ${{ steps.list.outputs.nodes }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - id: list
-        run: echo "modules=$(python3 jomaa-deploy/deploy.py modules --json)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "modules=$(python3 jomaa-deploy/deploy.py modules --json)" >> "$GITHUB_OUTPUT"
+          echo "nodes=$(python3 jomaa-deploy/deploy.py nodes --json)" >> "$GITHUB_OUTPUT"
       # The container suite runs when the deployment code or this workflow
       # changed, and on every scheduled and manual run.
       - id: e2e
@@ -115,9 +118,14 @@ jobs:
           if-no-files-found: ignore
 
   deploy:
-    needs: [verify, check]
+    needs: [modules, verify, check]
+    name: deploy (${{ matrix.node.id }})
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ${{ fromJSON(needs.modules.outputs.nodes) }}
     concurrency:
-      group: jomaa-deploy-${{ github.ref }}
+      group: jomaa-deploy-${{ github.ref }}-${{ matrix.node.id }}
       cancel-in-progress: false
     if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.verify.result == 'success'
     runs-on: ubuntu-latest
@@ -129,6 +137,6 @@ jobs:
           python-version: '3.12'
       - name: Trigger signed deployment
         env:
-          JOMAA_DEPLOY_SECRET: ${{ secrets.JOMAA_DEPLOY_SECRET }}
+          JOMAA_DEPLOY_SECRET: ${{ secrets[matrix.node.secret] }}
           JOMAA_DEPLOY_URL: ${{ vars.JOMAA_DEPLOY_URL }}
-        run: python3 jomaa-deploy/notify.py
+        run: python3 jomaa-deploy/notify.py --node "${{ matrix.node.id }}"

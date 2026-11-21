@@ -1,3 +1,4 @@
+import { catalog } from "./nodes.js";
 import assert from "node:assert/strict";
 import {
   chmodSync,
@@ -151,7 +152,7 @@ async function setup(ghCommand: string = gh.loggedIn): Promise<Env> {
   const accounts = new Accounts(":memory:");
   const { token: invite } = accounts.createInvite();
   await accounts.join(invite, "guest", "guest password for the test");
-  accounts.setScopes("guest", ["lights", "devices", "manage"]);
+  accounts.setGrants("guest", [{ node: catalog.defaultNode, scopes: ["lights", "devices", "manage"] }]);
   const workflow = new DeployWorkflow({
     api: fakeUrl,
     repo: deploySettings.repo,

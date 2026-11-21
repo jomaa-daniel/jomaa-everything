@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import settings
+import nodes
 from deploy import load_env
 
 ROOT = Path(__file__).resolve().parent.parent / "jomaa-home-hub"
@@ -18,7 +19,7 @@ def main() -> None:
         # Bluetooth pairing talks to BlueZ over D-Bus.
         os.environ.setdefault("NOBLE_BINDINGS", "dbus")
     commands = {
-        "hub": ["node", str(ROOT / "dist/main.js"), "--config", str(ROOT / "config.json"),
+        "hub": ["node", str(ROOT / "dist/main.js"), "--node", settings.current_node()["id"], "--config", str(ROOT / "config.json"),
                 "--matter-storage", str(DATA / "matter-data"),
                 "--bluetooth-adapter", os.environ.get("MATTER_BLUETOOTH_ADAPTER", "0")],
         "tunnel": [str(DATA / "cloudflared"), "--config", str(DATA / "tunnel.yml"),

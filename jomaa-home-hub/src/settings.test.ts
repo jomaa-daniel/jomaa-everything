@@ -78,6 +78,7 @@ test("the hub reads its deployment settings from the deployment's config.json", 
   const github = new Fields(deploy.value("github"), "github");
   assert.deepEqual(deploySettings, {
     repo: deploy.string("repo"),
+    nodesFile: deploy.string("nodesFile"),
     workflow: github.string("workflow"),
     githubApi: github.string("api"),
     githubTimeoutSeconds: github.int("timeoutSeconds"),
