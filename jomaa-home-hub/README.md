@@ -229,8 +229,9 @@ tunnel or the hub's logs.
 Opening a link shows a form for a username (3 to 32 lowercase letters, digits,
 dots, dashes, or underscores) and a password within
 `accounts.passwordLength`. Creating
-the account leaves the browser's current session unchanged. A new account can't
-open any page.
+the account leaves the browser's current session unchanged. The completion
+screen offers sign-in links for the pages and homes granted by the invitation.
+An account without grants is told to ask the owner for access.
 
 The Accounts section of `/accounts` lists accounts with a checkbox per scope and a button
 that deletes the account; each change saves immediately:
@@ -287,6 +288,10 @@ logged.
 Chrome against the real API and built pages, with a fake light, temporary env
 files, a fake GitHub CLI and a fake GitHub API. It uses the installed
 Google Chrome (`channel: "chrome"`); CI runs it as a declared check.
+
+Set `JOMAA_UI_SCREENSHOTS` to an existing output directory to capture desktop
+and phone views of the tested flows. Actions publishes these test-fixture
+images in the `hub-ui-screenshots` artifact for visual review.
 
 ## Register lights
 

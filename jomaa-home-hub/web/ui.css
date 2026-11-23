@@ -120,6 +120,21 @@ body.tui-page {
   color: var(--on-accent);
   border-color: var(--accent);
 }
+
+.tui-page a.primary-action {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 7px 10px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  text-decoration: none;
+}
+
+.tui-page a.primary-action:hover {
+  background: var(--accent-hover);
+}
 .tui-page button.primary:hover {
   background: var(--accent-hover);
 }

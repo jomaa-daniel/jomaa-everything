@@ -9,12 +9,11 @@
     <script type="module" src="/join/app.js"></script>
     <link rel="stylesheet" href="/home/ui.css" />
     <script type="module" src="/home/ui.js"></script>
-    <script type="module" src="/home/prefetch.js"></script>
   </head>
   <body class="tui-page">
-    <header><a href="/home">Jomaa Home</a></header>
+    <header data-hub-nav="off"><a href="/home">Jomaa Home</a></header>
     <main>
-      <h1>Create your account</h1>
+      <h1 id="join-title">Create your account</h1>
       <noscript><p>Enable JavaScript to create your account.</p></noscript>
       <p id="notice" role="status" aria-live="polite"></p>
       <p id="invalid" hidden>This invite link is invalid, used, or expired. Ask for a new one.</p>
@@ -35,10 +34,12 @@
         <input id="confirm" type="password" autocomplete="new-password" required />
         <button class="primary">Create account</button>
       </form>
-      <p id="done" hidden>
-        Account <strong id="done-username"></strong> created. Sign in to use the homes and capabilities included in your
-        invitation. <a href="/lights">Light controls</a> · <a href="/home">Jomaa Home</a>
-      </p>
+      <section id="done" hidden>
+        <p>Account <strong id="done-username"></strong> created.</p>
+        <p id="join-next"></p>
+        <div id="join-destinations" class="actions"></div>
+        <p><a href="/home">Jomaa Home</a></p>
+      </section>
     </main>
   </body>
 </html>

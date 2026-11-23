@@ -18,6 +18,10 @@ export async function refreshNodePicker(scopes) {
   }
   const { nodes } = await response.json();
   const available = nodes.filter((node) => scopes.some((scope) => node.scopes.includes(scope)));
+  if (available.length === 0) {
+    container.replaceChildren();
+    return;
+  }
   const label = document.createElement("label");
   label.textContent = "Home ";
   const select = document.createElement("select");
@@ -29,7 +33,14 @@ export async function refreshNodePicker(scopes) {
     select.append(option);
   }
   const selected = new URL(location.href).searchParams.get("node");
-  if (selected !== null) select.value = selected;
+  if (selected !== null && !available.some((node) => node.id === selected)) {
+    const unavailable = document.createElement("option");
+    unavailable.value = "";
+    unavailable.textContent = "Choose an available home";
+    unavailable.disabled = true;
+    unavailable.selected = true;
+    select.prepend(unavailable);
+  } else if (selected !== null) select.value = selected;
   else if (available.length) {
     const url = new URL(location.href);
     url.searchParams.set("node", available[0].id);

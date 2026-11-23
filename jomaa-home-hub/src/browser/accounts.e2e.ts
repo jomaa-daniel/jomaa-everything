@@ -173,6 +173,8 @@ await test("the share link creates an account with a username and password", asy
   await join.locator("#join-form button").click();
   await join.locator("#done").waitFor();
   assert.equal(await join.locator("#done-username").textContent(), "sarah");
+  assert.match((await join.locator("#join-next").textContent()) ?? "", /no home access yet/);
+  assert.equal(await join.locator(".hub-nav").count(), 0, "onboarding has no owner navigation");
   await captureReviewScreenshots(join, "join-success");
 
   await join.goto(inviteLink);
@@ -187,6 +189,7 @@ await test("a new account signs in but can't open any page", async () => {
   await lights.locator("#password").fill(guestPassword);
   await lights.locator("#login-form button.primary").click();
   await lights.locator("#login-message", { hasText: "does not have access to Lights" }).waitFor();
+  assert.equal(await lights.locator("#node-picker select").count(), 0, "no empty home control is shown");
   assert.ok(await lights.locator("#login-section").isVisible(), "the panel offers sign-in as someone else");
   await lights.close();
 
@@ -280,6 +283,10 @@ await test("a shared link grants selected homes and the home picker routes light
   await join.locator("#confirm").fill(guestPassword);
   await join.locator("#join-form button").click();
   await join.locator("#done").waitFor();
+  const destinations = join.locator("#join-destinations a");
+  assert.equal(await destinations.count(), 2);
+  assert.ok((await destinations.filter({ hasText: "Remote" }).getAttribute("href")) === "/lights?node=remote");
+  await captureReviewScreenshots(join, "join-granted");
   await join.close();
   const lights = await open(guest, "/lights");
   await lights.locator("#username").fill("robin");

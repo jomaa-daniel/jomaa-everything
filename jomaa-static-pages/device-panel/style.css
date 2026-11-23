@@ -109,11 +109,12 @@ input:disabled {
   height: 100dvh;
   padding: 0;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   align-items: stretch;
 }
 
 .controller {
+  grid-row: 2;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -124,6 +125,41 @@ input:disabled {
   padding: max(var(--pad), env(safe-area-inset-top))
     max(var(--pad), env(safe-area-inset-right)) var(--pad)
     max(var(--pad), env(safe-area-inset-left));
+}
+
+#node-picker {
+  grid-row: 1;
+  width: min(100%, 42.5rem);
+  margin-inline: auto;
+  padding: var(--pad) var(--pad) 0;
+}
+
+#node-picker:empty {
+  display: none;
+}
+
+#node-picker label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+#node-picker select {
+  min-width: 0;
+  min-height: var(--tap);
+  max-width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+}
+
+.rooms {
+  grid-row: 3;
 }
 
 .panel:has(.rooms[hidden]) .controller {
@@ -322,6 +358,12 @@ input:disabled {
 
 .power:active:not(:disabled) {
   transform: scale(0.97);
+}
+
+.power:not(.on) {
+  background: var(--card);
+  border-color: var(--line-strong);
+  color: var(--text);
 }
 
 .power.on {

@@ -631,7 +631,9 @@ test("invites are single-use, revocable, and owner-only", async () => {
     403,
     "cross-site joins are refused",
   );
-  assert.equal((await join("first")).status, 201);
+  const joined = await join("first");
+  assert.equal(joined.status, 201);
+  assert.deepEqual(joined.body["destinations"], [], "accounts without access are not sent to controls");
   assert.equal((await join("second")).status, 404, "an invite works once");
   assert.equal((await call(anon, "POST", "/api/invites/check", JSON.stringify({ token }))).status, 404);
   const used = (await call(env, "GET", `/api/invites/${id}`)).body;

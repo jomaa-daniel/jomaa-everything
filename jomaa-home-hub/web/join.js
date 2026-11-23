@@ -52,7 +52,7 @@ $("join-form").addEventListener("submit", async (event) => {
   const button = event.submitter;
   button.disabled = true;
   try {
-    const { account } = await api("/api/join", "POST", {
+    const { account, destinations } = await api("/api/join", "POST", {
       token,
       username: $("username").value,
       password: $("password").value,
@@ -60,6 +60,19 @@ $("join-form").addEventListener("submit", async (event) => {
     sessionStorage.removeItem(storageKey);
     $("join-form").hidden = true;
     $("done-username").textContent = account.username;
+    $("join-title").textContent = "Account created";
+    $("join-next").textContent = destinations.length
+      ? "Sign in with your username and password to open your controls."
+      : "Your account has no home access yet. Ask the hub owner to grant access.";
+    $("join-destinations").replaceChildren(
+      ...destinations.map((destination) => {
+        const link = document.createElement("a");
+        link.href = destination.href;
+        link.textContent = `Sign in to ${destination.name}`;
+        link.className = "primary-action";
+        return link;
+      }),
+    );
     $("done").hidden = false;
     notify("");
   } catch (reason) {

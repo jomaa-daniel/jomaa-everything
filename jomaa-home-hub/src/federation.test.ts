@@ -118,24 +118,31 @@ async function setup(data: NodeCatalog = structuredClone(config)) {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+  const destinations = new Map<string, { href: string; name: string }[]>();
   const guest = async (name: string, grants: Grant[]) => {
     const invite = await call("/api/invites", sessionToken(ownerPassword), "POST", { grants });
     assert.equal(invite.status, 201);
     const { token } = (await invite.json()) as { token: string };
     const response = await call("/api/join", "", "POST", { token, username: name, password: guestPassword });
     assert.equal(response.status, 201);
-    const joined = (await response.json()) as { account: { grants: Grant[] } };
+    const joined = (await response.json()) as {
+      account: { grants: Grant[] };
+      destinations: { href: string; name: string }[];
+    };
     assert.deepEqual(joined.account.grants, grants);
+    destinations.set(name, joined.destinations);
     const login = await call("/api/login", "", "POST", { username: name, password: guestPassword });
     return ((await login.json()) as { token: string }).token;
   };
-  return { call, guest, accounts, remoteURL, gatewayURL, localLamp, remoteLamp, remote, forwarded };
+  return { call, guest, accounts, remoteURL, gatewayURL, localLamp, remoteLamp, remote, forwarded, destinations };
 }
 
 test("invites route Bob to one home and Sally to the other, with immediate revocation", async () => {
   const env = await setup();
   const bob = await env.guest("bob", [{ node: "remote", scopes: ["lights"] }]);
   const sally = await env.guest("sally", [{ node: "gateway", scopes: ["lights"] }]);
+  assert.deepEqual(env.destinations.get("bob"), [{ href: "/lights?node=remote", name: "Lights · Remote" }]);
+  assert.deepEqual(env.destinations.get("sally"), [{ href: "/lights?node=gateway", name: "Lights · Home" }]);
   const command = "/api/targets/lamp/command";
   assert.equal((await env.call(command, bob, "POST", { on: true })).status, 200);
   assert.equal(env.remoteLamp.current.on, true);
@@ -244,6 +251,7 @@ test("the same router forwards a different capability and rejects grants exceedi
   remoteNode.scopes = ["manage"];
   const env = await setup(data);
   const bob = await env.guest("bob", [{ node: "remote", scopes: ["manage"] }]);
+  assert.deepEqual(env.destinations.get("bob"), [{ href: "/manage?node=remote", name: "Devices · Remote" }]);
   assert.equal((await env.call("/api/manage", bob)).status, 200);
   assert.ok(env.forwarded[0]?.url.endsWith("/api/manage"));
   const owner = sessionToken(ownerPassword);

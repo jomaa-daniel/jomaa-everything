@@ -536,7 +536,22 @@ export class Api {
       body.string("password") ?? "",
     );
     this.log.info("account created", { username: account.username });
-    writeJSON(res, 201, { account });
+    const nodes = this.federation.available(account.grants);
+    const destinations = pages.flatMap((page) => {
+      const required =
+        page.access !== null && typeof page.access === "object"
+          ? page.access
+          : isScope(page.access)
+            ? [page.access]
+            : [];
+      return nodes
+        .filter((node) => required.some((scope) => node.scopes.includes(scope)))
+        .map((node) => ({
+          href: `${page.path}?${new URLSearchParams({ [nodeQuery]: node.id }).toString()}`,
+          name: `${page.name} · ${node.name}`,
+        }));
+    });
+    writeJSON(res, 201, { account, destinations });
   }
 
   async #inviteList({ res }: RequestContext): Promise<void> {

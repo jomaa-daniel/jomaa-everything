@@ -10,14 +10,14 @@ const js = "text/javascript; charset=utf-8";
 /** Who can open a page: anyone, an account with the scope, or only the owner. */
 export type PageAccess = Scope | "owner" | null | readonly Scope[];
 
-/** The hub's pages by path, each with its file and who can open it. Each page is also served with a trailing slash. */
-const pageFiles: Record<string, [string, PageAccess]> = {
-  "/home": ["home.html", null],
-  "/accounts": ["accounts.html", "owner"],
-  "/join": ["join.html", null],
-  "/secrets": ["secrets.html", "owner"],
-  "/manage": ["manage.html", ["manage", "devices"]],
-  "/lights": ["lights.html", "lights"],
+/** The hub's pages by path, with file, access and display name. Each also accepts a trailing slash. */
+const pageFiles: Record<string, [string, PageAccess, string]> = {
+  "/home": ["home.html", null, "Home"],
+  "/accounts": ["accounts.html", "owner", "Accounts"],
+  "/join": ["join.html", null, "Create account"],
+  "/secrets": ["secrets.html", "owner", "Secrets"],
+  "/manage": ["manage.html", ["manage", "devices"], "Devices"],
+  "/lights": ["lights.html", "lights", "Lights"],
 };
 
 /** The pages' scripts and styles by path. */
@@ -113,12 +113,14 @@ function assetsOf(file: string): string[] {
 
 /** A hub page, who can open it, and the files it loads. */
 export interface Page {
+  name: string;
   path: string;
   access: PageAccess;
   assets: string[];
 }
 
-export const pages: readonly Page[] = Object.entries(pageFiles).map(([path, [file, access]]) => ({
+export const pages: readonly Page[] = Object.entries(pageFiles).map(([path, [file, access, name]]) => ({
+  name,
   path,
   access,
   assets: assetsOf(file),

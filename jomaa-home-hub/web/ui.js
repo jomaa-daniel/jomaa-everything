@@ -215,7 +215,7 @@ observer.observe(document.body, {
 });
 
 const header = document.querySelector("body > header");
-if (header) {
+if (header && header.dataset.hubNav !== "off") {
   const nav = document.createElement("nav");
   nav.className = "hub-nav";
   nav.setAttribute("aria-label", "Hub pages");
