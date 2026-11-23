@@ -81,7 +81,10 @@ test("Home arrows navigate links, stop at boundaries, and Tab leaves the group",
   assert.ok(!(await links.first().evaluate(isFocused)));
 });
 
-test("unified rows navigate without granting access and permissions edit in Details", async () => {
+test("unified rows navigate without granting access and permissions edit in Details", async (t) => {
+  t.after(() => {
+    accounts.setGrants("alpha", [{ node: catalog.defaultNode, scopes: ["devices"] }]);
+  });
   const page = await pageAt("/accounts");
   const inspectors = page.locator('#entries button[aria-controls="details"]');
   await inspectors.nth(1).waitFor();
