@@ -16,6 +16,7 @@ import { MatterNotReadyError, type MatterAdmin } from "../matter/nodes.js";
 import { serve } from "../testing.js";
 import { Federation } from "../federation.js";
 import { catalog } from "../nodes.js";
+import { captureReviewScreenshots } from "./dom.js";
 
 const ownerPassword = "owner password for the browser test";
 const guestPassword = "guest password for the browser test";
@@ -144,6 +145,7 @@ await test("the owner signs in and creates an invite link", async () => {
   await signInAsOwner(page);
   await page.locator("#accounts-empty").waitFor();
   await page.locator("#invites-empty").waitFor();
+  await captureReviewScreenshots(page, "invite-create");
   await page.locator("#create").click();
   await page.locator("#invites li").waitFor();
   inviteId = (await page.locator("#invites li").getAttribute("data-id")) ?? "";
@@ -157,6 +159,7 @@ await test("the owner signs in and creates an invite link", async () => {
 await test("the share link creates an account with a username and password", async () => {
   const join = await open(guest, inviteLink.slice(origin.length));
   await join.locator("#join-form").waitFor();
+  await captureReviewScreenshots(join, "join-form");
   assert.equal(new URL(join.url()).hash, "", "the token leaves the address bar");
 
   await join.locator("#username").fill("Sarah");
@@ -170,6 +173,7 @@ await test("the share link creates an account with a username and password", asy
   await join.locator("#join-form button").click();
   await join.locator("#done").waitFor();
   assert.equal(await join.locator("#done-username").textContent(), "sarah");
+  await captureReviewScreenshots(join, "join-success");
 
   await join.goto(inviteLink);
   await join.locator("#invalid").waitFor();
@@ -208,6 +212,7 @@ await test("the owner inspects the created account and daily link opens after jo
   assert.equal(await page.locator("#access-days td").last().textContent(), "2");
   assert.match((await page.locator("#access-summary").textContent()) ?? "", /^2 opens in total/);
   assert.ok(await page.locator("#access-chart svg[role=img]").isVisible());
+  await captureReviewScreenshots(page, "link-details");
   assert.ok(await page.locator("#save-expiration").isDisabled());
   await page.reload();
   await page.locator("#invite-facts", { hasText: "sarah" }).waitFor();
@@ -229,6 +234,7 @@ await test("the owner grants Lights and the account controls the room", async ()
   const lights = await open(guest, "/lights");
   await lights.locator("#controller").waitFor();
   assert.equal(await lights.locator("#target-title").textContent(), "Living room");
+  await captureReviewScreenshots(lights, "lights-home");
   await lights.locator("#power-toggle").click();
   await lights.locator('#power-toggle[aria-checked="true"]').waitFor();
   assert.equal(lamp.current.on, true, "the command reached the light");
@@ -288,9 +294,11 @@ await test("a shared link grants selected homes and the home picker routes light
   await lights.locator('#power-toggle[aria-checked="true"]').waitFor();
   assert.equal(remoteLamp.current.on, true);
   assert.equal(lamp.current.on, localOn);
+  await captureReviewScreenshots(lights, "lights-remote");
   await permissions.reload();
   assert.ok(await permissions.getByLabel("robin can open Lights at Remote").isChecked());
   assert.ok(!(await permissions.getByLabel("robin can open Device health at Home").isChecked()));
+  await captureReviewScreenshots(permissions, "account-grants");
   await lights.close();
   await permissions.close();
 });

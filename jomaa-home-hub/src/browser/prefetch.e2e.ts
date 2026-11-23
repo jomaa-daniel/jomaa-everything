@@ -13,6 +13,7 @@ import { silentLog } from "../log.js";
 import { MatterNotReadyError, type MatterAdmin } from "../matter/nodes.js";
 import { settings } from "../settings.js";
 import { serve } from "../testing.js";
+import { captureReviewScreenshots } from "./dom.js";
 
 const noMatter: MatterAdmin = {
   ready: false,
@@ -101,6 +102,7 @@ test("the home page prefetches linked pages by popularity and opens them from th
   assert.ok(mostInFlight <= settings.prefetch.concurrency, `${mostInFlight} prefetches ran at once`);
   assert.ok(!fetched().has("/home/base.css"), "files the page already loaded are not fetched again");
   assert.equal(new Set(requests.map((request) => request.path)).size, requests.length, "each file is fetched once");
+  await captureReviewScreenshots(page, "home");
 
   const prefetched = requests.length;
   await page.locator('.home-links a[href="/lights"]').click();

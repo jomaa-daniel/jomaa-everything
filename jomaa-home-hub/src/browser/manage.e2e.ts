@@ -18,6 +18,7 @@ import type { MatterAdmin, MatterNodes, NodeSummary } from "../matter/nodes.js";
 import { Organization } from "../organization.js";
 import { serve } from "../testing.js";
 import { settings } from "../settings.js";
+import { captureReviewScreenshots } from "./dom.js";
 
 const password = "management-test";
 const manageRequest = (url: URL) => url.pathname === "/api/manage";
@@ -172,6 +173,7 @@ test("Devices opens first with a compact read-only inventory and one details pan
   assert.ok(inventory && inventory.y < 350);
   const commandBar = await page.locator(".command-bar").boundingBox();
   assert.ok(commandBar && commandBar.y + commandBar.height <= 900);
+  await captureReviewScreenshots(page, "devices");
   await page.close();
 });
 

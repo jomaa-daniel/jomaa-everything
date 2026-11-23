@@ -78,6 +78,14 @@ jobs:
         with:
           python-version: '3.12'
       - run: python3 jomaa-deploy/verify.py "${{ matrix.module }}"
+        env:
+          JOMAA_UI_SCREENSHOTS: ${{ runner.temp }}
+      - if: always() && matrix.module == 'hub'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hub-ui-screenshots
+          path: ${{ runner.temp }}/ui-*.png
+          if-no-files-found: ignore
 
   e2e:
     needs: modules
