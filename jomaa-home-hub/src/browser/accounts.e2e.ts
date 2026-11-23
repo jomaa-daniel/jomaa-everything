@@ -265,7 +265,7 @@ await test("a shared link grants selected homes and the home picker routes light
   await permissions.locator('#invite-grants input[data-node="remote"][data-scope="lights"]').check();
   await permissions.locator(`#invite-grants input[data-node="${config.defaultNode}"][data-scope="lights"]`).check();
   await permissions.locator("#create").click();
-  await permissions.locator("#invites li").waitFor();
+  await permissions.locator("#notice", { hasText: "Link created" }).waitFor();
   const link = await permissions.locator("#link").inputValue();
   const join = await open(guest, link.slice(origin.length));
   await join.locator("#join-form").waitFor();

@@ -20,6 +20,7 @@ import { serve } from "../testing.js";
 import { settings } from "../settings.js";
 
 const password = "management-test";
+const manageRequest = (url: URL) => url.pathname === "/api/manage";
 const directory = mkdtempSync(join(tmpdir(), "manage-browser-"));
 const path = join(directory, "config.json");
 const cfg = {
@@ -283,7 +284,7 @@ test("mobile shows the inventory first, opens one device, and returns without ov
 test("failed assignment saves restore the server values and leave editing usable", async () => {
   const page = await openManage();
   await page.getByRole("button", { name: "Edit Pico", exact: true }).click();
-  await page.route("**/api/manage", async (route) => {
+  await page.route(manageRequest, async (route) => {
     if (route.request().method() === "POST")
       await route.fulfill({ status: 500, json: { error: "Assignment rejected" } });
     else await route.continue();
@@ -313,7 +314,7 @@ test("a failed read after saving locks editing until Refresh retrieves the saved
   const page = await openManage();
   await page.getByRole("button", { name: "Edit Pico", exact: true }).click();
   let failRead = false;
-  await page.route("**/api/manage", async (route) => {
+  await page.route(manageRequest, async (route) => {
     if (route.request().method() === "POST") {
       failRead = true;
       await route.continue();
@@ -331,7 +332,7 @@ test("a failed read after saving locks editing until Refresh retrieves the saved
   await page.locator("#notice", { hasText: "Refreshed." }).waitFor();
   assert.ok(await checkbox.isEnabled());
   assert.ok(await checkbox.isChecked());
-  await page.unroute("**/api/manage");
+  await page.unroute(manageRequest);
   await checkbox.uncheck();
   await page.locator("#notice.success").waitFor();
   await page.close();
@@ -344,7 +345,7 @@ test("an assignment finishing while searching preserves the search focus", async
   const ready = new Promise<void>((resolve) => {
     release = resolve;
   });
-  await page.route("**/api/manage", async (route) => {
+  await page.route(manageRequest, async (route) => {
     if (route.request().method() === "POST") await ready;
     await route.continue();
   });
@@ -362,7 +363,7 @@ test("an assignment finishing while searching preserves the search focus", async
 test("an expired session during a save returns to sign-in with a visible message", async () => {
   const page = await openManage();
   await page.getByRole("button", { name: "Edit Pico", exact: true }).click();
-  await page.route("**/api/manage", async (route) => {
+  await page.route(manageRequest, async (route) => {
     if (route.request().method() === "POST") await route.fulfill({ status: 401, json: { error: "Unauthorized" } });
     else await route.continue();
   });
@@ -483,7 +484,7 @@ test("a rejected name save keeps editing; Escape returns to the pencil", async (
   assert.ok(await page.locator("#device-name").isHidden());
   await page.locator("#edit-device-name").click();
   await page.locator("#device-name").fill("Rejected name");
-  await page.route("**/api/manage", async (route) => {
+  await page.route(manageRequest, async (route) => {
     if (route.request().method() === "POST") await route.fulfill({ status: 500, json: { error: "Rename rejected" } });
     else await route.continue();
   });

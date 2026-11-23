@@ -144,7 +144,10 @@ test("the room name wraps instead of being cut off beside a long row of dots", a
 
 test("when the hub can't be reached, the room's lights turn red and the status row says why", async () => {
   const page = await openPanel();
-  await page.route("**/api/targets/*/state", (route) => route.abort());
+  await page.route(
+    (url) => /^\/api\/targets\/[^/]+\/state$/.test(url.pathname),
+    (route) => route.abort(),
+  );
   await page.locator(".room-btn", { hasText: "Office" }).click();
   await page.locator("#device-dots .dot.offline").waitFor();
 
