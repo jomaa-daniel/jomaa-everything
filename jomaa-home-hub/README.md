@@ -205,13 +205,16 @@ username blank. The owner can open every page and is the only one who can
 invite people and change permissions. The phone apps and scripts sign in as the
 owner.
 
-`https://jomaa.org/accounts` manages accounts and invites on one page. Its
-Invites section creates share links of the form
-`https://jomaa.org/join#<token>`. Each link works once and expires after
-`accounts.inviteLifetimeDays`; the page shows a link only when it is created
-and lists links with their unused, account-created, expired, or revoked status.
-Inspect opens the link's details: whether an account was created, its username
-and creation time, and a daily access chart with lifetime totals. Daily counts
+`/accounts` lists accounts and invite links in one table. A link and the account
+it created share a row; accounts without a retained link have their own row.
+Inspect opens Details for that row. Create link selects a new link and opens
+its access choices. Its share URL has the path `/join#<token>` on the app's
+hostname from `deploy.json.routes` and is shown in its Details until the page
+reloads. Each link creates one account and starts with the expiry from
+`accounts.inviteLifetimeDays`.
+
+Link details show account creation, the account's name and creation time,
+expiration, and a daily access chart with lifetime totals. Daily counts
 use UTC and the window in `accounts.inviteChartDays`; the expiration editor uses
 the viewer's local timezone. Refresh retrieves the latest account and access
 information. Opens are counted when the invite page checks its token, including
@@ -229,11 +232,17 @@ tunnel or the hub's logs.
 Opening a link shows a form for a username (3 to 32 lowercase letters, digits,
 dots, dashes, or underscores) and a password within
 `accounts.passwordLength`. Creating
-the account leaves the browser's current session unchanged. A new account can't
-open any page.
+the account leaves the browser's current session unchanged. The account receives
+the link's configured grants.
 
-The Accounts section of `/accounts` lists accounts with a checkbox per scope and a button
-that deletes the account; each change saves immediately:
+Access choices are shown in Details for the selected row. An unused link's
+"Access included in this link" choices save immediately and set the grants for
+the account it creates. Used and revoked links show their original grants as
+read-only information. "Account access" edits the existing account's current
+grants, also saving immediately. Account-only rows show account access without
+link controls. Create link selects the new row and opens its access choices;
+its share URL and Copy link action are shown only for that selected link.
+Deleting an account uses its row's Delete account action.
 
 | Scope     | Grants                                                             |
 | --------- | ------------------------------------------------------------------ |
@@ -462,10 +471,11 @@ separate signing secret.
 | POST   | `/api/join`                   | `{"token","username","password"}`                                         | creates an account with the invitation's grants                                                                           |
 | GET    | `/api/invites`                |                                                                           | retained links with status, account creation information, and expiration                                                  |
 | POST   | `/api/invites`                | `{"grants":[{"node","scopes"}]}`                                          | creates an invite; returns `{"invite","token"}`                                                                           |
-| GET    | `/api/invites/{id}`           |                                                                           | owner-only `{"invite","activity"}`; daily UTC counts, lifetime total, last opening and chart window                       |
+| GET    | `/api/invites/{id}`           |                                                                           | owner-only `{"invite","account","activity"}`; daily UTC counts, lifetime total, last opening and chart window             |
 | PATCH  | `/api/invites/{id}`           | `{"expiresAt"}`                                                           | owner-only expiration edit using epoch milliseconds; must be after creation; 409 for used or revoked links                |
+| PUT    | `/api/invites/{id}/grants`    | `{"grants":[{"node","scopes"}]}`                                          | owner-only access edit for unused links; 409 for used or revoked links                                                    |
 | DELETE | `/api/invites/{id}`           |                                                                           | revokes an invite                                                                                                         |
-| GET    | `/api/accounts`               |                                                                           | accounts with their grants, the scope list and available nodes                                                            |
+| GET    | `/api/accounts`               |                                                                           | accounts, retained links, the scope list and available nodes                                                              |
 | PUT    | `/api/accounts/{user}/grants` | `{"grants":[{"node","scopes"}]}`                                          | replaces an account's grants                                                                                              |
 | GET    | `/api/nodes`                  |                                                                           | installations and scopes available to the caller                                                                          |
 | DELETE | `/api/accounts/{user}`        |                                                                           | deletes an account and its sessions                                                                                       |

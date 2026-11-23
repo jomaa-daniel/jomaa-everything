@@ -11,13 +11,11 @@
     <script type="module" src="/home/ui.js"></script>
     <script type="module" src="/home/prefetch.js"></script>
   </head>
-  <body class="tui-page">
+  <body class="tui-page accounts-page">
     <header><a href="/home">Jomaa Home</a><button id="logout" hidden>Sign out</button></header>
     <main>
-      <h1>Accounts</h1>
-      <p class="muted">
-        Invite people and choose which homes and capabilities each account can access. Changes save immediately.
-      </p>
+      <h1>Accounts and links</h1>
+      <p class="muted">Select a row to inspect a link or manage an account. Access changes save immediately.</p>
       <p id="notice" role="status" aria-live="polite"></p>
       <section id="login-section" hidden>
         <form id="login-form" class="login">
@@ -27,48 +25,56 @@
           </button>
         </form>
       </section>
-      <p id="not-owner" hidden>Only the hub owner can manage accounts.</p>
+      <p id="not-owner" hidden>Only the hub owner can manage accounts and links.</p>
       <div id="content" hidden>
-        <section aria-labelledby="accounts-heading">
-          <h2 id="accounts-heading">Accounts</h2>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr id="scope-head"></tr>
-              </thead>
-              <tbody id="account-rows" data-tui-nav="grid"></tbody>
-            </table>
-          </div>
-          <p id="accounts-empty" class="muted" hidden>No accounts yet.</p>
-        </section>
-        <section aria-labelledby="invites-heading">
-          <h2 id="invites-heading">Invites</h2>
-          <p class="muted">
-            Each link creates one account and expires on the date listed. Choose the homes and capabilities included in
-            the link. You can change access above at any time.
-          </p>
-          <fieldset>
-            <legend>Access included in this link</legend>
-            <div id="invite-grants" class="group-options"></div>
-          </fieldset>
-          <div class="create-form">
-            <label for="link" class="sr-only">Invite link</label
-            ><input id="link" readonly placeholder="No link yet" /><button id="copy" disabled>Copy</button
-            ><button id="create" class="primary">Create link</button>
-          </div>
-          <div class="invite-workspace">
-            <div>
-              <ul id="invites" data-tui-nav="vertical" class="management-list"></ul>
-              <p id="invites-empty" class="muted" hidden>No links yet.</p>
+        <div class="create-form"><button id="create" class="primary">Create link</button></div>
+        <p class="muted">Create a link, set its access in Details, then share it. Each link creates one account.</p>
+        <div class="entry-workspace">
+          <section aria-label="Accounts and links">
+            <div class="table-wrap">
+              <table id="entries-table">
+                <caption class="sr-only">
+                  Accounts and invite links
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Link</th>
+                    <th scope="col">Account</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Created</th>
+                    <th scope="col">Expires</th>
+                    <th scope="col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="entries" data-tui-nav="grid"></tbody>
+              </table>
             </div>
-            <section id="invite-detail" class="tui-pane" aria-labelledby="invite-detail-heading" hidden>
-              <div class="actions">
-                <h3 id="invite-detail-heading">Link details</h3>
-                <button id="refresh-invite" type="button">Refresh</button>
-                <button id="close-invite" type="button">Close details</button>
-              </div>
-              <p id="invite-notice" role="status" aria-live="polite"></p>
-              <dl id="invite-facts"></dl>
+            <p id="entries-empty" class="muted" hidden>No links or accounts yet.</p>
+          </section>
+          <section id="details" class="tui-pane" aria-labelledby="details-heading" hidden>
+            <div class="actions">
+              <h2 id="details-heading">Details</h2>
+              <button id="refresh-details" type="button">Refresh</button>
+              <button id="close-details" type="button">Close details</button>
+            </div>
+            <div id="new-link" class="create-form" hidden>
+              <label for="link" class="sr-only">Invite link</label>
+              <input id="link" readonly />
+              <button id="copy" disabled>Copy link</button>
+            </div>
+            <p id="detail-notice" role="status" aria-live="polite"></p>
+            <dl id="entry-facts"></dl>
+            <fieldset id="link-access" hidden>
+              <legend>Access included in this link</legend>
+              <div id="invite-grants" class="group-options" data-tui-nav="vertical"></div>
+              <p id="link-access-help" class="muted"></p>
+            </fieldset>
+            <fieldset id="account-access" hidden>
+              <legend>Account access</legend>
+              <div id="account-grants" class="group-options" data-tui-nav="vertical"></div>
+              <p class="muted">Changes apply to this account immediately.</p>
+            </fieldset>
+            <div id="link-details" hidden>
               <form id="expiration-form">
                 <label for="invite-expiration">Expiration date and time</label>
                 <div class="create-form">
@@ -98,9 +104,9 @@
                 </div>
               </details>
               <p class="muted">Counts include repeat opens and attempts after a link is used, expired, or revoked.</p>
-            </section>
-          </div>
-        </section>
+            </div>
+          </section>
+        </div>
       </div>
     </main>
   </body>

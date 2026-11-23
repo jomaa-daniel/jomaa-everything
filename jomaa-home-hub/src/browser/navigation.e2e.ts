@@ -81,22 +81,29 @@ test("Home arrows navigate links, stop at boundaries, and Tab leaves the group",
   assert.ok(!(await links.first().evaluate(isFocused)));
 });
 
-test("Permission grid arrows move between accounts and scopes without granting access", async () => {
+test("unified rows navigate without granting access and permissions edit in Details", async () => {
   const page = await pageAt("/accounts");
+  const inspectors = page.locator('#entries button[aria-controls="details"]');
+  await inspectors.nth(1).waitFor();
+  assert.ok(await page.locator("#link-access").isHidden());
+  await inspectors.first().focus();
+  await page.keyboard.press("ArrowDown");
+  assert.ok(await inspectors.nth(1).evaluate(isFocused));
+  assert.ok(await page.locator("#details").isHidden(), "arrow navigation does not open an entry");
+  assert.deepEqual(accounts.account("alpha")?.grants[0]?.scopes, ["devices"]);
+  assert.deepEqual(accounts.account("beta")?.grants, []);
+  await page.keyboard.press("Enter");
   const first = page.getByLabel("alpha can open Lights at Home");
   await first.waitFor();
   await first.focus();
-  await page.keyboard.press("ArrowRight");
-  assert.ok(await page.getByLabel("alpha can open Device health at Home").evaluate(isFocused));
   await page.keyboard.press("ArrowDown");
-  assert.ok(await page.getByLabel("beta can open Device health at Home").evaluate(isFocused));
+  assert.ok(await page.getByLabel("alpha can open Device health at Home").evaluate(isFocused));
   assert.deepEqual(accounts.account("alpha")?.grants[0]?.scopes, ["devices"]);
-  assert.deepEqual(accounts.account("beta")?.grants, []);
   await page.keyboard.press("Space");
   await page.locator("#notice.success").waitFor();
-  assert.deepEqual(accounts.account("beta")?.grants[0]?.scopes, ["devices"]);
-  await page.keyboard.press("ArrowLeft");
-  assert.ok(await page.getByLabel("beta can open Lights at Home").evaluate(isFocused));
+  assert.deepEqual(accounts.account("alpha")?.grants, []);
+  await page.locator("#close-details").click();
+  assert.ok(await page.locator("#details").isHidden());
 });
 
 test("health-only accounts use the unified page without organization controls", async () => {

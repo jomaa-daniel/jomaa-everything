@@ -136,21 +136,30 @@ async function signInAsOwner(page: Page): Promise<void> {
   await page.locator("#content").waitFor();
 }
 
+async function openAccountDetails(page: Page, name: string): Promise<void> {
+  await page
+    .locator(`#entries tr[data-account="${name}"]`)
+    .getByRole("button", { name: /^Inspect/ })
+    .click();
+  await page.getByLabel(`${name} can open Lights at Home`).waitFor();
+}
+
 let inviteLink = "";
 let inviteId = "";
 
 await test("the owner signs in and creates an invite link", async () => {
   const page = await open(owner, "/accounts");
   await signInAsOwner(page);
-  await page.locator("#accounts-empty").waitFor();
-  await page.locator("#invites-empty").waitFor();
+  await page.locator("#entries-empty").waitFor();
+  assert.ok(await page.locator("#link-access").isHidden(), "no access choices appear without a selection");
   await page.locator("#create").click();
-  await page.locator("#invites li").waitFor();
-  inviteId = (await page.locator("#invites li").getAttribute("data-id")) ?? "";
+  await page.locator("#entries tr").waitFor();
+  inviteId = (await page.locator("#entries tr").getAttribute("data-invite-id")) ?? "";
+  await page.locator("#link").waitFor();
   inviteLink = await page.locator("#link").inputValue();
   assert.match(inviteLink, new RegExp(`^${origin}/join#[\\w-]{43}$`));
   assert.ok(await page.locator("#copy").isEnabled());
-  assert.ok(await page.locator("#invites-empty").isHidden());
+  assert.ok(await page.locator("#entries-empty").isHidden());
   await page.close();
 });
 
@@ -199,26 +208,28 @@ await test("a new account signs in but can't open any page", async () => {
 
 await test("the owner inspects the created account and daily link opens after joining", async () => {
   const page = await open(owner, "/accounts");
-  await page.getByLabel("sarah can open Lights at Home").waitFor();
-  assert.equal(await page.locator("#invites li").count(), 1);
+  await page.locator('#entries tr[data-account="sarah"]').waitFor();
+  assert.equal(await page.locator("#entries tr").count(), 1);
   await page.getByRole("button", { name: `Inspect link ${inviteId}` }).click();
-  await page.locator("#invite-facts", { hasText: "sarah" }).waitFor();
-  assert.match((await page.locator("#invite-facts").textContent()) ?? "", /Account createdYes/);
+  await page.locator("#entry-facts", { hasText: "sarah" }).waitFor();
+  assert.match((await page.locator("#entry-facts").textContent()) ?? "", /Account createdYes/);
   assert.equal(await page.locator("#access-days tr").count(), 1);
   assert.equal(await page.locator("#access-days td").last().textContent(), "2");
   assert.match((await page.locator("#access-summary").textContent()) ?? "", /^2 opens in total/);
   assert.ok(await page.locator("#access-chart svg[role=img]").isVisible());
   assert.ok(await page.locator("#save-expiration").isDisabled());
   await page.reload();
-  await page.locator("#invite-facts", { hasText: "sarah" }).waitFor();
-  await page.locator("#close-invite").click();
-  assert.ok(await page.locator("#invite-detail").isHidden());
+  await page.locator("#entry-facts", { hasText: "sarah" }).waitFor();
+  await page.locator("#close-details").click();
+  assert.ok(await page.locator("#details").isHidden());
+  assert.ok(await page.locator("#link-access").isHidden());
   assert.equal(new URL(page.url()).hash, "");
   await page.close();
 });
 
 await test("the owner grants Lights and the account controls the room", async () => {
   const permissions = await open(owner, "/accounts");
+  await openAccountDetails(permissions, "sarah");
   await permissions.getByLabel("sarah can open Lights at Home").check();
   await permissions.locator("#notice", { hasText: "Saved sarah" }).waitFor();
   await permissions.reload();
@@ -238,6 +249,7 @@ await test("the owner grants Lights and the account controls the room", async ()
   await devices.close();
 
   const revoke = await open(owner, "/accounts");
+  await openAccountDetails(revoke, "sarah");
   await revoke.getByLabel("sarah can open Lights at Home").uncheck();
   await revoke.locator("#notice", { hasText: "Saved sarah" }).waitFor();
   await revoke.close();
@@ -252,7 +264,8 @@ await test("deleting the account signs it out", async () => {
   const permissions = await open(owner, "/accounts");
   permissions.once("dialog", (dialog) => void dialog.accept());
   await permissions.getByRole("button", { name: "Delete account sarah" }).click();
-  await permissions.locator("#accounts-empty").waitFor();
+  await permissions.locator('#entries tr[data-account="sarah"]').waitFor({ state: "detached" });
+  assert.equal(await permissions.locator("#entries tr").count(), 1, "the link remains as account history");
   await permissions.close();
 
   const devices = await open(guest, "/manage");
@@ -262,10 +275,13 @@ await test("deleting the account signs it out", async () => {
 
 await test("a shared link grants selected homes and the home picker routes light commands", async () => {
   const permissions = await open(owner, "/accounts");
-  await permissions.locator('#invite-grants input[data-node="remote"][data-scope="lights"]').check();
-  await permissions.locator(`#invite-grants input[data-node="${config.defaultNode}"][data-scope="lights"]`).check();
   await permissions.locator("#create").click();
-  await permissions.locator("#notice", { hasText: "Link created" }).waitFor();
+  await permissions.locator("#invite-grants input").first().waitFor();
+  await permissions.locator('#invite-grants input[data-node="remote"][data-scope="lights"]').check();
+  await permissions.locator("#notice", { hasText: "Link access saved" }).waitFor();
+  await permissions.locator(`#invite-grants input[data-node="${config.defaultNode}"][data-scope="lights"]`).check();
+  await permissions.locator("#notice", { hasText: "Link access saved" }).waitFor();
+  await permissions.locator("#invite-grants input:not(:disabled)").first().waitFor();
   const link = await permissions.locator("#link").inputValue();
   const join = await open(guest, link.slice(origin.length));
   await join.locator("#join-form").waitFor();
@@ -300,18 +316,19 @@ await test("an unused link's expiration saves, expires the link, and can renew i
     apiAccounts.now = Date.now;
   });
   const page = await open(owner, "/accounts");
-  await page.locator("#invites li").first().waitFor();
-  const previousCount = await page.locator("#invites li").count();
+  await page.locator("#entries tr").first().waitFor();
+  const previousCount = await page.locator("#entries tr").count();
   await page.locator("#create").click();
   await page.locator("#notice", { hasText: "Link created" }).waitFor();
-  await page.locator("#invites li").nth(previousCount).waitFor();
+  await page.locator("#entries tr").nth(previousCount).waitFor();
+  await page.locator("#link").waitFor();
   const link = await page.locator("#link").inputValue();
-  const row = page.locator("#invites li").first();
+  const row = page.locator("#entries tr").first();
   await row.getByRole("button", { name: /^Inspect link/ }).click();
-  await page.locator("#invite-facts", { hasText: "No account yet" }).waitFor();
+  await page.locator("#entry-facts", { hasText: "No account yet" }).waitFor();
   await page.locator("#invite-expiration").fill("2000-01-01T00:00");
   await page.locator("#save-expiration").click();
-  await page.locator("#invite-notice", { hasText: "after the link was created" }).waitFor();
+  await page.locator("#detail-notice", { hasText: "after the link was created" }).waitFor();
   const local = (date: Date) => {
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -328,25 +345,54 @@ await test("an unused link's expiration saves, expires the link, and can renew i
   apiAccounts.now = () => now + 120_000;
   await page.locator("#invite-expiration").fill(local(new Date(now + 60_000)));
   await page.locator("#save-expiration").click();
-  await page.locator("#invite-facts", { hasText: "Expired" }).waitFor();
+  await page.locator("#entry-facts", { hasText: "Expired" }).waitFor();
   const join = await open(guest, link.slice(origin.length));
   await join.locator("#invalid").waitFor();
   await page.locator("#invite-expiration").fill(expiry);
   await page.locator("#save-expiration").click();
-  await page.locator("#invite-facts", { hasText: "Unused" }).waitFor();
+  await page.locator("#entry-facts", { hasText: "Unused" }).waitFor();
   await join.goto(link);
   await join.locator("#join-form").waitFor();
-  await page.locator("#refresh-invite").click();
+  await page.locator("#refresh-details").click();
   await page.locator("#access-summary", { hasText: "2 opens in total" }).waitFor();
-  const revoke = page.locator(`#invites li[data-id="${id}"]`).getByRole("button", { name: /^Revoke invite/ });
+  const revoke = page.locator(`#entries tr[data-invite-id="${id}"]`).getByRole("button", { name: /^Revoke link/ });
   await revoke.click();
-  await page.locator("#invite-facts", { hasText: "Revoked" }).waitFor();
+  await page.locator("#entry-facts", { hasText: "Revoked" }).waitFor();
   assert.ok(await page.locator("#save-expiration").isDisabled());
   await join.goto(link);
   await join.locator("#invalid").waitFor();
   apiAccounts.now = Date.now;
   await join.close();
   await page.close();
+});
+
+await test("accounts without a link stay in the unified table and show account access only", async () => {
+  await apiAccounts.join(apiAccounts.createInvite().token, "standalone", guestPassword);
+  const page = await owner.newPage();
+  page.on("pageerror", (error) => scriptErrors.push(error.message));
+  await page.route(
+    (url) => url.pathname === "/api/accounts",
+    async (route) => {
+      const response = await route.fetch();
+      const body = (await response.json()) as { invites: Array<{ account: { username: string } | null }> };
+      body.invites = body.invites.filter((invite) => invite.account?.username !== "standalone");
+      await route.fulfill({ response, json: body });
+    },
+  );
+  await page.goto(origin + "/accounts");
+  const row = page.locator('#entries tr[data-account="standalone"]');
+  await row.waitFor();
+  assert.equal(await row.count(), 1);
+  assert.equal(await row.getAttribute("data-invite-id"), null);
+  await row.getByRole("button", { name: "Inspect account standalone" }).click();
+  await page.getByLabel("standalone can open Lights at Home").waitFor();
+  assert.ok(await page.locator("#link-access").isHidden());
+  assert.ok(await page.locator("#link-details").isHidden());
+  await page.getByLabel("standalone can open Lights at Home").check();
+  await page.locator("#notice", { hasText: "Saved standalone" }).waitFor();
+  assert.deepEqual(apiAccounts.account("standalone")?.grants, [{ node: config.defaultNode, scopes: ["lights"] }]);
+  await page.close();
+  apiAccounts.deleteAccount("standalone");
 });
 
 await test("no page threw a script error", () => {

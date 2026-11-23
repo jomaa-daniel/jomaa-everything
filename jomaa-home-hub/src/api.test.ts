@@ -733,6 +733,66 @@ test("link inspection and expiration edits are owner-only and record page opens"
   assert.ok(!JSON.stringify(detail).includes(token));
 });
 
+test("only the owner edits unused link grants, and details identify the current account", async () => {
+  const env = await setup();
+  const anonymous = { url: env.url, token: "" };
+  const guest = { url: env.url, token: await joinAs(env, "grant-editor-guest") };
+  let now = Date.now();
+  env.accounts.now = () => now;
+  const { invite, token } = env.accounts.createInvite();
+  const path = `/api/invites/${invite.id}/grants`;
+  const grants = [{ node: catalog.defaultNode, scopes: ["lights"] }];
+  const body = JSON.stringify({ grants });
+  assert.equal((await call(anonymous, "PUT", path, body)).status, 401);
+  assert.equal((await call(guest, "PUT", path, body)).status, 403);
+  assert.equal((await call(env, "PUT", path, body, { Origin: "https://evil.example" })).status, 403);
+  for (const invalid of [
+    {},
+    { grants: null },
+    { grants, extra: true },
+    { grants: [{ node: "missing-home", scopes: ["lights"] }] },
+    { grants: [{ node: catalog.defaultNode, scopes: ["unknown"] }] },
+  ])
+    assert.equal((await call(env, "PUT", path, JSON.stringify(invalid))).status, 400);
+  assert.equal((await call(env, "PUT", "/api/invites/missing/grants", body)).status, 404);
+  assert.equal((await call(env, "PUT", path, body)).status, 200);
+  const snapshot = (await call(env, "GET", "/api/accounts")).body;
+  assert.deepEqual((snapshot["invites"] as Json[]).find((row) => row["id"] === invite.id)?.["grants"], grants);
+  assert.equal((await call(env, "GET", `/api/invites/${invite.id}`)).body["account"], null);
+  assert.equal(
+    (
+      await call(
+        anonymous,
+        "POST",
+        "/api/join",
+        JSON.stringify({ token, username: "link-account", password: accountPassword }),
+      )
+    ).status,
+    201,
+  );
+  assert.equal((await call(env, "PUT", path, body)).status, 409);
+  await call(
+    env,
+    "PUT",
+    "/api/accounts/link-account/grants",
+    JSON.stringify({ grants: [{ node: catalog.defaultNode, scopes: ["devices"] }] }),
+  );
+  const detail = (await call(env, "GET", `/api/invites/${invite.id}`)).body;
+  assert.deepEqual((detail["invite"] as Json)["grants"], grants, "the used link retains its original access");
+  assert.deepEqual((detail["account"] as Json)["grants"], [{ node: catalog.defaultNode, scopes: ["devices"] }]);
+  await call(env, "DELETE", "/api/accounts/link-account");
+  now += 1000;
+  await env.accounts.join(env.accounts.createInvite().token, "link-account", accountPassword);
+  assert.equal(
+    (await call(env, "GET", `/api/invites/${invite.id}`)).body["account"],
+    null,
+    "reusing a username does not associate its new account with the old link",
+  );
+  const revoked = env.accounts.createInvite();
+  env.accounts.revokeInvite(revoked.invite.id);
+  assert.equal((await call(env, "PUT", `/api/invites/${revoked.invite.id}/grants`, body)).status, 409);
+});
+
 test("the owner session reports every scope", async () => {
   const body = (await call(e, "GET", "/api/session")).body;
   assert.deepEqual(body, { owner: true, username: null, scopes: ["lights", "devices", "manage"] });
