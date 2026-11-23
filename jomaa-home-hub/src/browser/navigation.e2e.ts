@@ -107,6 +107,7 @@ test("unified rows navigate without granting access and permissions edit in Deta
 });
 
 test("health-only accounts use the unified page without organization controls", async () => {
+  accounts.setGrants("alpha", [{ node: catalog.defaultNode, scopes: ["devices"] }]);
   const page = await pageAt("/manage", false);
   await page.locator("#password").fill(password);
   await page.locator("#username").fill("alpha");
