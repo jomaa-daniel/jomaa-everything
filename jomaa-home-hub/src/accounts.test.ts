@@ -129,6 +129,37 @@ test("passwords are verified without storing them", async () => {
   assert.equal(await accounts.verify("nobody", "a long enough password"), null);
 });
 
+test("unused link access edits apply at signup and failed edits preserve its grants", async (t) => {
+  const accounts = new Accounts(":memory:");
+  t.after(() => {
+    accounts.close();
+  });
+  let now = Date.UTC(2026, 0, 1);
+  accounts.now = () => now;
+  const { invite, token } = accounts.createInvite();
+  const grants = [{ node: catalog.defaultNode, scopes: ["devices" as const] }];
+  assert.deepEqual(accounts.setInviteGrants(invite.id, grants).grants, grants);
+  assert.throws(() =>
+    accounts.setInviteGrants(invite.id, [
+      { node: catalog.defaultNode, scopes: ["lights"] },
+      { node: catalog.defaultNode, scopes: ["lights"] },
+    ]),
+  );
+  assert.deepEqual(accounts.invite(invite.id).grants, grants, "a failed update rolls back the deleted grants");
+  now += inviteLifetimeMs;
+  assert.deepEqual(accounts.setInviteGrants(invite.id, [{ node: catalog.defaultNode, scopes: ["lights"] }]).grants, [
+    { node: catalog.defaultNode, scopes: ["lights"] },
+  ]);
+  accounts.setInviteExpiration(invite.id, now + inviteLifetimeMs);
+  assert.deepEqual((await accounts.join(token, "changed-access", "a long enough password")).grants, [
+    { node: catalog.defaultNode, scopes: ["lights"] },
+  ]);
+  assert.throws(() => accounts.setInviteGrants(invite.id, []), AccountError);
+  const revoked = accounts.createInvite();
+  accounts.revokeInvite(revoked.invite.id);
+  assert.throws(() => accounts.setInviteGrants(revoked.invite.id, []), AccountError);
+});
+
 test("an account keeps its newest sessions up to the configured count", async () => {
   const accounts = new Accounts(":memory:");
   await accounts.join(accounts.createInvite().token, "sam", "a long enough password");

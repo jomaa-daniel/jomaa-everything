@@ -1,8 +1,13 @@
 import { $, api, element, notify, ownerPage, when } from "/home/accounts.js";
 
 let catalog = [];
-let selectedInvite = new URLSearchParams(location.hash.slice(1)).get("invite");
+let fields = [];
+let scopeNames = new Map();
+let entries = [];
+let createdLink = null;
+let selectedKey = selectionFromHash();
 let detailGeneration = 0;
+let loadGeneration = 0;
 const inviteStates = { pending: "Unused", used: "Account created", expired: "Expired", revoked: "Revoked" };
 const svgNamespace = "http://www.w3.org/2000/svg";
 
@@ -56,59 +61,11 @@ function localDateTime(timestamp) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-/** Opens the selected link's account information, access chart, and expiration editor. */
-async function inspectInvite() {
-  const id = selectedInvite;
-  const generation = ++detailGeneration;
-  $("invite-detail").hidden = !id;
-  if (!id) return;
-  $("invite-facts").replaceChildren();
-  $("access-chart").replaceChildren();
-  $("access-days").replaceChildren();
-  $("access-summary").textContent = "";
-  $("invite-expiration").value = "";
-  $("invite-expiration").disabled = true;
-  $("save-expiration").disabled = true;
-  $("invite-notice").textContent = "Loading link details…";
-  try {
-    const { invite, activity } = await api(`/api/invites/${encodeURIComponent(id)}`);
-    if (generation !== detailGeneration) return;
-    $("invite-notice").textContent = "";
-    const facts = [
-      ["Link", invite.id],
-      ["Status", inviteStates[invite.status]],
-      ["Created", when(invite.createdAt)],
-      ["Account created", invite.account ? "Yes" : "No"],
-      ["Account name", invite.account?.username ?? "No account yet"],
-      ["Account created at", invite.account ? when(invite.account.createdAt) : "—"],
-      ["Expires", when(invite.expiresAt)],
-      ["Last opened", activity.lastAccessAt === null ? "Never" : when(activity.lastAccessAt)],
-    ];
-    if (invite.revokedAt !== null) facts.push(["Revoked", when(invite.revokedAt)]);
-    $("invite-facts").replaceChildren(
-      ...facts.flatMap(([label, value]) => [element("dt", label), element("dd", value)]),
-    );
-    const editable = invite.status === "pending" || invite.status === "expired";
-    $("invite-expiration").value = localDateTime(invite.expiresAt);
-    $("invite-expiration").disabled = !editable;
-    $("save-expiration").disabled = !editable;
-    $("expiration-help").textContent = editable
-      ? "Times use your local timezone. Extending an expired, unused link makes it usable again."
-      : "Used and revoked links cannot change expiration. Account access is managed in Accounts above.";
-    $("access-summary").textContent =
-      `${activity.total} opens in total · Daily counts in UTC, up to ${activity.chartDays} days.`;
-    $("access-chart").replaceChildren(accessChart(activity));
-    $("access-days").replaceChildren(
-      ...activity.days.map((day) => {
-        const row = element("tr");
-        row.append(element("td", day.date), element("td", day.count));
-        return row;
-      }),
-    );
-    for (const row of $("invites").children) row.setAttribute("aria-current", String(row.dataset.id === id));
-  } catch (reason) {
-    if (generation === detailGeneration) $("invite-notice").textContent = reason.message;
-  }
+function selectionFromHash() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  if (params.has("invite")) return `invite:${params.get("invite")}`;
+  if (params.has("account")) return `account:${params.get("account")}`;
+  return null;
 }
 
 function columns(scopes, nodes) {
@@ -117,162 +74,338 @@ function columns(scopes, nodes) {
   );
 }
 
-function grantsFrom(boxes, fields) {
-  return catalog
-    .map((node) => ({
-      node: node.id,
-      scopes: fields
-        .filter((field, index) => field.node.id === node.id && boxes[index].checked)
+function grantsFrom(boxes, options) {
+  return [...new Set(options.map(({ node }) => node.id))]
+    .map((id) => ({
+      node: id,
+      scopes: options
+        .filter((field, index) => field.node.id === id && boxes[index].checked)
         .map((field) => field.scope.id),
     }))
     .filter((grant) => grant.scopes.length > 0);
 }
 
-function accountRow(account, fields) {
-  const tr = element("tr");
-  const boxes = fields.map(({ node, scope }) => {
+/** Links and the accounts they created share one row. Accounts without a link have their own row. */
+function combinedEntries(accounts, invites) {
+  const rows = invites.map((invite) => ({
+    key: `invite:${invite.id}`,
+    invite,
+    account:
+      accounts.find(
+        (account) => account.username === invite.account?.username && account.createdAt === invite.account.createdAt,
+      ) ?? null,
+  }));
+  const linked = new Set(rows.map((row) => row.account));
+  rows.push(
+    ...accounts
+      .filter((account) => !linked.has(account))
+      .map((account) => ({ key: `account:${account.username}`, invite: null, account })),
+  );
+  return rows.sort(
+    (a, b) =>
+      (b.invite?.createdAt ?? b.account.createdAt) - (a.invite?.createdAt ?? a.account.createdAt) ||
+      a.key.localeCompare(b.key),
+  );
+}
+
+function entryStatus(entry) {
+  if (!entry.invite) return "Active account";
+  if (entry.invite.status === "used" && !entry.account) return "Account deleted";
+  return inviteStates[entry.invite.status];
+}
+
+function clearSelection() {
+  const row = [...$("entries").children].find((row) => row.dataset.key === selectedKey);
+  selectedKey = null;
+  detailGeneration++;
+  history.replaceState(null, "", location.pathname + location.search);
+  $("details").hidden = true;
+  $("link").value = "";
+  updateSelection();
+  row?.querySelector("button").focus();
+}
+
+function updateSelection() {
+  for (const row of $("entries").children) {
+    const selected = row.dataset.key === selectedKey;
+    row.classList.toggle("selected", selected);
+    row.querySelector("button").setAttribute("aria-expanded", String(selected));
+  }
+}
+
+async function selectEntry(entry) {
+  selectedKey = entry.key;
+  const params = new URLSearchParams();
+  params.set(entry.invite ? "invite" : "account", entry.invite?.id ?? entry.account.username);
+  history.replaceState(null, "", "#" + params);
+  updateSelection();
+  await inspectDetails();
+  $("details-heading").tabIndex = -1;
+  $("details-heading").focus();
+}
+
+function entryRow(entry) {
+  const row = element("tr");
+  row.dataset.key = entry.key;
+  if (entry.invite) row.dataset.inviteId = entry.invite.id;
+  if (entry.account) row.dataset.account = entry.account.username;
+  const cells = [
+    entry.invite?.id ?? "—",
+    entry.account?.username ?? entry.invite.account?.username ?? "Not created",
+    entryStatus(entry),
+    when(entry.invite?.createdAt ?? entry.account.createdAt),
+    entry.invite ? when(entry.invite.expiresAt) : "—",
+  ].map((text) => element("td", text));
+  const actions = element("div", undefined, "row-actions");
+  const inspect = element("button", "Inspect");
+  inspect.setAttribute(
+    "aria-label",
+    entry.invite ? `Inspect link ${entry.invite.id}` : `Inspect account ${entry.account.username}`,
+  );
+  inspect.setAttribute("aria-controls", "details");
+  inspect.setAttribute("aria-expanded", String(entry.key === selectedKey));
+  inspect.addEventListener("click", () => selectEntry(entry));
+  actions.append(inspect);
+  if (entry.invite && (entry.invite.status === "pending" || entry.invite.status === "expired")) {
+    const revoke = element("button", "Revoke", "danger");
+    revoke.setAttribute("aria-label", `Revoke link ${entry.invite.id}`);
+    revoke.addEventListener("click", async () => {
+      revoke.disabled = true;
+      try {
+        await api(`/api/invites/${encodeURIComponent(entry.invite.id)}`, "DELETE");
+        notify("Invite revoked.", true);
+        await load();
+      } catch (reason) {
+        notify(reason.message);
+        revoke.disabled = false;
+      }
+    });
+    actions.append(revoke);
+  }
+  if (entry.account) {
+    const username = entry.account.username;
+    const remove = element("button", "Delete account", "danger");
+    remove.setAttribute("aria-label", `Delete account ${username}`);
+    remove.addEventListener("click", async () => {
+      if (!confirm(`Delete ${username}? They are signed out everywhere.`)) return;
+      remove.disabled = true;
+      try {
+        await api(`/api/accounts/${encodeURIComponent(username)}`, "DELETE");
+        notify(`Deleted ${username}.`, true);
+        if (!entry.invite && selectedKey === entry.key) clearSelection();
+        await load();
+      } catch (reason) {
+        notify(reason.message);
+        remove.disabled = false;
+      }
+    });
+    actions.append(remove);
+  }
+  const actionCell = element("td");
+  actionCell.append(actions);
+  row.append(...cells, actionCell);
+  row.classList.toggle("selected", entry.key === selectedKey);
+  row.addEventListener("click", (event) => {
+    if (!event.target.closest("button")) selectEntry(entry);
+  });
+  return row;
+}
+
+function renderEntries() {
+  $("entries").replaceChildren(...entries.map(entryRow));
+  $("entries-empty").hidden = entries.length > 0;
+}
+
+/** Saves permissions for the selected unused link or its current account. */
+function renderGrants(container, grants, prefix, entry, kind) {
+  const options = fields;
+  const generation = detailGeneration;
+  const boxes = options.map(({ node, scope }) => {
     const box = element("input");
     box.type = "checkbox";
-    box.checked = account.grants.some((grant) => grant.node === node.id && grant.scopes.includes(scope.id));
-    box.setAttribute("aria-label", `${account.username} can open ${scope.name} at ${node.name}`);
+    box.dataset.node = node.id;
+    box.dataset.scope = scope.id;
+    box.checked = grants.some((grant) => grant.node === node.id && grant.scopes.includes(scope.id));
+    box.setAttribute("aria-label", `${prefix} ${scope.name} at ${node.name}`);
+    const label = element("label");
+    label.append(box, element("span", `${scope.name} · ${node.name}`));
+    container.append(label);
     return box;
   });
   for (const box of boxes)
     box.addEventListener("change", async () => {
       for (const other of boxes) other.disabled = true;
       try {
-        await api(`/api/accounts/${encodeURIComponent(account.username)}/grants`, "PUT", {
-          grants: grantsFrom(boxes, fields),
-        });
-        notify(`Saved ${account.username}.`, true);
+        const path =
+          kind === "invite"
+            ? `/api/invites/${encodeURIComponent(entry.invite.id)}/grants`
+            : `/api/accounts/${encodeURIComponent(entry.account.username)}/grants`;
+        const result = await api(path, "PUT", { grants: grantsFrom(boxes, options) });
+        if (generation === detailGeneration) {
+          entry[kind] = result[kind];
+          notify(kind === "invite" ? "Link access saved." : `Saved ${entry.account.username}.`, true);
+        }
       } catch (reason) {
         box.checked = !box.checked;
+        if (reason.status === 404 || reason.status === 409) await load();
         notify(reason.message);
+        if (entry.key === selectedKey) $("detail-notice").textContent = reason.message;
       } finally {
-        for (const other of boxes) other.disabled = false;
+        if (generation === detailGeneration) for (const other of boxes) other.disabled = false;
       }
     });
-  const remove = element("button", "Delete", "danger");
-  remove.setAttribute("aria-label", `Delete account ${account.username}`);
-  remove.addEventListener("click", async () => {
-    if (!confirm(`Delete ${account.username}? They are signed out everywhere.`)) return;
-    remove.disabled = true;
-    try {
-      await api(`/api/accounts/${encodeURIComponent(account.username)}`, "DELETE");
-      notify(`Deleted ${account.username}.`, true);
-      await load();
-    } catch (reason) {
-      notify(reason.message);
-      remove.disabled = false;
-    }
-  });
-  const cells = boxes.map((box) => {
-    const cell = element("td", undefined, "scope-cell");
-    const label = element("label");
-    label.append(box);
-    cell.append(label);
-    return cell;
-  });
-  const actions = element("td", undefined, "row-actions");
-  actions.append(remove);
-  tr.append(element("td", account.username), ...cells, actions);
-  return tr;
 }
 
-function inviteRow(invite) {
-  const row = element("li");
-  row.dataset.id = invite.id;
-  row.setAttribute("aria-current", String(invite.id === selectedInvite));
-  const permissions = invite.grants
-    .map((grant) => `${catalog.find((node) => node.id === grant.node)?.name ?? grant.node}: ${grant.scopes.join(", ")}`)
-    .join("; ");
-  const label = element(
-    "span",
-    `Link ${invite.id} · ${inviteStates[invite.status]}${invite.account ? ` · ${invite.account.username}` : ""}. ${permissions || "No access"}. Created ${when(invite.createdAt)}, expires ${when(invite.expiresAt)}`,
-  );
-  const inspect = element("button", "Inspect");
-  inspect.setAttribute("aria-label", `Inspect link ${invite.id}`);
-  inspect.addEventListener("click", async () => {
-    selectedInvite = invite.id;
-    history.replaceState(null, "", `#invite=${encodeURIComponent(invite.id)}`);
-    await inspectInvite();
-    $("invite-detail-heading").tabIndex = -1;
-    $("invite-detail-heading").focus();
-  });
-  const revoke = element("button", "Revoke", "danger");
-  revoke.disabled = invite.status === "used" || invite.status === "revoked";
-  revoke.setAttribute("aria-label", `Revoke invite created ${when(invite.createdAt)}`);
-  revoke.addEventListener("click", async () => {
-    revoke.disabled = true;
-    try {
-      await api(`/api/invites/${encodeURIComponent(invite.id)}`, "DELETE");
-      notify("Invite revoked.", true);
-      await load();
-    } catch (reason) {
-      notify(reason.message);
-      revoke.disabled = false;
+function renderLinkAccess(entry) {
+  $("link-access").hidden = false;
+  const invite = entry.invite;
+  const editable = invite.status === "pending" || invite.status === "expired";
+  if (editable) {
+    renderGrants($("invite-grants"), invite.grants, `Link ${invite.id} includes`, entry, "invite");
+    $("link-access-help").textContent =
+      "Changes save immediately. The account created from this link receives this access.";
+  } else {
+    const list = element("ul");
+    for (const grant of invite.grants) {
+      const home = catalog.find((node) => node.id === grant.node)?.name ?? grant.node;
+      list.append(element("li", `${home}: ${grant.scopes.map((scope) => scopeNames.get(scope)).join(", ")}`));
     }
-  });
-  row.append(label, inspect, revoke);
-  return row;
+    $("invite-grants").append(invite.grants.length ? list : element("p", "No access included."));
+    $("link-access-help").textContent =
+      invite.status === "used"
+        ? entry.account
+          ? "Access granted at signup. Current permissions are below."
+          : "Access granted at signup. This account was deleted."
+        : "Revoked links cannot change access.";
+  }
 }
 
-/** Shows per-node account grants and retained invitation history. */
+async function inspectDetails() {
+  const key = selectedKey;
+  const generation = ++detailGeneration;
+  $("details").hidden = !key;
+  if (!key) return;
+  $("new-link").hidden = true;
+  $("link").value = "";
+  $("copy").disabled = true;
+  $("entry-facts").replaceChildren();
+  $("invite-grants").replaceChildren();
+  $("account-grants").replaceChildren();
+  $("link-access").hidden = true;
+  $("account-access").hidden = true;
+  $("link-details").hidden = true;
+  $("invite-expiration").disabled = true;
+  $("save-expiration").disabled = true;
+  $("detail-notice").textContent = "Loading details…";
+  const entry = entries.find((entry) => entry.key === key);
+  if (!entry) {
+    $("detail-notice").textContent = "This link or account was not found.";
+    return;
+  }
+  try {
+    let activity = null;
+    if (entry.invite) {
+      const result = await api(`/api/invites/${encodeURIComponent(entry.invite.id)}`);
+      if (generation !== detailGeneration) return;
+      entry.invite = result.invite;
+      entry.account = result.account;
+      activity = result.activity;
+      renderEntries();
+    }
+    $("detail-notice").textContent = "";
+    $("details-heading").textContent = entry.invite ? "Link details" : "Account details";
+    const invite = entry.invite;
+    const facts = invite
+      ? [
+          ["Link", invite.id],
+          ["Status", entryStatus(entry)],
+          ["Created", when(invite.createdAt)],
+          ["Account created", invite.account ? "Yes" : "No"],
+          ["Account name", invite.account?.username ?? "No account yet"],
+          ["Account created at", invite.account ? when(invite.account.createdAt) : "—"],
+          ["Expires", when(invite.expiresAt)],
+          ["Last opened", activity.lastAccessAt === null ? "Never" : when(activity.lastAccessAt)],
+        ]
+      : [
+          ["Account name", entry.account.username],
+          ["Status", "Active account"],
+          ["Created", when(entry.account.createdAt)],
+          ["Link", "No link record"],
+        ];
+    if (invite && invite.revokedAt !== null) facts.push(["Revoked", when(invite.revokedAt)]);
+    $("entry-facts").replaceChildren(
+      ...facts.flatMap(([label, value]) => [element("dt", label), element("dd", value)]),
+    );
+    if (invite) {
+      renderLinkAccess(entry);
+      if (createdLink?.id === invite.id && (invite.status === "pending" || invite.status === "expired")) {
+        $("new-link").hidden = false;
+        $("link").value = createdLink.url;
+        $("copy").disabled = false;
+      }
+    }
+    if (entry.account) {
+      $("account-access").hidden = false;
+      renderGrants($("account-grants"), entry.account.grants, `${entry.account.username} can open`, entry, "account");
+    }
+    if (invite) {
+      $("link-details").hidden = false;
+      const editable = invite.status === "pending" || invite.status === "expired";
+      $("invite-expiration").value = localDateTime(invite.expiresAt);
+      $("invite-expiration").disabled = !editable;
+      $("save-expiration").disabled = !editable;
+      $("expiration-help").textContent = editable
+        ? "Times use your local timezone. Extending an expired, unused link makes it usable again."
+        : "Used and revoked links cannot change expiration.";
+      $("access-summary").textContent =
+        `${activity.total} opens in total · Daily counts in UTC, up to ${activity.chartDays} days.`;
+      $("access-chart").replaceChildren(accessChart(activity));
+      $("access-days").replaceChildren(
+        ...activity.days.map((day) => {
+          const row = element("tr");
+          row.append(element("td", day.date), element("td", day.count));
+          return row;
+        }),
+      );
+    }
+  } catch (reason) {
+    if (generation === detailGeneration) $("detail-notice").textContent = reason.message;
+  }
+}
+
+/** Loads one snapshot of accounts, links, and available access choices. */
 async function load() {
-  const [{ accounts, scopes, nodes }, { invites }] = await Promise.all([api("/api/accounts"), api("/api/invites")]);
+  const generation = ++loadGeneration;
+  const { accounts, invites, scopes, nodes } = await api("/api/accounts");
+  if (generation !== loadGeneration) return;
   catalog = nodes;
-  const fields = columns(scopes, nodes);
-  const cells = ["Account", ...fields.map(({ node, scope }) => `${scope.name} · ${node.name}`)].map((text) =>
-    element("th", text),
-  );
-  const actions = element("th");
-  actions.append(element("span", "Actions", "sr-only"));
-  $("scope-head").replaceChildren(...cells, actions);
-  $("account-rows").replaceChildren(...accounts.map((account) => accountRow(account, fields)));
-  $("accounts-empty").hidden = accounts.length > 0;
-  $("invites").replaceChildren(...invites.map(inviteRow));
-  $("invites-empty").hidden = invites.length > 0;
-  if (!$("invite-grants").children.length)
-    for (const { node, scope } of fields) {
-      const label = element("label");
-      const box = element("input");
-      box.type = "checkbox";
-      box.dataset.node = node.id;
-      box.dataset.scope = scope.id;
-      label.append(box, element("span", `${scope.name} · ${node.name}`));
-      $("invite-grants").append(label);
-    }
-  await inspectInvite();
+  fields = columns(scopes, nodes);
+  scopeNames = new Map(scopes.map((scope) => [scope.id, scope.name]));
+  entries = combinedEntries(accounts, invites);
+  renderEntries();
+  await inspectDetails();
 }
 
-$("refresh-invite").addEventListener("click", inspectInvite);
-$("close-invite").addEventListener("click", () => {
-  const row = [...$("invites").children].find((row) => row.dataset.id === selectedInvite);
-  selectedInvite = null;
-  detailGeneration++;
-  history.replaceState(null, "", location.pathname + location.search);
-  $("invite-detail").hidden = true;
-  row?.querySelector("button").focus();
-  for (const row of $("invites").children) row.setAttribute("aria-current", "false");
-});
+$("refresh-details").addEventListener("click", () => load().catch((reason) => notify(reason.message)));
+$("close-details").addEventListener("click", clearSelection);
 window.addEventListener("hashchange", () => {
-  selectedInvite = new URLSearchParams(location.hash.slice(1)).get("invite");
-  inspectInvite();
+  selectedKey = selectionFromHash();
+  inspectDetails();
 });
 $("expiration-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  const id = selectedInvite;
-  if (!id) return;
+  const entry = entries.find((entry) => entry.key === selectedKey);
+  if (!entry?.invite) return;
   $("save-expiration").disabled = true;
   try {
-    await api(`/api/invites/${encodeURIComponent(id)}`, "PATCH", {
+    await api(`/api/invites/${encodeURIComponent(entry.invite.id)}`, "PATCH", {
       expiresAt: new Date($("invite-expiration").value).getTime(),
     });
     notify("Link expiration saved.", true);
     await load();
   } catch (reason) {
-    if (id === selectedInvite) {
-      $("invite-notice").textContent = reason.message;
+    if (entry.key === selectedKey) {
+      $("detail-notice").textContent = reason.message;
       $("save-expiration").disabled = false;
     }
   }
@@ -281,26 +414,20 @@ $("expiration-form").addEventListener("submit", async (event) => {
 $("create").addEventListener("click", async () => {
   $("create").disabled = true;
   try {
-    const boxes = [...$("invite-grants").querySelectorAll("input")];
-    const grants = catalog
-      .map((node) => ({
-        node: node.id,
-        scopes: boxes.filter((box) => box.checked && box.dataset.node === node.id).map((box) => box.dataset.scope),
-      }))
-      .filter((grant) => grant.scopes.length > 0);
-    const { invite, token } = await api("/api/invites", "POST", { grants });
-    $("link").value = `${location.origin}/join#${token}`;
-    $("copy").disabled = false;
-    $("link").select();
+    const { invite, token } = await api("/api/invites", "POST", { grants: [] });
+    createdLink = { id: invite.id, url: `${location.origin}/join#${token}` };
+    selectedKey = `invite:${invite.id}`;
+    history.replaceState(null, "", `#invite=${encodeURIComponent(invite.id)}`);
     notify(`Link created; it expires ${when(invite.expiresAt)} and is shown only once.`, true);
     await load();
+    $("details-heading").tabIndex = -1;
+    $("details-heading").focus();
   } catch (reason) {
     notify(reason.message);
   } finally {
     $("create").disabled = false;
   }
 });
-
 $("copy").addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText($("link").value);

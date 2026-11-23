@@ -191,6 +191,7 @@ export class Api {
       route("POST", "/api/invites", "owner", this.#inviteCreate),
       route("GET", "/api/invites/{id}", "owner", this.#inviteDetail),
       route("PATCH", "/api/invites/{id}", "owner", this.#inviteExpiration),
+      route("PUT", "/api/invites/{id}/grants", "owner", this.#inviteGrants),
       route("DELETE", "/api/invites/{id}", "owner", this.#inviteRevoke),
       route("GET", "/api/accounts", "owner", this.#accountList),
       route("PUT", "/api/accounts/{username}/grants", "owner", this.#accountGrants),
@@ -561,7 +562,10 @@ export class Api {
 
   async #inviteDetail({ res, params }: RequestContext): Promise<void> {
     const id = params[0] ?? "";
-    writeJSON(res, 200, { invite: this.accounts.invite(id), activity: this.accounts.inviteActivity(id) });
+    const invite = this.accounts.invite(id);
+    const candidate = invite.account ? this.accounts.account(invite.account.username) : null;
+    const account = candidate?.createdAt === invite.account?.createdAt ? candidate : null;
+    writeJSON(res, 200, { invite, account, activity: this.accounts.inviteActivity(id) });
     return Promise.resolve();
   }
 
@@ -570,6 +574,12 @@ export class Api {
     const expiresAt = (await readBody(req)).only("expiresAt").required("expiresAt").int("expiresAt");
     if (expiresAt === null) throw new HttpError(400, "expiresAt must be a whole-number timestamp");
     writeJSON(res, 200, { invite: this.accounts.setInviteExpiration(params[0] ?? "", expiresAt) });
+  }
+
+  async #inviteGrants({ req, res, params }: RequestContext): Promise<void> {
+    requireSameOrigin(req);
+    const grants = this.#readGrants((await readBody(req)).only("grants").required("grants"));
+    writeJSON(res, 200, { invite: this.accounts.setInviteGrants(params[0] ?? "", grants) });
   }
 
   /** Returns the invite's token once; the page turns it into a share link. */
@@ -587,7 +597,12 @@ export class Api {
   }
 
   async #accountList({ res }: RequestContext): Promise<void> {
-    writeJSON(res, 200, { accounts: this.accounts.accounts(), scopes, nodes: this.federation.available(null) });
+    writeJSON(res, 200, {
+      accounts: this.accounts.accounts(),
+      invites: this.accounts.invites(),
+      scopes,
+      nodes: this.federation.available(null),
+    });
     return Promise.resolve();
   }
 

@@ -62,6 +62,7 @@
         "/api/invites",
         "/api/invites/check",
         "/api/invites/link",
+        "/api/invites/link/grants",
         "/api/accounts",
         "/api/accounts/someone/grants",
         "/secrets",

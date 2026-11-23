@@ -203,6 +203,25 @@ export class Accounts {
     return this.invite(id);
   }
 
+  /** Sets the access an unused link grants to the account it creates. */
+  setInviteGrants(id: string, grants: Grant[]): Invite {
+    const invite = this.invite(id);
+    if (invite.status === "used" || invite.status === "revoked")
+      throw new AccountError(409, "Used or revoked links cannot change access");
+    this.#db.exec("BEGIN");
+    try {
+      this.#db.prepare("DELETE FROM invite_grants WHERE id=?").run(id);
+      for (const grant of grants)
+        for (const scope of new Set(grant.scopes))
+          this.#db.prepare("INSERT INTO invite_grants VALUES (?, ?, ?)").run(id, grant.node, scope);
+      this.#db.exec("COMMIT");
+    } catch (error) {
+      this.#db.exec("ROLLBACK");
+      throw error;
+    }
+    return this.invite(id);
+  }
+
   revokeInvite(id: string): void {
     const invite = this.invite(id);
     if (invite.status === "used") throw new AccountError(409, "This link has already created an account");
