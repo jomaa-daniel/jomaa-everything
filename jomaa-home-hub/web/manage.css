@@ -603,8 +603,16 @@ kbd {
   .heading p {
     font-size: 12px;
   }
-  .heading button {
+  .organization-page .heading button {
     font-size: 12px;
+  }
+  .heading-actions,
+  #node-picker label {
+    gap: 4px;
+  }
+  .organization-page .heading button,
+  #node-picker select {
+    padding-inline: 6px;
   }
   .tabs button {
     flex: 1;
