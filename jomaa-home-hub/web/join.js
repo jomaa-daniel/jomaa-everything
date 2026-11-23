@@ -52,27 +52,41 @@ $("join-form").addEventListener("submit", async (event) => {
   const button = event.submitter;
   button.disabled = true;
   try {
+    const password = $("password").value;
     const { account, destinations } = await api("/api/join", "POST", {
       token,
       username: $("username").value,
-      password: $("password").value,
+      password,
     });
     sessionStorage.removeItem(storageKey);
     $("join-form").hidden = true;
+    $("password").value = "";
+    $("confirm").value = "";
     $("done-username").textContent = account.username;
     $("join-title").textContent = "Account created";
     $("join-next").textContent = destinations.length
-      ? "Sign in with your username and password to open your controls."
+      ? `Choose where to sign in as ${account.username}.`
       : "Your account has no home access yet. Ask the hub owner to grant access.";
-    $("join-destinations").replaceChildren(
-      ...destinations.map((destination) => {
-        const link = document.createElement("a");
-        link.href = destination.href;
-        link.textContent = `Sign in to ${destination.name}`;
-        link.className = "primary-action";
-        return link;
-      }),
-    );
+    const credentials = { username: account.username, password };
+    const choices = destinations.map((destination) => {
+      const choice = document.createElement("button");
+      choice.type = "button";
+      choice.textContent = `Sign in to ${destination.name}`;
+      choice.className = "primary-action";
+      choice.addEventListener("click", async () => {
+        for (const action of choices) action.disabled = true;
+        try {
+          await api("/api/login", "POST", credentials);
+          credentials.password = "";
+          location.replace(destination.href);
+        } catch (reason) {
+          notify(reason.message);
+          for (const action of choices) action.disabled = false;
+        }
+      });
+      return choice;
+    });
+    $("join-destinations").replaceChildren(...choices);
     $("done").hidden = false;
     notify("");
   } catch (reason) {

@@ -361,8 +361,8 @@ input:disabled {
 }
 
 .power:not(.on) {
-  background: var(--card);
-  border-color: var(--line-strong);
+  background: var(--raised);
+  border-color: var(--muted);
   color: var(--text);
 }
 

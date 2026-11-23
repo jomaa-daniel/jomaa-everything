@@ -276,6 +276,7 @@ await test("a shared link grants selected homes and the home picker routes light
   await permissions.locator("#create").click();
   await permissions.locator("#notice", { hasText: "Link created" }).waitFor();
   const link = await permissions.locator("#link").inputValue();
+  await guest.addCookies(await owner.cookies());
   const join = await open(guest, link.slice(origin.length));
   await join.locator("#join-form").waitFor();
   await join.locator("#username").fill("robin");
@@ -283,15 +284,23 @@ await test("a shared link grants selected homes and the home picker routes light
   await join.locator("#confirm").fill(guestPassword);
   await join.locator("#join-form button").click();
   await join.locator("#done").waitFor();
-  const destinations = join.locator("#join-destinations a");
+  const destinations = join.locator("#join-destinations button");
   assert.equal(await destinations.count(), 2);
-  assert.ok((await destinations.filter({ hasText: "Remote" }).getAttribute("href")) === "/lights?node=remote");
+  const beforeSignIn = await join.evaluate(
+    async () => (await (await fetch("/api/session")).json()) as { owner: boolean },
+  );
+  assert.equal(beforeSignIn.owner, true, "creating an account preserves the existing owner session");
   await captureReviewScreenshots(join, "join-granted");
+  await destinations.filter({ hasText: "Remote" }).click();
+  await join.locator("#target-title", { hasText: "Remote room" }).waitFor();
+  const signedIn = await join.evaluate(
+    async () => (await (await fetch("/api/session")).json()) as { owner: boolean; username: string },
+  );
+  assert.equal(signedIn.owner, false);
+  assert.equal(signedIn.username, "robin", "the sign-in action switches to the newly created account");
+  assert.equal(new URL(join.url()).searchParams.get("node"), "remote");
   await join.close();
   const lights = await open(guest, "/lights");
-  await lights.locator("#username").fill("robin");
-  await lights.locator("#password").fill(guestPassword);
-  await lights.locator("#login-form button.primary").click();
   await lights.locator("#controller").waitFor();
   assert.equal(await lights.getByLabel("Home", { exact: true }).locator("option").count(), 2);
   await lights.getByLabel("Home", { exact: true }).selectOption("remote");

@@ -684,10 +684,14 @@ kbd {
   #assignment-rows td:nth-child(2)::before {
     content: "Category: ";
     color: var(--muted);
+    display: block;
+    margin-bottom: 4px;
   }
   #assignment-rows td:nth-child(3)::before {
     content: "Groups: ";
     color: var(--muted);
+    display: block;
+    margin-bottom: 4px;
   }
   .device-source {
     display: inline;

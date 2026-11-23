@@ -230,7 +230,8 @@ Opening a link shows a form for a username (3 to 32 lowercase letters, digits,
 dots, dashes, or underscores) and a password within
 `accounts.passwordLength`. Creating
 the account leaves the browser's current session unchanged. The completion
-screen offers sign-in links for the pages and homes granted by the invitation.
+screen offers sign-in actions for the pages and homes granted by the invitation.
+Choosing one signs in as the newly created account and opens those controls.
 An account without grants is told to ask the owner for access.
 
 The Accounts section of `/accounts` lists accounts with a checkbox per scope and a button
