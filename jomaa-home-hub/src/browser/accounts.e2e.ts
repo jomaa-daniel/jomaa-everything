@@ -421,6 +421,28 @@ await test("accounts without a link stay in the unified table and show account a
   apiAccounts.deleteAccount("standalone");
 });
 
+await test("phone account rows show every field and allow inspection without horizontal scrolling", async () => {
+  const page = await open(owner, "/accounts");
+  await page.setViewportSize({ width: 320, height: 740 });
+  const row = page.locator("#entries tr").first();
+  await row.waitFor();
+  for (const cell of await row.locator("td").all()) {
+    const bounds = await cell.boundingBox();
+    assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 320, "each field fits the phone width");
+  }
+  const inspect = row.getByRole("button", { name: /^Inspect/ });
+  const bounds = await inspect.boundingBox();
+  assert.ok(
+    bounds && bounds.x >= 0 && bounds.x + bounds.width <= 320,
+    "Inspect is reachable without a sideways scroll",
+  );
+  await inspect.click();
+  await page.locator("#details").waitFor();
+  await page.locator("#entry-facts dt").first().waitFor();
+  await captureReviewScreenshots(page, "phone-account-details");
+  await page.close();
+});
+
 await test("no page threw a script error", () => {
   assert.deepEqual(scriptErrors, []);
 });
