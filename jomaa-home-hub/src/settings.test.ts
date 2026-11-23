@@ -21,6 +21,7 @@ test("invalid settings name the setting", () => {
     sessionLifetimeDays: 1,
     sessionsPerAccount: 1,
     inviteLifetimeDays: 1,
+    inviteChartDays: 1,
     passwordLength: { min: 1, max: 2 },
   };
   const secrets = {
@@ -44,6 +45,7 @@ test("invalid settings name the setting", () => {
       health: settings.health,
     });
   assert.throws(() => parseSettings(broken({ sessionLifetimeDays: 0 })), /accounts\.sessionLifetimeDays/);
+  assert.throws(() => parseSettings(broken({ inviteChartDays: 0 })), /accounts\.inviteChartDays/);
   assert.throws(() => parseSettings(broken({ passwordLength: { min: 20, max: 10 } })), /passwordLength\.max/);
   assert.throws(() => parseSettings(broken({ extra: 1 })), /unknown field "extra"/);
   const badPrefetch = (change: Record<string, unknown>) =>

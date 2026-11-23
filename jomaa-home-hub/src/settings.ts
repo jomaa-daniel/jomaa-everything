@@ -7,6 +7,7 @@ export interface AccountSettings {
   sessionLifetimeDays: number;
   sessionsPerAccount: number;
   inviteLifetimeDays: number;
+  inviteChartDays: number;
   passwordLength: { min: number; max: number };
 }
 
@@ -184,7 +185,14 @@ export function parseSettings(text: string): Settings {
     "goveeStatusTimeoutSeconds",
   );
   const accounts = new Fields(root.value("accounts"), "settings.json accounts")
-    .only("databaseFile", "sessionLifetimeDays", "sessionsPerAccount", "inviteLifetimeDays", "passwordLength")
+    .only(
+      "databaseFile",
+      "sessionLifetimeDays",
+      "sessionsPerAccount",
+      "inviteLifetimeDays",
+      "inviteChartDays",
+      "passwordLength",
+    )
     .required("databaseFile", "passwordLength");
   const length = new Fields(accounts.value("passwordLength"), "settings.json accounts.passwordLength").only(
     "min",
@@ -201,6 +209,7 @@ export function parseSettings(text: string): Settings {
       sessionLifetimeDays: positive(accounts, "sessionLifetimeDays", "accounts"),
       sessionsPerAccount: positive(accounts, "sessionsPerAccount", "accounts"),
       inviteLifetimeDays: positive(accounts, "inviteLifetimeDays", "accounts"),
+      inviteChartDays: positive(accounts, "inviteChartDays", "accounts"),
       passwordLength: { min, max },
     },
     prefetch: parsePrefetch(root.value("prefetch")),

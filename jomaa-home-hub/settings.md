@@ -9,6 +9,9 @@ settings.
 
 Invited accounts, their sessions, and invite links.
 
+`accounts.inviteChartDays` is the number of daily UTC buckets shown in a link's access chart.
+Lifetime totals include every recorded opening. Link history is retained for inspection.
+
 | Key                            | Type         | Meaning                                                                                                                   |
 | ------------------------------ | ------------ | ------------------------------------------------------------------------------------------------------------------------- |
 | `accounts`                     | object       | Settings for invited accounts.                                                                                            |

@@ -189,6 +189,8 @@ export class Api {
       route("GET", "/api/picos/runs/{runId}", "devices", this.#picoRun),
       route("GET", "/api/invites", "owner", this.#inviteList),
       route("POST", "/api/invites", "owner", this.#inviteCreate),
+      route("GET", "/api/invites/{id}", "owner", this.#inviteDetail),
+      route("PATCH", "/api/invites/{id}", "owner", this.#inviteExpiration),
       route("DELETE", "/api/invites/{id}", "owner", this.#inviteRevoke),
       route("GET", "/api/accounts", "owner", this.#accountList),
       route("PUT", "/api/accounts/{username}/grants", "owner", this.#accountGrants),
@@ -519,8 +521,9 @@ export class Api {
   }
 
   async #inviteCheck({ req, res }: RequestContext): Promise<void> {
+    requireSameOrigin(req);
     const token = (await readBody(req)).only("token").string("token") ?? "";
-    writeJSON(res, 200, { expiresAt: this.accounts.checkInvite(token).expiresAt, passwordLength });
+    writeJSON(res, 200, { expiresAt: this.accounts.openInvite(token).expiresAt, passwordLength });
   }
 
   /** Creates an account from an invite; the caller's session is unchanged. */
@@ -539,6 +542,19 @@ export class Api {
   async #inviteList({ res }: RequestContext): Promise<void> {
     writeJSON(res, 200, { invites: this.accounts.invites() });
     return Promise.resolve();
+  }
+
+  async #inviteDetail({ res, params }: RequestContext): Promise<void> {
+    const id = params[0] ?? "";
+    writeJSON(res, 200, { invite: this.accounts.invite(id), activity: this.accounts.inviteActivity(id) });
+    return Promise.resolve();
+  }
+
+  async #inviteExpiration({ req, res, params }: RequestContext): Promise<void> {
+    requireSameOrigin(req);
+    const expiresAt = (await readBody(req)).only("expiresAt").required("expiresAt").int("expiresAt");
+    if (expiresAt === null) throw new HttpError(400, "expiresAt must be a whole-number timestamp");
+    writeJSON(res, 200, { invite: this.accounts.setInviteExpiration(params[0] ?? "", expiresAt) });
   }
 
   /** Returns the invite's token once; the page turns it into a share link. */

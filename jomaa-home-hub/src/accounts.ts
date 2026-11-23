@@ -1,7 +1,7 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
 import { settings } from "./settings.js";
 
 /** The pages an account can be granted, by scope ID. */
@@ -55,7 +55,21 @@ export interface Invite {
   id: string;
   createdAt: number;
   expiresAt: number;
+  status: "pending" | "expired" | "used" | "revoked";
+  account: Pick<Account, "username" | "createdAt"> | null;
+  revokedAt: number | null;
 }
+
+export interface InviteActivity {
+  days: { date: string; count: number }[];
+  total: number;
+  lastAccessAt: number | null;
+  chartDays: number;
+}
+
+const inviteSelect = `SELECT invites.id, invites.created_at, invites.expires_at,
+  invite_outcomes.username, invite_outcomes.joined_at, invite_outcomes.revoked_at
+  FROM invites LEFT JOIN invite_outcomes ON invites.id=invite_outcomes.id`;
 
 const dayMs = 24 * 60 * 60_000;
 export const sessionLifetimeMs = settings.accounts.sessionLifetimeDays * dayMs;
@@ -115,7 +129,9 @@ export class Accounts {
       CREATE TABLE IF NOT EXISTS account_grants (username TEXT NOT NULL REFERENCES accounts(username) ON DELETE CASCADE, node TEXT NOT NULL, scope TEXT NOT NULL, PRIMARY KEY(username, node, scope));
       CREATE TABLE IF NOT EXISTS invite_grants (id TEXT NOT NULL REFERENCES invites(id) ON DELETE CASCADE, node TEXT NOT NULL, scope TEXT NOT NULL, PRIMARY KEY(id, node, scope));
       CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, username TEXT NOT NULL REFERENCES accounts(username) ON DELETE CASCADE, expires_at INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS invites (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);`);
+      CREATE TABLE IF NOT EXISTS invites (id TEXT PRIMARY KEY, token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS invite_outcomes (id TEXT PRIMARY KEY REFERENCES invites(id) ON DELETE CASCADE, username TEXT, joined_at INTEGER, revoked_at INTEGER);
+      CREATE TABLE IF NOT EXISTS invite_access (id TEXT NOT NULL REFERENCES invites(id) ON DELETE CASCADE, day TEXT NOT NULL, count INTEGER NOT NULL, last_access_at INTEGER NOT NULL, PRIMARY KEY(id, day));`);
   }
 
   /** Creates a single-use invite. The token is returned once and only its hash is stored. */
@@ -129,39 +145,94 @@ export class Accounts {
     for (const grant of grants)
       for (const scope of new Set(grant.scopes))
         this.#db.prepare("INSERT INTO invite_grants VALUES (?, ?, ?)").run(invite.id, grant.node, scope);
-    return { invite, token };
+    return { invite: this.invite(invite.id), token };
   }
 
-  /** Unused, unexpired invites, newest first. */
+  /** All invite links, including used, expired, and revoked links, newest first. */
   invites(): Invite[] {
     return this.#db
-      .prepare("SELECT id, created_at, expires_at FROM invites WHERE expires_at > ? ORDER BY created_at DESC")
-      .all(this.now())
-      .map((row) => ({
-        grants: this.#grants("invite_grants", "id", String(row["id"])),
-        id: String(row["id"]),
-        createdAt: Number(row["created_at"]),
-        expiresAt: Number(row["expires_at"]),
-      }));
+      .prepare(inviteSelect + " ORDER BY invites.created_at DESC, invites.rowid DESC")
+      .all()
+      .map((row) => this.#invite(row));
+  }
+
+  invite(id: string): Invite {
+    const row = this.#db.prepare(inviteSelect + " WHERE invites.id=?").get(id);
+    if (!row) throw new AccountError(404, "Invite not found");
+    return this.#invite(row);
+  }
+
+  /** Daily UTC link opens in the configured chart window, with lifetime totals. */
+  inviteActivity(id: string): InviteActivity {
+    const invite = this.invite(id);
+    const today = Math.floor(this.now() / dayMs) * dayMs;
+    const start = Math.max(
+      Math.floor(invite.createdAt / dayMs) * dayMs,
+      today - (settings.accounts.inviteChartDays - 1) * dayMs,
+    );
+    const counts = this.#db
+      .prepare("SELECT day, count FROM invite_access WHERE id=? AND day>=? ORDER BY day")
+      .all(id, new Date(start).toISOString().slice(0, 10));
+    const days = [];
+    for (let at = start; at <= today; at += dayMs) {
+      const date = new Date(at).toISOString().slice(0, 10);
+      days.push({ date, count: Number(counts.find((row) => row["day"] === date)?.["count"] ?? 0) });
+    }
+    const totals = this.#db
+      .prepare("SELECT COALESCE(SUM(count), 0) AS total, MAX(last_access_at) AS last FROM invite_access WHERE id=?")
+      .get(id);
+    return {
+      days,
+      total: Number(totals?.["total"] ?? 0),
+      lastAccessAt: totals?.["last"] == null ? null : Number(totals["last"]),
+      chartDays: settings.accounts.inviteChartDays,
+    };
+  }
+
+  setInviteExpiration(id: string, expiresAt: number): Invite {
+    const invite = this.invite(id);
+    if (invite.status === "used" || invite.status === "revoked")
+      throw new AccountError(409, "Used or revoked links cannot change expiration");
+    if (
+      !Number.isSafeInteger(expiresAt) ||
+      Number.isNaN(new Date(expiresAt).getTime()) ||
+      expiresAt <= invite.createdAt
+    )
+      throw new AccountError(400, "Expiration must be a valid date after the link was created");
+    this.#db.prepare("UPDATE invites SET expires_at=? WHERE id=?").run(expiresAt, id);
+    return this.invite(id);
   }
 
   revokeInvite(id: string): void {
-    if (this.#db.prepare("DELETE FROM invites WHERE id=?").run(id).changes === 0)
-      throw new AccountError(404, "Invite not found");
+    const invite = this.invite(id);
+    if (invite.status === "used") throw new AccountError(409, "This link has already created an account");
+    this.#db
+      .prepare("INSERT INTO invite_outcomes (id, revoked_at) VALUES (?, ?) ON CONFLICT(id) DO NOTHING")
+      .run(id, this.now());
+  }
+
+  /** Counts a known link opening, including openings after it becomes unusable. */
+  openInvite(token: string): Invite {
+    const row = this.#db.prepare("SELECT id FROM invites WHERE token_hash=?").get(digest(token));
+    if (row) {
+      const now = this.now();
+      this.#db
+        .prepare(
+          `INSERT INTO invite_access VALUES (?, ?, 1, ?)
+        ON CONFLICT(id, day) DO UPDATE SET count=count+1, last_access_at=excluded.last_access_at`,
+        )
+        .run(String(row["id"]), new Date(now).toISOString().slice(0, 10), now);
+    }
+    return this.checkInvite(token);
   }
 
   /** The invite a token opens; throws when it is unknown, used, or expired. */
   checkInvite(token: string): Invite {
-    const row = this.#db
-      .prepare("SELECT id, created_at, expires_at FROM invites WHERE token_hash=? AND expires_at > ?")
-      .get(digest(token), this.now());
-    if (!row) throw new AccountError(404, "This invite link is invalid, used, or expired");
-    return {
-      grants: this.#grants("invite_grants", "id", String(row["id"])),
-      id: String(row["id"]),
-      createdAt: Number(row["created_at"]),
-      expiresAt: Number(row["expires_at"]),
-    };
+    const row = this.#db.prepare(inviteSelect + " WHERE invites.token_hash=?").get(digest(token));
+    const invite = row ? this.#invite(row) : null;
+    if (!invite || invite.status !== "pending")
+      throw new AccountError(404, "This invite link is invalid, used, or expired");
+    return invite;
   }
 
   /** Creates an account with the invite grants and consumes the invite. */
@@ -180,7 +251,9 @@ export class Accounts {
       for (const grant of invite.grants)
         for (const scope of grant.scopes)
           this.#db.prepare("INSERT INTO account_grants VALUES (?, ?, ?)").run(name, grant.node, scope);
-      this.#db.prepare("DELETE FROM invites WHERE id=?").run(invite.id);
+      this.#db
+        .prepare("INSERT INTO invite_outcomes (id, username, joined_at) VALUES (?, ?, ?)")
+        .run(invite.id, name, createdAt);
       this.#db.exec("COMMIT");
       return { username: name, grants: invite.grants, createdAt };
     } catch (error) {
@@ -269,11 +342,26 @@ export class Accounts {
     this.#db.prepare("DELETE FROM sessions WHERE token_hash=?").run(digest(token));
   }
 
-  /** Removes expired sessions and invites. */
+  /** Removes expired sessions. Invite history remains available for inspection. */
   prune(): void {
     const now = this.now();
     this.#db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now);
-    this.#db.prepare("DELETE FROM invites WHERE expires_at <= ?").run(now);
+  }
+
+  #invite(row: Record<string, SQLOutputValue>): Invite {
+    const account =
+      row["username"] == null ? null : { username: String(row["username"]), createdAt: Number(row["joined_at"]) };
+    const revokedAt = row["revoked_at"] == null ? null : Number(row["revoked_at"]);
+    const expiresAt = Number(row["expires_at"]);
+    return {
+      grants: this.#grants("invite_grants", "id", String(row["id"])),
+      id: String(row["id"]),
+      createdAt: Number(row["created_at"]),
+      expiresAt,
+      account,
+      revokedAt,
+      status: account ? "used" : revokedAt !== null ? "revoked" : expiresAt <= this.now() ? "expired" : "pending",
+    };
   }
 
   #grants(table: "account_grants" | "invite_grants", field: "username" | "id", id: string): Grant[] {

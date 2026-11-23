@@ -4,6 +4,7 @@
     "sessionLifetimeDays": 30,
     "sessionsPerAccount": 20,
     "inviteLifetimeDays": 7,
+    "inviteChartDays": 30,
     "passwordLength": {
       "min": 12,
       "max": 256

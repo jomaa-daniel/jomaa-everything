@@ -634,7 +634,9 @@ test("invites are single-use, revocable, and owner-only", async () => {
   assert.equal((await join("first")).status, 201);
   assert.equal((await join("second")).status, 404, "an invite works once");
   assert.equal((await call(anon, "POST", "/api/invites/check", JSON.stringify({ token }))).status, 404);
-  assert.deepEqual((await call(env, "GET", "/api/invites")).body["invites"], []);
+  const used = (await call(env, "GET", `/api/invites/${id}`)).body;
+  assert.equal((used["invite"] as Json)["status"], "used");
+  assert.equal(((used["invite"] as Json)["account"] as Json)["username"], "first");
 
   const taken = (await call(env, "POST", "/api/invites", '{"grants":[]}')).body["token"] as string;
   const duplicate = await call(
@@ -652,6 +654,83 @@ test("invites are single-use, revocable, and owner-only", async () => {
   assert.equal((await call(env, "DELETE", `/api/invites/${revokedId}`)).status, 200);
   const check = await call(anon, "POST", "/api/invites/check", JSON.stringify({ token: revoked.body["token"] }));
   assert.equal(check.status, 404);
+});
+
+test("link inspection and expiration edits are owner-only and record page opens", async () => {
+  const env = await setup();
+  const anonymous = { url: env.url, token: "" };
+  const guest = { url: env.url, token: await joinAs(env, "guest-inspector") };
+  let now = Date.UTC(2026, 0, 1);
+  env.accounts.now = () => now;
+  const created = await call(env, "POST", "/api/invites", '{"grants":[]}');
+  const invite = created.body["invite"] as Json;
+  const id = invite["id"] as string;
+  const token = created.body["token"] as string;
+  const path = `/api/invites/${id}`;
+  const expiresAt = now + 86_400_000;
+  for (const [caller, status] of [
+    [anonymous, 401],
+    [guest, 403],
+  ] as const) {
+    assert.equal((await call(caller, "GET", path)).status, status);
+    assert.equal((await call(caller, "PATCH", path, JSON.stringify({ expiresAt }))).status, status);
+  }
+  assert.equal((await call(env, "GET", "/api/invites/missing")).status, 404);
+  assert.equal((await call(env, "PATCH", "/api/invites/missing", JSON.stringify({ expiresAt }))).status, 404);
+  assert.equal(
+    (await call(env, "PATCH", path, JSON.stringify({ expiresAt }), { Origin: "https://evil.example" })).status,
+    403,
+  );
+  for (const body of [
+    {},
+    { expiresAt: null },
+    { expiresAt: "tomorrow" },
+    { expiresAt: 1.5 },
+    { expiresAt: now },
+    { expiresAt, extra: true },
+  ])
+    assert.equal((await call(env, "PATCH", path, JSON.stringify(body))).status, 400);
+  assert.equal((await call(env, "PATCH", path, JSON.stringify({ expiresAt }))).status, 200);
+  const check = () => call(anonymous, "POST", "/api/invites/check", JSON.stringify({ token }));
+  const opened = await check();
+  assert.equal(opened.status, 200);
+  assert.equal(opened.body["expiresAt"], expiresAt);
+  assert.equal(opened.body["account"], undefined, "public checks do not expose account information");
+  assert.equal(
+    (await call(anonymous, "POST", "/api/invites/check", JSON.stringify({ token }), { Origin: "https://evil.example" }))
+      .status,
+    403,
+  );
+  assert.equal((await call(env, "GET", path)).status, 200);
+  assert.equal(
+    env.accounts.inviteActivity(id).total,
+    1,
+    "owner inspection and rejected cross-site checks do not count",
+  );
+  now = expiresAt;
+  env.accounts.prune();
+  assert.equal((await check()).status, 404);
+  assert.equal(((await call(env, "GET", path)).body["invite"] as Json)["status"], "expired");
+  assert.equal((await call(env, "PATCH", path, JSON.stringify({ expiresAt: now + 86_400_000 }))).status, 200);
+  assert.equal((await check()).status, 200);
+  assert.equal(
+    (
+      await call(
+        anonymous,
+        "POST",
+        "/api/join",
+        JSON.stringify({ token, username: "linked-user", password: accountPassword }),
+      )
+    ).status,
+    201,
+  );
+  assert.equal((await check()).status, 404);
+  const detail = (await call(env, "GET", path)).body;
+  assert.equal((detail["invite"] as Json)["status"], "used");
+  assert.equal(((detail["invite"] as Json)["account"] as Json)["username"], "linked-user");
+  assert.equal((detail["activity"] as Json)["total"], 4);
+  assert.equal((await call(env, "PATCH", path, JSON.stringify({ expiresAt: now + 86_400_000 }))).status, 409);
+  assert.ok(!JSON.stringify(detail).includes(token));
 });
 
 test("the owner session reports every scope", async () => {

@@ -56,8 +56,50 @@
             ><input id="link" readonly placeholder="No link yet" /><button id="copy" disabled>Copy</button
             ><button id="create" class="primary">Create link</button>
           </div>
-          <ul id="invites" data-tui-nav="vertical" class="management-list"></ul>
-          <p id="invites-empty" class="muted" hidden>No unused invites.</p>
+          <div class="invite-workspace">
+            <div>
+              <ul id="invites" data-tui-nav="vertical" class="management-list"></ul>
+              <p id="invites-empty" class="muted" hidden>No links yet.</p>
+            </div>
+            <section id="invite-detail" class="tui-pane" aria-labelledby="invite-detail-heading" hidden>
+              <div class="actions">
+                <h3 id="invite-detail-heading">Link details</h3>
+                <button id="refresh-invite" type="button">Refresh</button>
+                <button id="close-invite" type="button">Close details</button>
+              </div>
+              <p id="invite-notice" role="status" aria-live="polite"></p>
+              <dl id="invite-facts"></dl>
+              <form id="expiration-form">
+                <label for="invite-expiration">Expiration date and time</label>
+                <div class="create-form">
+                  <input id="invite-expiration" type="datetime-local" required />
+                  <button id="save-expiration" class="primary">Save expiration</button>
+                </div>
+                <p id="expiration-help" class="muted"></p>
+              </form>
+              <h3>Daily link opens</h3>
+              <p id="access-summary" class="muted"></p>
+              <div id="access-chart"></div>
+              <details>
+                <summary>View daily counts</summary>
+                <div class="table-wrap">
+                  <table>
+                    <caption class="sr-only">
+                      Daily link opens in UTC
+                    </caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Date (UTC)</th>
+                        <th scope="col">Opens</th>
+                      </tr>
+                    </thead>
+                    <tbody id="access-days"></tbody>
+                  </table>
+                </div>
+              </details>
+              <p class="muted">Counts include repeat opens and attempts after a link is used, expired, or revoked.</p>
+            </section>
+          </div>
         </section>
       </div>
     </main>

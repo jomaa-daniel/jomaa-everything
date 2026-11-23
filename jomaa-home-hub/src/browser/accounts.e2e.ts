@@ -100,11 +100,12 @@ const transport: typeof fetch = (url, init) => {
   const target = new URL(typeof url === "string" ? url : url instanceof URL ? url.href : url.url);
   return fetch(remoteOrigin + target.pathname + target.search, init);
 };
+const apiAccounts = new Accounts(":memory:");
 const api = new Api(
   hub,
   noMatter,
   ownerPassword,
-  new Accounts(":memory:"),
+  apiAccounts,
   new Clicks(":memory:"),
   silentLog,
   {
@@ -136,6 +137,7 @@ async function signInAsOwner(page: Page): Promise<void> {
 }
 
 let inviteLink = "";
+let inviteId = "";
 
 await test("the owner signs in and creates an invite link", async () => {
   const page = await open(owner, "/accounts");
@@ -144,6 +146,7 @@ await test("the owner signs in and creates an invite link", async () => {
   await page.locator("#invites-empty").waitFor();
   await page.locator("#create").click();
   await page.locator("#invites li").waitFor();
+  inviteId = (await page.locator("#invites li").getAttribute("data-id")) ?? "";
   inviteLink = await page.locator("#link").inputValue();
   assert.match(inviteLink, new RegExp(`^${origin}/join#[\\w-]{43}$`));
   assert.ok(await page.locator("#copy").isEnabled());
@@ -194,11 +197,23 @@ await test("a new account signs in but can't open any page", async () => {
   await accounts.close();
 });
 
-await test("the accounts page lists the new account and no longer lists the used invite", async () => {
+await test("the owner inspects the created account and daily link opens after joining", async () => {
   const page = await open(owner, "/accounts");
   await page.getByLabel("sarah can open Lights at Home").waitFor();
-  await page.locator("#invites-empty").waitFor();
-  assert.equal(await page.locator("#invites li").count(), 0);
+  assert.equal(await page.locator("#invites li").count(), 1);
+  await page.getByRole("button", { name: `Inspect link ${inviteId}` }).click();
+  await page.locator("#invite-facts", { hasText: "sarah" }).waitFor();
+  assert.match((await page.locator("#invite-facts").textContent()) ?? "", /Account createdYes/);
+  assert.equal(await page.locator("#access-days tr").count(), 1);
+  assert.equal(await page.locator("#access-days td").last().textContent(), "2");
+  assert.match((await page.locator("#access-summary").textContent()) ?? "", /^2 opens in total/);
+  assert.ok(await page.locator("#access-chart svg[role=img]").isVisible());
+  assert.ok(await page.locator("#save-expiration").isDisabled());
+  await page.reload();
+  await page.locator("#invite-facts", { hasText: "sarah" }).waitFor();
+  await page.locator("#close-invite").click();
+  assert.ok(await page.locator("#invite-detail").isHidden());
+  assert.equal(new URL(page.url()).hash, "");
   await page.close();
 });
 
@@ -278,6 +293,60 @@ await test("a shared link grants selected homes and the home picker routes light
   assert.ok(!(await permissions.getByLabel("robin can open Device health at Home").isChecked()));
   await lights.close();
   await permissions.close();
+});
+
+await test("an unused link's expiration saves, expires the link, and can renew it", async (t) => {
+  t.after(() => {
+    apiAccounts.now = Date.now;
+  });
+  const page = await open(owner, "/accounts");
+  await page.locator("#invites li").first().waitFor();
+  const previousCount = await page.locator("#invites li").count();
+  await page.locator("#create").click();
+  await page.locator("#notice", { hasText: "Link created" }).waitFor();
+  await page.locator("#invites li").nth(previousCount).waitFor();
+  const link = await page.locator("#link").inputValue();
+  const row = page.locator("#invites li").first();
+  await row.getByRole("button", { name: /^Inspect link/ }).click();
+  await page.locator("#invite-facts", { hasText: "No account yet" }).waitFor();
+  await page.locator("#invite-expiration").fill("2000-01-01T00:00");
+  await page.locator("#save-expiration").click();
+  await page.locator("#invite-notice", { hasText: "after the link was created" }).waitFor();
+  const local = (date: Date) => {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  };
+  const expiry = local(new Date(Date.now() + 172_800_000));
+  await page.locator("#invite-expiration").fill(expiry);
+  await page.locator("#save-expiration").click();
+  await page.locator("#notice", { hasText: "Link expiration saved" }).waitFor();
+  await page.reload();
+  await page.locator("#invite-expiration:enabled").waitFor();
+  assert.equal(await page.locator("#invite-expiration").inputValue(), expiry);
+  const id = new URLSearchParams(new URL(page.url()).hash.slice(1)).get("invite") ?? "";
+  const now = Date.now();
+  apiAccounts.now = () => now + 120_000;
+  await page.locator("#invite-expiration").fill(local(new Date(now + 60_000)));
+  await page.locator("#save-expiration").click();
+  await page.locator("#invite-facts", { hasText: "Expired" }).waitFor();
+  const join = await open(guest, link.slice(origin.length));
+  await join.locator("#invalid").waitFor();
+  await page.locator("#invite-expiration").fill(expiry);
+  await page.locator("#save-expiration").click();
+  await page.locator("#invite-facts", { hasText: "Unused" }).waitFor();
+  await join.goto(link);
+  await join.locator("#join-form").waitFor();
+  await page.locator("#refresh-invite").click();
+  await page.locator("#access-summary", { hasText: "2 opens in total" }).waitFor();
+  const revoke = page.locator(`#invites li[data-id="${id}"]`).getByRole("button", { name: /^Revoke invite/ });
+  await revoke.click();
+  await page.locator("#invite-facts", { hasText: "Revoked" }).waitFor();
+  assert.ok(await page.locator("#save-expiration").isDisabled());
+  await join.goto(link);
+  await join.locator("#invalid").waitFor();
+  apiAccounts.now = Date.now;
+  await join.close();
+  await page.close();
 });
 
 await test("no page threw a script error", () => {
