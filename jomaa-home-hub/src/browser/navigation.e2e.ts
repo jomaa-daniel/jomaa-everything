@@ -96,10 +96,10 @@ test("unified rows navigate without granting access and permissions edit in Deta
   assert.deepEqual(accounts.account("alpha")?.grants[0]?.scopes, ["devices"]);
   assert.deepEqual(accounts.account("beta")?.grants, []);
   await page.keyboard.press("Enter");
-  const first = page.getByLabel("alpha can open Lights at Home");
+  const first = page.getByLabel("alpha Lights node");
   await first.waitFor();
   await first.focus();
-  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Alt+ArrowDown");
   assert.ok(await page.getByLabel("alpha can open Device health at Home").evaluate(isFocused));
   assert.deepEqual(accounts.account("alpha")?.grants[0]?.scopes, ["devices"]);
   await page.keyboard.press("Space");

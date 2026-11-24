@@ -2,7 +2,6 @@
 // lamps that keep reporting their old state after taking a command, and one
 // lamp that rejects every command.
 import assert from "node:assert/strict";
-import { catalog } from "../nodes.js";
 import { after, test } from "node:test";
 import { chromium, type Page } from "playwright-core";
 import { Accounts } from "../accounts.js";
@@ -143,31 +142,16 @@ test("the room name wraps instead of being cut off beside a long row of dots", a
   await page.close();
 });
 
-test("home selection leaves the phone's room and light controls visible and usable", async () => {
+test("the phone lighting panel has no node switcher and keeps its controls usable", async () => {
   const page = await openPanel();
-  const home = await page.getByLabel("Home", { exact: true }).boundingBox();
+  assert.equal(await page.locator("#node-picker").count(), 0);
   const status = await page.locator(".status-row").boundingBox();
   const brightness = await page.locator("#brightness").boundingBox();
   const temperature = await page.locator("#temperature").boundingBox();
-  assert.ok(home && status && brightness && temperature);
-  assert.ok(home.height >= 44, "the home selector is a usable touch target");
-  assert.ok(status.y >= home.y + home.height, "the room title follows the home selector");
-  assert.ok(status.y < 150, "the controller begins near the top of the phone screen");
-  assert.ok(brightness.height > 30 && temperature.height > 30, "slider tracks have usable height");
+  assert.ok(status && brightness && temperature);
+  assert.ok(status.y < 100, "the controller starts at the top of the panel");
+  assert.ok(brightness.height > 30 && temperature.height > 30, "slider tracks remain usable");
   assert.ok(temperature.y >= brightness.y + brightness.height, "slider tracks do not overlap");
-  await page.close();
-});
-
-test("an unavailable home requires an explicit choice and permits returning to an allowed home", async () => {
-  const page = await openPanel();
-  await page.goto(origin + "/lights?node=removed");
-  await page.locator("#login-section").waitFor();
-  const home = page.getByLabel("Home", { exact: true });
-  await home.waitFor();
-  assert.equal(await home.inputValue(), "", "an unavailable home is not silently replaced");
-  await home.selectOption(catalog.defaultNode);
-  await page.locator("#controller").waitFor();
-  assert.equal(new URL(page.url()).searchParams.get("node"), catalog.defaultNode);
   await page.close();
 });
 

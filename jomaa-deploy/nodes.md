@@ -8,6 +8,10 @@ entry template; add a configured entry to `nodes.json.nodes` to use it.
 | --- | --- |
 | `defaultNode` | ID of the enabled gateway; local development uses it when no installation identity exists. |
 | `identityFile` | File inside `deployDirectory` containing the installation's node ID. Installation writes it; changing an installed identity requires a separate installation. |
+| `routing` | Routing policy for each capability. `account` uses one node assigned in account management and rejects request-level node overrides; `request` permits choosing a granted node per request. The owner uses `defaultNode` for account-routed capabilities. |
+| `routing.lights` | Determines how lighting requests select their installation. |
+| `routing.devices` | Determines how device-health requests select their installation. |
+| `routing.manage` | Determines how organization requests select their installation. |
 | `transport` | Bounds applied to inter-node requests. |
 | `transport.requestTimeoutSeconds` | Total deadline for forwarding a request, including reading its response. |
 | `transport.maxRequestBytes` | Maximum buffered request body. |
@@ -40,9 +44,12 @@ Profiles contain `grants`: a list of `{node, scopes}` entries. Each entry
 grants capabilities on one enabled node. Invitations carry these grants so
 the recipient can control the selected home immediately after registration.
 Accounts without grants cannot control a node. Changing or deleting a grant
-affects the next request. A request's `node` query parameter selects a granted
-node; without it, the gateway selects the first node granting the requested
-capability. Clients can list their nodes at `/api/nodes`.
+affects the next request. The `routing` policy determines each capability's
+selection source. Account-routed capabilities have one assigned node and reject
+request-level overrides. The account manager presents a single node choice for
+these capabilities; removing it removes access. Request-routed capabilities
+accept a granted `node` query parameter and otherwise select the first granted
+node. Clients can list their nodes and routing policies at `/api/nodes`.
 
 Cloudflare DNS selects a tunnel by hostname. The gateway authenticates the
 profile, authorizes the selected capability and sends a signed request through

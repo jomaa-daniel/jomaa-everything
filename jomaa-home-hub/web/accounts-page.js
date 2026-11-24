@@ -1,6 +1,7 @@
 import { $, api, element, notify, ownerPage, when } from "/home/accounts.js";
 
 let catalog = [];
+let routing = {};
 let fields = [];
 let scopeNames = new Map();
 let entries = [];
@@ -72,17 +73,6 @@ function columns(scopes, nodes) {
   return nodes.flatMap((node) =>
     scopes.filter((scope) => node.scopes.includes(scope.id)).map((scope) => ({ node, scope })),
   );
-}
-
-function grantsFrom(boxes, options) {
-  return [...new Set(options.map(({ node }) => node.id))]
-    .map((id) => ({
-      node: id,
-      scopes: options
-        .filter((field, index) => field.node.id === id && boxes[index].checked)
-        .map((field) => field.scope.id),
-    }))
-    .filter((grant) => grant.scopes.length > 0);
 }
 
 /** Links and the accounts they created share one row. Accounts without a link have their own row. */
@@ -218,42 +208,87 @@ function renderEntries() {
 
 /** Saves permissions for the selected unused link or its current account. */
 function renderGrants(container, grants, prefix, entry, kind) {
-  const options = fields;
   const generation = detailGeneration;
-  const boxes = options.map(({ node, scope }) => {
-    const box = element("input");
-    box.type = "checkbox";
-    box.dataset.node = node.id;
-    box.dataset.scope = scope.id;
-    box.checked = grants.some((grant) => grant.node === node.id && grant.scopes.includes(scope.id));
-    box.setAttribute("aria-label", `${prefix} ${scope.name} at ${node.name}`);
-    const label = element("label");
-    label.append(box, element("span", `${scope.name} · ${node.name}`));
-    container.append(label);
-    return box;
-  });
-  for (const box of boxes)
-    box.addEventListener("change", async () => {
-      for (const other of boxes) other.disabled = true;
+  const controls = [];
+  const scopes = [...new Map(fields.map((field) => [field.scope.id, field.scope])).values()];
+  for (const scope of scopes) {
+    const options = fields.filter((field) => field.scope.id === scope.id);
+    if (routing[scope.id] === "account") {
+      const select = element("select");
+      select.dataset.scope = scope.id;
+      const identity = kind === "account" ? entry.account.username : `Link ${entry.invite.id}`;
+      select.setAttribute("aria-label", `${identity} ${scope.name} node`);
+      const choices = [{ id: "", name: "No access" }, ...options.map(({ node }) => node)];
+      for (const node of choices) {
+        const option = element("option", node.name);
+        option.value = node.id;
+        select.append(option);
+      }
+      const assigned = grants.filter((grant) => grant.scopes.includes(scope.id));
+      if (assigned.length === 1) select.value = assigned[0].node;
+      else if (assigned.length > 1) {
+        const option = element("option", "Choose one node");
+        option.value = "";
+        option.disabled = true;
+        option.selected = true;
+        select.prepend(option);
+      }
+      const label = element("label");
+      label.append(element("span", `${scope.name} node`), select);
+      container.append(label);
+      controls.push(select);
+    } else {
+      for (const { node } of options) {
+        const box = element("input");
+        box.type = "checkbox";
+        box.dataset.node = node.id;
+        box.dataset.scope = scope.id;
+        box.checked = grants.some((grant) => grant.node === node.id && grant.scopes.includes(scope.id));
+        box.setAttribute("aria-label", `${prefix} ${scope.name} at ${node.name}`);
+        const label = element("label");
+        label.append(box, element("span", `${scope.name} · ${node.name}`));
+        container.append(label);
+        controls.push(box);
+      }
+    }
+  }
+  const read = (control) => (control.tagName === "SELECT" ? control.value : control.checked);
+  const selectedGrants = () => {
+    const granted = new Map();
+    for (const control of controls) {
+      const node = control.tagName === "SELECT" ? control.value : control.checked ? control.dataset.node : "";
+      if (!node) continue;
+      if (!granted.has(node)) granted.set(node, []);
+      granted.get(node).push(control.dataset.scope);
+    }
+    return [...granted].map(([node, scopes]) => ({ node, scopes }));
+  };
+  for (const control of controls) {
+    let saved = read(control);
+    control.addEventListener("change", async () => {
+      for (const other of controls) other.disabled = true;
       try {
         const path =
           kind === "invite"
             ? `/api/invites/${encodeURIComponent(entry.invite.id)}/grants`
             : `/api/accounts/${encodeURIComponent(entry.account.username)}/grants`;
-        const result = await api(path, "PUT", { grants: grantsFrom(boxes, options) });
+        const result = await api(path, "PUT", { grants: selectedGrants() });
         if (generation === detailGeneration) {
           entry[kind] = result[kind];
+          saved = read(control);
           notify(kind === "invite" ? "Link access saved." : `Saved ${entry.account.username}.`, true);
         }
       } catch (reason) {
-        box.checked = !box.checked;
+        if (control.tagName === "SELECT") control.value = saved;
+        else control.checked = saved;
         if (reason.status === 404 || reason.status === 409) await load();
         notify(reason.message);
         if (entry.key === selectedKey) $("detail-notice").textContent = reason.message;
       } finally {
-        if (generation === detailGeneration) for (const other of boxes) other.disabled = false;
+        if (generation === detailGeneration) for (const other of controls) other.disabled = false;
       }
     });
+  }
 }
 
 function renderLinkAccess(entry) {
@@ -376,9 +411,10 @@ async function inspectDetails() {
 /** Loads one snapshot of accounts, links, and available access choices. */
 async function load() {
   const generation = ++loadGeneration;
-  const { accounts, invites, scopes, nodes } = await api("/api/accounts");
+  const { accounts, invites, scopes, nodes, routing: policies } = await api("/api/accounts");
   if (generation !== loadGeneration) return;
   catalog = nodes;
+  routing = policies;
   fields = columns(scopes, nodes);
   scopeNames = new Map(scopes.map((scope) => [scope.id, scope.name]));
   entries = combinedEntries(accounts, invites);

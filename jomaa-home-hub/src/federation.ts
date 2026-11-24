@@ -72,7 +72,19 @@ export class Federation {
   }
 
   target(grants: Grant[] | null, scope: Scope, requested: string | null): NodeConfig {
-    const id = requested ?? this.available(grants, scope)[0]?.id;
+    let id: string | undefined;
+    if (this.config.routing[scope] === "account") {
+      if (requested !== null) throw new NodeError(400, "This capability uses the account's assigned node");
+      const assigned = this.available(grants, scope);
+      if (grants !== null && assigned.length !== 1)
+        throw new NodeError(
+          403,
+          "This account needs one assigned node for this capability. Ask the hub owner to set it.",
+        );
+      id = grants === null ? this.config.defaultNode : assigned[0]?.id;
+    } else {
+      id = requested ?? this.available(grants, scope)[0]?.id;
+    }
     const node = this.config.nodes.find((candidate) => candidate.id === id);
     if (
       !node ||
@@ -86,11 +98,17 @@ export class Federation {
 
   validateGrants(grants: Grant[]): void {
     const seen = new Set<string>();
+    const assignments = new Set<Scope>();
     for (const grant of grants) {
       const node = this.config.nodes.find((candidate) => candidate.id === grant.node);
       if (!node || !node.enabled || seen.has(grant.node) || grant.scopes.some((scope) => !node.scopes.includes(scope)))
         throw new NodeError(400, "Grants must name unique enabled nodes and their allowed capabilities");
       seen.add(grant.node);
+      for (const scope of grant.scopes) {
+        if (this.config.routing[scope] !== "account") continue;
+        if (assignments.has(scope)) throw new NodeError(400, "Assign only one node to each account-routed capability");
+        assignments.add(scope);
+      }
     }
   }
 

@@ -457,14 +457,19 @@ Every request except `/healthz`, `/api/login`, `/api/logout`,
 the login cookie. The owner can use every route. Accounts need the route's
 scope (`lights` for targets, `devices` for Matter and `/api/devices`, `manage`
 for `/api/manage`) on the selected node and get 403 without it. Invite, account
-and Secrets routes are owner-only. The `node` query parameter selects an
-installation; without it the first enabled node granting the requested scope
-is selected. `/api/nodes` lists the caller's available installations.
+and Secrets routes are owner-only. The shared catalog's `routing` policy
+determines the source of each capability's target. Lighting requests use the
+account's one assigned node and reject `node` query overrides. Request-routed
+capabilities accept a granted `node` query parameter and otherwise use the first
+enabled node granting that scope. `/api/nodes` lists the caller's installations
+and routing policies.
 
 The shared [node catalog](../jomaa-deploy/nodes.md) defines installations,
 capability policies, Cloudflare destinations, and deployment modules. The
 Accounts page sets grants per home and includes selected grants in each
-invitation. Light and device pages offer a home selector. Restricted nodes
+invitation. Lighting access is a single node choice in account and unused-link
+Details. The light panel opens the account's assigned installation directly;
+device pages offer a home selector for request-routed capabilities. Restricted nodes
 accept only signed gateway requests for their configured capabilities and
 the exact public routes in their policy. Their deployment receivers use a
 separate signing secret.

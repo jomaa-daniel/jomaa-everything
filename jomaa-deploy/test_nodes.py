@@ -43,6 +43,8 @@ class NodeTest(unittest.TestCase):
     def test_invalid_catalog_is_rejected(self):
         invalid = [
             lambda d: d.update(defaultNode="missing"),
+            lambda d: d["routing"].update(lights="unknown"),
+            lambda d: d["routing"].pop("lights"),
             lambda d: d.update(identityFile="../node.json"),
             lambda d: d["nodes"][1].update(hostname="http://example.org"),
             lambda d: d["nodes"][1].update(modules=None),

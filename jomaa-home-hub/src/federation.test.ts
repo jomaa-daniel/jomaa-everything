@@ -141,8 +141,8 @@ test("invites route Bob to one home and Sally to the other, with immediate revoc
   const env = await setup();
   const bob = await env.guest("bob", [{ node: "remote", scopes: ["lights"] }]);
   const sally = await env.guest("sally", [{ node: "gateway", scopes: ["lights"] }]);
-  assert.deepEqual(env.destinations.get("bob"), [{ href: "/lights?node=remote", name: "Lights · Remote" }]);
-  assert.deepEqual(env.destinations.get("sally"), [{ href: "/lights?node=gateway", name: "Lights · Home" }]);
+  assert.deepEqual(env.destinations.get("bob"), [{ href: "/lights", name: "Lights" }]);
+  assert.deepEqual(env.destinations.get("sally"), [{ href: "/lights", name: "Lights" }]);
   const command = "/api/targets/lamp/command";
   assert.equal((await env.call(command, bob, "POST", { on: true })).status, 200);
   assert.equal(env.remoteLamp.current.on, true);
@@ -151,8 +151,8 @@ test("invites route Bob to one home and Sally to the other, with immediate revoc
   assert.equal(env.localLamp.current.brightness, 20);
   assert.equal(env.remoteLamp.current.brightness, 50);
   const count = env.forwarded.length;
-  assert.equal((await env.call(command + "?node=gateway", bob, "POST", { on: true })).status, 403);
-  assert.equal((await env.call(command + "?node=remote", sally, "POST", { on: true })).status, 403);
+  assert.equal((await env.call(command + "?node=gateway", bob, "POST", { on: true })).status, 400);
+  assert.equal((await env.call(command + "?node=remote", sally, "POST", { on: true })).status, 400);
   assert.equal((await env.call(command, bob, "POST", { on: false }, { Origin: "https://evil.example" })).status, 403);
   assert.equal(env.forwarded.length, count);
   for (const path of [
@@ -264,19 +264,64 @@ test("the same router forwards a different capability and rejects grants exceedi
     ],
   ])
     assert.equal((await env.call("/api/invites", owner, "POST", { grants })).status, 400);
-  assert.equal((await env.call("/api/targets?node=remote", owner)).status, 403, "owner obeys node policy");
+  assert.equal(
+    (await env.call("/api/targets?node=remote", owner)).status,
+    400,
+    "owner cannot override account routing",
+  );
 });
 
-test("multiple grants select a home explicitly without leaking grants across nodes", async () => {
+test("different capabilities can use different assigned and request-selected nodes", async () => {
   const env = await setup();
   const bob = await env.guest("bob", [
     { node: "gateway", scopes: ["manage"] },
     { node: "remote", scopes: ["lights"] },
   ]);
-  assert.equal((await env.call("/api/targets/lamp/command?node=remote", bob, "POST", { brightness: 10 })).status, 200);
+  assert.equal((await env.call("/api/targets/lamp/command", bob, "POST", { brightness: 10 })).status, 200);
   assert.equal(env.remoteLamp.current.brightness, 10);
   assert.equal((await env.call("/api/manage?node=remote", bob)).status, 403);
   assert.equal((await env.call("/api/targets?node=remote&node=gateway", bob)).status, 400);
   const session = (await (await env.call("/api/session?node=remote", bob)).json()) as { scopes: string[] };
   assert.deepEqual(session.scopes, ["lights"]);
+});
+
+test("account lighting assignments reject multiple targets and change routing without a new session", async () => {
+  const env = await setup();
+  const owner = sessionToken(ownerPassword);
+  const multiple = [
+    { node: "gateway", scopes: ["lights"] },
+    { node: "remote", scopes: ["lights"] },
+  ];
+  assert.equal((await env.call("/api/invites", owner, "POST", { grants: multiple })).status, 400);
+  const bob = await env.guest("bob", [{ node: "remote", scopes: ["lights"] }]);
+  assert.equal((await env.call("/api/accounts/bob/grants", owner, "PUT", { grants: multiple })).status, 400);
+  assert.equal((await env.call("/api/targets/lamp/command", bob, "POST", { brightness: 20 })).status, 200);
+  assert.equal(env.remoteLamp.current.brightness, 20);
+  assert.equal(env.localLamp.current.brightness, 50);
+  assert.equal(
+    (await env.call("/api/accounts/bob/grants", owner, "PUT", { grants: [{ node: "gateway", scopes: ["lights"] }] }))
+      .status,
+    200,
+  );
+  assert.equal((await env.call("/api/targets/lamp/command", bob, "POST", { brightness: 30 })).status, 200);
+  assert.equal(env.localLamp.current.brightness, 30);
+  assert.equal(env.remoteLamp.current.brightness, 20);
+  env.accounts.setGrants(
+    "bob",
+    multiple.map((grant) => ({ ...grant, scopes: ["lights"] })),
+  );
+  assert.equal((await env.call("/api/targets", bob)).status, 403, "ambiguous stored assignments fail closed");
+});
+
+test("account routing is a configurable policy for any capability", async () => {
+  const data = structuredClone(config);
+  data.routing.manage = "account";
+  const remote = data.nodes[1];
+  assert.ok(remote);
+  remote.scopes = ["manage"];
+  const env = await setup(data);
+  const bob = await env.guest("bob", [{ node: "remote", scopes: ["manage"] }]);
+  assert.equal((await env.call("/api/manage", bob)).status, 200);
+  assert.equal((await env.call("/api/manage?node=gateway", bob)).status, 400);
+  assert.deepEqual(env.destinations.get("bob"), [{ href: "/manage", name: "Devices" }]);
 });

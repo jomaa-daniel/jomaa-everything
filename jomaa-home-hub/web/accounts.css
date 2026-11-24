@@ -53,6 +53,10 @@
   gap: 1ch;
   margin: 0;
 }
+#details .group-options select {
+  flex: 1;
+  min-width: 0;
+}
 #invite-expiration {
   min-width: 20ch;
 }

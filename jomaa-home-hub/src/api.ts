@@ -486,6 +486,7 @@ export class Api {
     if (principal === null || principal.kind === "delegated") throw new HttpError(401, "sign in first");
     writeJSON(res, 200, {
       nodes: this.federation.available(principal.kind === "owner" ? null : principal.account.grants),
+      routing: this.federation.config.routing,
     });
     return Promise.resolve();
   }
@@ -547,10 +548,15 @@ export class Api {
             : [];
       return nodes
         .filter((node) => required.some((scope) => node.scopes.includes(scope)))
-        .map((node) => ({
-          href: `${page.path}?${new URLSearchParams({ [nodeQuery]: node.id }).toString()}`,
-          name: `${page.name} · ${node.name}`,
-        }));
+        .map((node) => {
+          const bound = required.some(
+            (scope) => node.scopes.includes(scope) && this.federation.config.routing[scope] === "account",
+          );
+          return {
+            href: bound ? page.path : `${page.path}?${new URLSearchParams({ [nodeQuery]: node.id }).toString()}`,
+            name: bound ? page.name : `${page.name} · ${node.name}`,
+          };
+        });
     });
     writeJSON(res, 201, { account, destinations });
   }
@@ -602,6 +608,7 @@ export class Api {
       invites: this.accounts.invites(),
       scopes,
       nodes: this.federation.available(null),
+      routing: this.federation.config.routing,
     });
     return Promise.resolve();
   }

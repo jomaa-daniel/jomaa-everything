@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { isScope, type Scope } from "./accounts.js";
+import { isScope, scopes, type Scope } from "./accounts.js";
 import { Fields, parseJson } from "./json.js";
 import { deploySettings, releaseRoot } from "./settings.js";
 
@@ -21,6 +21,7 @@ export interface NodeConfig {
 export interface NodeCatalog {
   defaultNode: string;
   identityFile: string;
+  routing: Record<Scope, "account" | "request">;
   transport: {
     requestTimeoutSeconds: number;
     maxRequestBytes: number;
@@ -71,8 +72,18 @@ function names(value: unknown, where: string): string[] {
 /** Validates the shared catalog before a listener starts. */
 export function parseCatalog(text: string): NodeCatalog {
   const root = new Fields(parseJson(text), "node catalog")
-    .only("defaultNode", "identityFile", "transport", "nodes")
-    .required("defaultNode", "identityFile", "transport", "nodes");
+    .only("defaultNode", "identityFile", "routing", "transport", "nodes")
+    .required("defaultNode", "identityFile", "routing", "transport", "nodes");
+  const policies = new Fields(root.value("routing"), "routing");
+  const scopeIDs = scopes.map((scope) => scope.id);
+  policies.only(...scopeIDs).required(...scopeIDs);
+  const routing = Object.fromEntries(
+    scopeIDs.map((scope) => {
+      const policy = policies.string(scope);
+      if (policy !== "account" && policy !== "request") throw new Error(`invalid routing policy for ${scope}`);
+      return [scope, policy];
+    }),
+  ) as NodeCatalog["routing"];
   const defaultNode = root.string("defaultNode") ?? "";
   const identityFile = root.string("identityFile") ?? "";
   if (!identityFile || identityFile.includes("/") || identityFile === "." || identityFile === "..")
@@ -158,7 +169,7 @@ export function parseCatalog(text: string): NodeCatalog {
   const gateways = nodes.filter((node) => node.mode === "gateway");
   if (gateways.length !== 1 || gateways[0]?.id !== defaultNode || !gateways[0].enabled)
     throw new Error("defaultNode must name the single enabled gateway");
-  return { defaultNode, identityFile, transport, nodes };
+  return { defaultNode, identityFile, routing, transport, nodes };
 }
 
 export const catalog = parseCatalog(readFileSync(new URL(deploySettings.nodesFile, releaseRoot), "utf8"));

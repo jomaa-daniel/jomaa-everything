@@ -1,6 +1,11 @@
 {
   "defaultNode": "home",
   "identityFile": "node.json",
+  "routing": {
+    "lights": "account",
+    "devices": "request",
+    "manage": "request"
+  },
   "transport": {
     "requestTimeoutSeconds": 360,
     "maxRequestBytes": 1048576,

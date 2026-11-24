@@ -860,7 +860,7 @@ test("the prefetch list names every page with the files it loads, most-clicked f
     "/home/prefetch.js",
     "/home/accounts.js",
   ]);
-  assert.deepEqual(assets("/lights"), ["/lights/style.css", "/lights/app.js", "/home/nodes.js"]);
+  assert.deepEqual(assets("/lights"), ["/lights/style.css", "/lights/app.js"]);
   for (const page of pages) {
     const bodies = [
       await (await fetch(env.url + page.path)).text(),

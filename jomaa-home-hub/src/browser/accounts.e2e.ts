@@ -142,7 +142,7 @@ async function openAccountDetails(page: Page, name: string): Promise<void> {
     .locator(`#entries tr[data-account="${name}"]`)
     .getByRole("button", { name: /^Inspect/ })
     .click();
-  await page.getByLabel(`${name} can open Lights at Home`).waitFor();
+  await page.getByLabel(`${name} Lights node`).waitFor();
 }
 
 let inviteLink = "";
@@ -162,7 +162,7 @@ await test("the owner signs in and creates an invite link", async () => {
   assert.match(inviteLink, new RegExp(`^${origin}/join#[\\w-]{43}$`));
   assert.ok(await page.locator("#copy").isEnabled());
   assert.ok(await page.locator("#entries-empty").isHidden());
-  await page.locator("#invite-grants input").first().waitFor();
+  await page.locator("#invite-grants select").first().waitFor();
   await captureReviewScreenshots(page, "invite-create");
   await page.close();
 });
@@ -240,10 +240,13 @@ await test("the owner inspects the created account and daily link opens after jo
 await test("the owner grants Lights and the account controls the room", async () => {
   const permissions = await open(owner, "/accounts");
   await openAccountDetails(permissions, "sarah");
-  await permissions.getByLabel("sarah can open Lights at Home").check();
+  await permissions.getByLabel("sarah Lights node").selectOption(config.defaultNode);
   await permissions.locator("#notice", { hasText: "Saved sarah" }).waitFor();
   await permissions.reload();
-  assert.ok(await permissions.getByLabel("sarah can open Lights at Home").isChecked(), "the grant was saved");
+  assert.ok(
+    (await permissions.getByLabel("sarah Lights node").inputValue()) === config.defaultNode,
+    "the grant was saved",
+  );
   assert.ok(!(await permissions.getByLabel("sarah can open Device health at Home").isChecked()));
   await permissions.close();
 
@@ -261,7 +264,7 @@ await test("the owner grants Lights and the account controls the room", async ()
 
   const revoke = await open(owner, "/accounts");
   await openAccountDetails(revoke, "sarah");
-  await revoke.getByLabel("sarah can open Lights at Home").uncheck();
+  await revoke.getByLabel("sarah Lights node").selectOption("");
   await revoke.locator("#notice", { hasText: "Saved sarah" }).waitFor();
   await revoke.close();
 
@@ -284,15 +287,13 @@ await test("deleting the account signs it out", async () => {
   await devices.close();
 });
 
-await test("a shared link grants selected homes and the home picker routes light commands", async () => {
+await test("a shared link assigns one lighting node and account management can reassign it", async () => {
   const permissions = await open(owner, "/accounts");
   await permissions.locator("#create").click();
-  await permissions.locator("#invite-grants input").first().waitFor();
-  await permissions.locator('#invite-grants input[data-node="remote"][data-scope="lights"]').check();
+  await permissions.locator('#invite-grants select[data-scope="lights"]').waitFor();
+  await permissions.locator('#invite-grants select[data-scope="lights"]').selectOption("remote");
   await permissions.locator("#notice", { hasText: "Link access saved" }).waitFor();
-  await permissions.locator(`#invite-grants input[data-node="${config.defaultNode}"][data-scope="lights"]`).check();
-  await permissions.locator("#notice", { hasText: "Link access saved" }).waitFor();
-  await permissions.locator("#invite-grants input:not(:disabled)").first().waitFor();
+  await permissions.locator("#invite-grants select:not(:disabled)").waitFor();
   const link = await permissions.locator("#link").inputValue();
   await guest.addCookies(await owner.cookies());
   const join = await open(guest, link.slice(origin.length));
@@ -303,25 +304,24 @@ await test("a shared link grants selected homes and the home picker routes light
   await join.locator("#join-form button").click();
   await join.locator("#done").waitFor();
   const destinations = join.locator("#join-destinations button");
-  assert.equal(await destinations.count(), 2);
+  assert.equal(await destinations.count(), 1);
   const beforeSignIn = await join.evaluate(
     async () => (await (await fetch("/api/session")).json()) as { owner: boolean },
   );
   assert.equal(beforeSignIn.owner, true, "creating an account preserves the existing owner session");
   await captureReviewScreenshots(join, "join-granted");
-  await destinations.filter({ hasText: "Remote" }).click();
+  await destinations.first().click();
   await join.locator("#target-title", { hasText: "Remote room" }).waitFor();
   const signedIn = await join.evaluate(
     async () => (await (await fetch("/api/session")).json()) as { owner: boolean; username: string },
   );
   assert.equal(signedIn.owner, false);
   assert.equal(signedIn.username, "robin", "the sign-in action switches to the newly created account");
-  assert.equal(new URL(join.url()).searchParams.get("node"), "remote");
+  assert.equal(new URL(join.url()).searchParams.get("node"), null);
   await join.close();
-  const lights = await open(guest, "/lights");
+  const lights = await open(guest, "/lights?node=home");
   await lights.locator("#controller").waitFor();
-  assert.equal(await lights.getByLabel("Home", { exact: true }).locator("option").count(), 2);
-  await lights.getByLabel("Home", { exact: true }).selectOption("remote");
+  assert.equal(await lights.locator("#node-picker").count(), 0);
   await lights.locator("#target-title", { hasText: "Remote room" }).waitFor();
   const localOn = lamp.current.on;
   await lights.locator("#power-toggle").click();
@@ -330,8 +330,16 @@ await test("a shared link grants selected homes and the home picker routes light
   assert.equal(lamp.current.on, localOn);
   await captureReviewScreenshots(lights, "lights-remote");
   await permissions.reload();
-  assert.ok(await permissions.getByLabel("robin can open Lights at Remote").isChecked());
+  assert.equal(await permissions.getByLabel("robin Lights node").inputValue(), "remote");
   assert.ok(!(await permissions.getByLabel("robin can open Device health at Home").isChecked()));
+  await permissions.getByLabel("robin Lights node").selectOption(config.defaultNode);
+  await permissions.locator("#notice", { hasText: "Saved robin" }).waitFor();
+  await lights.reload();
+  await lights.locator("#target-title", { hasText: "Living room" }).waitFor();
+  await lights.locator("#power-toggle").click();
+  await lights.locator('#power-toggle[aria-checked="false"]').waitFor();
+  assert.equal(lamp.current.on, false, "the account assignment routes commands to the selected installation");
+  assert.equal(remoteLamp.current.on, true, "the other installation is unaffected");
   await captureReviewScreenshots(permissions, "account-grants");
   await lights.close();
   await permissions.close();
@@ -411,10 +419,10 @@ await test("accounts without a link stay in the unified table and show account a
   assert.equal(await row.count(), 1);
   assert.equal(await row.getAttribute("data-invite-id"), null);
   await row.getByRole("button", { name: "Inspect account standalone" }).click();
-  await page.getByLabel("standalone can open Lights at Home").waitFor();
+  await page.getByLabel("standalone Lights node").waitFor();
   assert.ok(await page.locator("#link-access").isHidden());
   assert.ok(await page.locator("#link-details").isHidden());
-  await page.getByLabel("standalone can open Lights at Home").check();
+  await page.getByLabel("standalone Lights node").selectOption(config.defaultNode);
   await page.locator("#notice", { hasText: "Saved standalone" }).waitFor();
   assert.deepEqual(apiAccounts.account("standalone")?.grants, [{ node: config.defaultNode, scopes: ["lights"] }]);
   await page.close();

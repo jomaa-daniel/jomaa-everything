@@ -23,8 +23,12 @@ def names(value: object, what: str) -> list[str]:
 
 
 def parse(value: object) -> dict:
-    if not isinstance(value, dict) or set(value) != {"defaultNode", "identityFile", "transport", "nodes"}:
-        raise ValueError("node catalog requires defaultNode, identityFile, transport and nodes")
+    if not isinstance(value, dict) or set(value) != {"defaultNode", "identityFile", "routing", "transport", "nodes"}:
+        raise ValueError("node catalog requires defaultNode, identityFile, routing, transport and nodes")
+    routing = value["routing"]
+    if (not isinstance(routing, dict) or not routing or any(not isinstance(k, str) or not k
+            or v not in ("account", "request") for k, v in routing.items())):
+        raise ValueError("routing must map capabilities to account or request")
     identity = value["identityFile"]
     if not isinstance(identity, str) or not identity or Path(identity).name != identity or identity in (".", ".."):
         raise ValueError("identityFile must be a file name")
@@ -57,6 +61,8 @@ def parse(value: object) -> dict:
                 raise ValueError(f"node {key} must be valid and unique")
             seen.add(field)
         names(node["scopes"], "node scopes")
+        if set(node["scopes"]) - set(routing):
+            raise ValueError("every node capability requires a routing policy")
         public = node["publicRoutes"]
         if (not isinstance(public, list) or any(not isinstance(route, list) or len(route) != 2
                 or not isinstance(route[0], str) or not re.fullmatch(r"[A-Z]+", route[0])

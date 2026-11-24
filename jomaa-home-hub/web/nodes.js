@@ -16,7 +16,11 @@ export async function refreshNodePicker(scopes) {
     container.replaceChildren();
     return;
   }
-  const { nodes } = await response.json();
+  const { nodes, routing } = await response.json();
+  if (scopes.every((scope) => routing[scope] === "account")) {
+    container.replaceChildren();
+    return;
+  }
   const available = nodes.filter((node) => scopes.some((scope) => node.scopes.includes(scope)));
   if (available.length === 0) {
     container.replaceChildren();
