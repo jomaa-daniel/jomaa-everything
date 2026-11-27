@@ -42,6 +42,7 @@ function cameraCard(camera, playback) {
   retry.setAttribute("aria-label", `Reconnect ${camera.name}`);
   actions.append(retry);
   card.append(heading, container, placeholder, actions);
+  $("camera-grid").append(card);
   if (camera.configured) {
     const player = videojs(video, {
       controls: true,
@@ -64,6 +65,7 @@ function cameraCard(camera, playback) {
       status.className = "camera-status live";
     });
     player.on("pause", () => {
+      if (player.error()) return;
       status.textContent = "Paused";
       status.className = "camera-status";
     });
@@ -96,7 +98,8 @@ async function refresh() {
     const signature = JSON.stringify(inventory);
     if (signature !== view) {
       dispose();
-      $("camera-grid").replaceChildren(...inventory.cameras.map((camera) => cameraCard(camera, inventory.playback)));
+      $("camera-grid").replaceChildren();
+      for (const camera of inventory.cameras) cameraCard(camera, inventory.playback);
       view = signature;
     }
     if (!timer) timer = setInterval(refresh, inventory.playback.refreshSeconds * 1000);

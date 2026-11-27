@@ -45,6 +45,10 @@ test("camera playlists and segments require camera access and proxy bounded loca
   const incoming: string[] = [];
   const upstream = await serve((req, res) => {
     incoming.push(req.url ?? "");
+    if (req.url?.includes("index.m3u8") && !new URL(req.url, "http://fixture").searchParams.has("cookieCheck")) {
+      res.writeHead(302, { Location: req.url + "?cookieCheck=1" }).end();
+      return;
+    }
     assert.equal(req.headers.authorization, undefined);
     assert.equal(req.headers.cookie, undefined);
     if (req.url?.includes("missing")) {
@@ -93,6 +97,7 @@ test("camera playlists and segments require camera access and proxy bounded loca
   assert.equal(playlist.headers.get("cache-control"), "no-store");
   assert.match(await playlist.text(), /URI="init.mp4"/);
   assert.ok(incoming[0]?.includes("_HLS_msn=3&_HLS_part=2"));
+  assert.ok(incoming[0]?.includes("cookieCheck=1"));
   const segment = await fetch(origin + `/api/cameras/${first.id}/hls/segment.mp4`, {
     headers: { ...headers, Range: "bytes=0-3" },
   });

@@ -21,7 +21,10 @@ export class CameraError extends Error {
 }
 
 const mediaFile = /^[a-zA-Z0-9_-][a-zA-Z0-9_.-]*\.(m3u8|mp4|m4s|ts|aac)$/;
-const hlsParameters = new Set(["_HLS_msn", "_HLS_part", "_HLS_skip"]);
+const masterPlaylist = "index.m3u8";
+const readerCheck = "cookieCheck";
+const readerSession = "session";
+const hlsParameters = new Set(["_HLS_msn", "_HLS_part", "_HLS_skip", readerCheck, readerSession]);
 const responseHeaders = ["content-type", "content-range", "accept-ranges"];
 
 export function parseCameraConfig(text: string): CameraConfig {
@@ -92,7 +95,7 @@ export class Cameras {
         id: camera.id,
         name: camera.name,
         configured: Boolean(this.environment[camera.sourceEnv]),
-        stream: `/api/cameras/${encodeURIComponent(camera.id)}/hls/index.m3u8`,
+        stream: `/api/cameras/${encodeURIComponent(camera.id)}/hls/${masterPlaylist}`,
       })),
     };
   }
@@ -108,6 +111,7 @@ export class Cameras {
       `http://${this.config.server.hlsAddress}`,
     );
     for (const [key, value] of requested.searchParams) if (hlsParameters.has(key)) url.searchParams.append(key, value);
+    if (file === masterPlaylist) url.searchParams.set(readerCheck, "1");
     const headers: Record<string, string> = { "Accept-Encoding": "identity" };
     if (typeof req.headers.range === "string") headers["Range"] = req.headers.range;
     const deadline = AbortSignal.any([signal, AbortSignal.timeout(this.config.playback.requestTimeoutSeconds * 1000)]);
