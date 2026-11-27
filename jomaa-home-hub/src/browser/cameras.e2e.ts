@@ -162,7 +162,12 @@ const origin = await serve(
     picos: null,
     cameras: new Cameras(config, environment, async (url, init) => {
       const response = await fetch(url, init);
-      console.log("HLS upstream:", String(url), response.status, response.headers.get("location"));
+      console.log(
+        "HLS upstream:",
+        typeof url === "string" ? url : url instanceof URL ? url.href : url.url,
+        response.status,
+        response.headers.get("location"),
+      );
       return response;
     }),
   }).handle,
