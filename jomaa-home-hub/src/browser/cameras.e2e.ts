@@ -123,9 +123,26 @@ for (const [id, color] of [
         "tcp",
         `rtsp://127.0.0.1:${rtsp}/${id}`,
       ],
-      { stdio: "ignore" },
+      { stdio: "inherit" },
     ),
   );
+}
+for (const id of ["camera1", "camera2"]) {
+  let ready = false;
+  for (let attempt = 0; attempt < 100; attempt++) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${hls}/${id}/index.m3u8`, { signal: AbortSignal.timeout(2000) });
+      if (response.ok) {
+        console.log("Fixture playlist", id, await response.text());
+        ready = true;
+        break;
+      }
+    } catch {
+      // The fixture publisher is connecting.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.ok(ready, `${id} publisher must be ready before testing playback`);
 }
 const config = parseCameraConfig(readFileSync(configFile, "utf8"));
 config.server.hlsAddress = `127.0.0.1:${hls}`;
@@ -154,12 +171,24 @@ after(() => {
 test("two real MediaMTX streams play independently in Video.js and camera access can be revoked", async () => {
   const page = await browser.newPage();
   const errors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error" || message.type() === "warning") console.log("Camera browser:", message.text());
+  });
+  page.on("response", (response) => {
+    if (response.status() >= 400) console.log("Camera HTTP:", response.status(), response.url());
+  });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(origin + "/cameras");
   await page.locator("#username").fill("viewer");
   await page.locator("#password").fill(password);
   await page.locator("#login-form button").click();
-  await page.locator(".camera-status.live").nth(1).waitFor({ timeout: 60000 });
+  try {
+    await page.locator(".camera-status.live").nth(1).waitFor({ timeout: 60000 });
+  } catch (error) {
+    await captureReviewScreenshots(page, "cameras-failure");
+    console.log("Camera page:", await page.locator("main").innerText());
+    throw error;
+  }
   await page.waitForFunction(
     "[...document.querySelectorAll('video.vjs-tech')].every(video => video.currentTime > 0 && video.readyState >= 2)",
   );

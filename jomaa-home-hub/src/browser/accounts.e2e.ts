@@ -293,7 +293,7 @@ await test("a shared link assigns one lighting node and account management can r
   await permissions.locator('#invite-grants select[data-scope="lights"]').waitFor();
   await permissions.locator('#invite-grants select[data-scope="lights"]').selectOption("remote");
   await permissions.locator("#notice", { hasText: "Link access saved" }).waitFor();
-  await permissions.locator("#invite-grants select:not(:disabled)").waitFor();
+  await permissions.locator('#invite-grants select[data-scope="lights"]:not(:disabled)').waitFor();
   const link = await permissions.locator("#link").inputValue();
   await guest.addCookies(await owner.cookies());
   const join = await open(guest, link.slice(origin.length));
