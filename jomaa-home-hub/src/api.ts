@@ -18,6 +18,7 @@ import type { EnvChange } from "./envfile.js";
 import { SecretsError, type EnvFiles } from "./secrets.js";
 import type { DeployWorkflow, GitHubCli } from "./redeploy.js";
 import { settings } from "./settings.js";
+import { Cameras, CameraError } from "./cameras.js";
 import { Federation, NodeError, delegationHeader, nodeQuery } from "./federation.js";
 import { BodyLimitError, requestBody } from "./request-body.js";
 import { PicoError, type PicoRuns } from "./picos.js";
@@ -86,6 +87,7 @@ export interface SecretsAdmin {
 
 /** The optional hub services; null leaves the corresponding routes unavailable. */
 export interface ApiServices {
+  cameras?: Cameras | null;
   health: HealthStore | null;
   layoutPath: string | null;
   organization: Organization | null;
@@ -139,6 +141,7 @@ export class Api {
   private readonly organization: Organization | null;
   private readonly secrets: SecretsAdmin | null;
   private readonly picos: PicoRuns | null;
+  private readonly cameras: Cameras | null;
   #groupChange: Promise<void> = Promise.resolve();
 
   /**
@@ -160,6 +163,7 @@ export class Api {
     this.organization = services.organization;
     this.secrets = services.secrets;
     this.picos = services.picos;
+    this.cameras = services.cameras ?? null;
     this.#token = sessionToken(password);
     this.#healthHttp = services.health
       ? new HealthHttp(services.health, log.with({ component: "device-health" }), matter, hub, services.organization)
@@ -181,6 +185,8 @@ export class Api {
     ];
     this.#authed = [
       route("GET", "/api/session", null, this.#session),
+      route("GET", "/api/cameras", "cameras", this.#cameraList),
+      route("GET", "/api/cameras/{id}/hls/{file}", "cameras", this.#cameraMedia),
       route("GET", "/api/nodes", null, this.#nodes),
       route("GET", "/api/picos", "devices", this.#picoInventory),
       route("GET", "/api/picos/catalog", "devices", this.#picoCatalog),
@@ -229,6 +235,7 @@ export class Api {
     });
     this.#dispatch(req, res, gone.signal).catch((err: unknown) => {
       if (
+        err instanceof CameraError ||
         err instanceof NodeError ||
         err instanceof HttpError ||
         err instanceof HealthError ||
@@ -359,6 +366,18 @@ export class Api {
           scopes: [...new Set(this.federation.available(account.grants).flatMap((node) => node.scopes))],
         }
       : null;
+  }
+
+  #cameraList({ res }: RequestContext): Promise<void> {
+    if (!this.cameras) throw new CameraError(503, "Camera streaming is unavailable on this hub");
+    res.setHeader("Cache-Control", "no-store");
+    writeJSON(res, 200, this.cameras.inventory());
+    return Promise.resolve();
+  }
+
+  async #cameraMedia({ req, res, params, signal }: RequestContext): Promise<void> {
+    if (!this.cameras) throw new CameraError(503, "Camera streaming is unavailable on this hub");
+    await this.cameras.media(req, res, params[0] ?? "", params[1] ?? "", signal);
   }
 
   async #health({ res }: RequestContext): Promise<void> {

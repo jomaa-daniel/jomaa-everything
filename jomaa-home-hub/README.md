@@ -565,3 +565,7 @@ send no light commands. Results show their check time and are cached for
 `health.goveeStatusCacheSeconds`; failed checks remain unknown rather than
 claiming a light is offline. Govee health details do not offer Pico credentials
 or report intervals.
+
+## Cameras
+
+`/cameras` displays the camera slots configured by `cameraConfigFile`. MediaMTX provides the HLS streams and Video.js supplies the players. Each inventory and media request requires the Cameras capability on the account’s assigned node. See [camera configuration](../jomaa-cameras/config.md) for camera source credentials, codec requirements and service settings.

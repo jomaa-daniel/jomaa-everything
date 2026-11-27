@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { cpSync } from "node:fs";
 
 cpSync(new URL("../web", import.meta.url), new URL("../dist/web", import.meta.url), { recursive: true });
@@ -10,3 +12,10 @@ for (const [source, target] of [
 ]) {
   cpSync(new URL(source, panel), new URL("../dist/web/" + target, import.meta.url));
 }
+
+const player = spawnSync(
+  "python3",
+  [fileURLToPath(new URL("../../jomaa-cameras/build.py", import.meta.url)), "--player"],
+  { stdio: "inherit" },
+);
+if (player.status !== 0) process.exit(player.status ?? 1);

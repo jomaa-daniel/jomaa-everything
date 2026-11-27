@@ -1,0 +1,66 @@
+{
+  "downloadTimeoutSeconds": 120,
+  "mediaMtx": {
+    "repository": "bluenviron/mediamtx",
+    "version": "v1.21.4",
+    "binaryFile": "jomaa-cameras/bin/mediamtx",
+    "runtimeConfigFile": "jomaa-cameras/run/mediamtx.json",
+    "checksums": {
+      "linux_amd64": "be0c05d9c8af8338116977e7f1c3fcb409fbf882075e5ab075cf8baad76a59d2",
+      "linux_arm64": "47784081da54c0608ea4dc359f5cfb19880209434769c532b3ed3a67ea99c29d",
+      "darwin_arm64": "20dfa23c1db149b935c2f23439ffbf0820a0ac1d6979a6eb9b21f74fc8376647"
+    }
+  },
+  "player": {
+    "name": "Video.js",
+    "version": "8.23.4",
+    "assets": [
+      {
+        "url": "https://vjs.zencdn.net/8.23.4/video.min.js",
+        "sha256": "acd0a81a4cc78928f1530598762ed783ee916674bf3a0bf2a6c26a6c0b16ed4b",
+        "file": "jomaa-home-hub/dist/web/video.min.js"
+      },
+      {
+        "url": "https://vjs.zencdn.net/8.23.4/video-js.css",
+        "sha256": "30def08224fc4daa8cae2ecb273144d55939c50f0830aa77cb9c0c94da0dd497",
+        "file": "jomaa-home-hub/dist/web/video-js.css"
+      }
+    ]
+  },
+  "server": {
+    "logLevel": "warn",
+    "rtsp": false,
+    "rtmp": false,
+    "srt": false,
+    "webrtc": false,
+    "api": false,
+    "playback": false,
+    "metrics": true,
+    "hls": true,
+    "hlsAddress": "127.0.0.1:8888",
+    "hlsVariant": "lowLatency",
+    "hlsSegmentCount": 7,
+    "hlsSegmentDuration": "1s",
+    "hlsPartDuration": "200ms",
+    "hlsSegmentMaxSize": "8M",
+    "hlsMuxerCloseAfter": "60s",
+    "authInternalUsers": [
+      { "user": "any", "permissions": [{ "action": "read" }, { "action": "metrics" }] }
+    ],
+    "pathDefaults": {
+      "sourceOnDemand": true,
+      "sourceOnDemandStartTimeout": "15s",
+      "sourceOnDemandCloseAfter": "10s"
+    }
+  },
+  "playback": {
+    "refreshSeconds": 15,
+    "requestTimeoutSeconds": 30,
+    "autoplay": true,
+    "muted": true
+  },
+  "cameras": [
+    { "id": "camera1", "name": "Camera 1", "sourceEnv": "CAMERA_1_SOURCE" },
+    { "id": "camera2", "name": "Camera 2", "sourceEnv": "CAMERA_2_SOURCE" }
+  ]
+}

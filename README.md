@@ -6,6 +6,7 @@ Home projects, kept in one repo.
 |--------|------------|
 | `jomaa-deploy/` | Repository verification, native releases, service definitions, Cloudflare routes and DNS. |
 | `jomaa-home-hub/` | Matter controller hub. Runs on the home network and controls Matter and Govee devices through one interface. |
+| `jomaa-cameras/` | Private MediaMTX streaming service and configuration for the hub’s Video.js camera page. |
 | `jomaa-home-client/` | Phone apps for the hub: Android (`android/`) and iOS (`ios/`). |
 | `jomaa-static-pages/` | Static websites served through the hub's tunnel, such as Sarah's art portfolio at sarah.jomaa.org. |
 | `jomaa-health/` | Public health page at health.jomaa.org, a Cloudflare Worker that checks everything reachable through jomaa.org. |

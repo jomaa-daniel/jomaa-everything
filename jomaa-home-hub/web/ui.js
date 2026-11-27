@@ -224,6 +224,7 @@ if (header && header.dataset.hubNav !== "off") {
     ["/home", "Home"],
     ["/manage", "Devices"],
     ["/lights", "Lights"],
+    ["/cameras", "Cameras"],
     ["/accounts", "Accounts"],
     ["/secrets", "Secrets"],
   ]) {

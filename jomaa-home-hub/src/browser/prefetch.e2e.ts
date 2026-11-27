@@ -36,7 +36,7 @@ const homeFiles = new Set([
   "/home/prefetch.js",
   "/api/prefetch",
 ]);
-const linkedPages = ["/lights", "/manage", "/accounts", "/secrets"];
+const linkedPages = ["/lights", "/manage", "/accounts", "/secrets", "/cameras"];
 
 const clicks = new Clicks(":memory:");
 for (const path of ["/secrets", "/secrets", "/secrets", "/lights", "/lights"]) clicks.record(path);
@@ -98,7 +98,7 @@ test("the home page prefetches linked pages by popularity and opens them from th
   await until(() => [...linkedPages, "/lights/app.js", "/home/accounts.js"].every((path) => fetched().has(path)));
   await until(() => inFlight === 0);
   const documents = requests.map((request) => request.path).filter((path) => linkedPages.includes(path));
-  assert.deepEqual(documents, ["/secrets", "/lights", "/accounts", "/manage"]);
+  assert.deepEqual(documents, ["/secrets", "/lights", "/cameras", "/accounts", "/manage"]);
   assert.ok(mostInFlight <= settings.prefetch.concurrency, `${mostInFlight} prefetches ran at once`);
   assert.ok(!fetched().has("/home/base.css"), "files the page already loaded are not fetched again");
   assert.equal(new Set(requests.map((request) => request.path)).size, requests.length, "each file is fetched once");

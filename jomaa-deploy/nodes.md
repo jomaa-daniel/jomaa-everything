@@ -11,6 +11,7 @@ entry template; add a configured entry to `nodes.json.nodes` to use it.
 | `routing` | Routing policy for each capability. `account` uses one node assigned in account management and rejects request-level node overrides; `request` permits choosing a granted node per request. The owner uses `defaultNode` for account-routed capabilities. |
 | `routing.lights` | Determines how lighting requests select their installation. |
 | `routing.devices` | Determines how device-health requests select their installation. |
+| `routing.cameras` | Determines how camera viewing selects its installation. |
 | `routing.manage` | Determines how organization requests select their installation. |
 | `transport` | Bounds applied to inter-node requests. |
 | `transport.requestTimeoutSeconds` | Total deadline for forwarding a request, including reading its response. |

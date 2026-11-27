@@ -77,3 +77,5 @@ reruns the deployment workflow.
 `health.goveeStatusConcurrency` limits simultaneous Govee connection requests.
 
 `health.goveeStatusTimeoutSeconds` is the shared deadline for the cloud checks in one inventory refresh. Failed checks show unknown status.
+
+`cameraConfigFile` names the shared camera configuration file relative to the release root; see [camera settings](../jomaa-cameras/config.md).

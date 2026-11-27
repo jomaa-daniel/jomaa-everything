@@ -4,7 +4,8 @@
   "routing": {
     "lights": "account",
     "devices": "request",
-    "manage": "request"
+    "manage": "request",
+    "cameras": "account"
   },
   "transport": {
     "requestTimeoutSeconds": 360,
@@ -24,8 +25,18 @@
       "tunnelName": null,
       "secretEnv": null,
       "deploySecret": "JOMAA_DEPLOY_SECRET",
-      "scopes": ["lights", "devices", "manage"],
-      "publicRoutes": [["GET", "/healthz"]],
+      "scopes": [
+        "lights",
+        "devices",
+        "manage",
+        "cameras"
+      ],
+      "publicRoutes": [
+        [
+          "GET",
+          "/healthz"
+        ]
+      ],
       "modules": null,
       "moduleOverrides": {}
     }

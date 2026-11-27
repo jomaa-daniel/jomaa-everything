@@ -1,0 +1,12 @@
+{
+  "name": "cameras",
+  "inputs": ["jomaa-deploy/config.json", "jomaa-deploy/settings.py"],
+  "checks": [["{python}", "-m", "unittest", "discover", "-s", ".", "-q"]],
+  "state": [],
+  "unit": "jomaa-cameras",
+  "origin": "http://127.0.0.1:9998",
+  "command": ["{python}", "{release}/jomaa-cameras/run.py"],
+  "build": [["{python}", "{release}/jomaa-cameras/build.py", "--server"]],
+  "health": { "path": "/metrics", "json": {} },
+  "routes": []
+}

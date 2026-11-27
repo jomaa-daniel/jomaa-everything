@@ -6,7 +6,8 @@
     "jomaa-static-pages/device-panel",
     "jomaa-images",
     "pico-imaging-bench",
-    "jomaa-deploy/nodes.json"
+    "jomaa-deploy/nodes.json",
+    "jomaa-cameras"
   ],
   "checks": [
     ["{python}", "scripts/verify.py"],
@@ -33,7 +34,7 @@
     },
     {
       "hostname": "jomaa.org",
-      "path": "^/(home(/.*)?|manage(/.*)?|lights(/.*)?|accounts(/.*)?|join(/.*)?|secrets(/.*)?|api/(login|logout|session|nodes|join|prefetch|clicks|invites(/.*)?|accounts(/.*)?|secrets(/.*)?|manage|targets(/.*)?|devices(/.*)?|picos(/.*)?|matter/(discover|register|nodes/[1-9][0-9]*/(name|group))))?$",
+      "path": "^/(home(/.*)?|cameras(/.*)?|manage(/.*)?|lights(/.*)?|accounts(/.*)?|join(/.*)?|secrets(/.*)?|api/(login|logout|session|nodes|cameras(/.*)?|join|prefetch|clicks|invites(/.*)?|accounts(/.*)?|secrets(/.*)?|manage|targets(/.*)?|devices(/.*)?|picos(/.*)?|matter/(discover|register|nodes/[1-9][0-9]*/(name|group))))?$",
       "probes": [
         "/",
         "/home",
@@ -85,7 +86,13 @@
         "/api/picos/selected/state",
         "/api/picos/selected/flash",
         "/api/picos/runs/result",
-        "/api/nodes"
+        "/api/nodes",
+        "/cameras",
+        "/cameras/app.js",
+        "/cameras/player.js",
+        "/cameras/player.css",
+        "/api/cameras",
+        "/api/cameras/camera1/hls/index.m3u8"
       ]
     }
   ]

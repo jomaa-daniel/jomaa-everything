@@ -13,6 +13,7 @@ export type PageAccess = Scope | "owner" | null | readonly Scope[];
 /** The hub's pages by path, with file, access and display name. Each also accepts a trailing slash. */
 const pageFiles: Record<string, [string, PageAccess, string]> = {
   "/home": ["home.html", null, "Home"],
+  "/cameras": ["cameras.html", "cameras", "Cameras"],
   "/accounts": ["accounts.html", "owner", "Accounts"],
   "/join": ["join.html", null, "Create account"],
   "/secrets": ["secrets.html", "owner", "Secrets"],
@@ -22,6 +23,10 @@ const pageFiles: Record<string, [string, PageAccess, string]> = {
 
 /** The pages' scripts and styles by path. */
 const assetFiles: Record<string, [string, string]> = {
+  "/cameras/app.js": ["cameras.js", js],
+  "/cameras/style.css": ["cameras.css", css],
+  "/cameras/player.js": ["video.min.js", js],
+  "/cameras/player.css": ["video-js.css", css],
   "/home/base.css": ["style.css", css],
   "/home/ui.css": ["ui.css", css],
   "/home/ui.js": ["ui.js", js],
@@ -162,8 +167,9 @@ export function serveWeb(req: IncomingMessage, res: ServerResponse): boolean {
     "Content-Type": resource.type,
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "same-origin",
-    "Content-Security-Policy":
-      "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    "Content-Security-Policy": path.startsWith("/cameras")
+      ? "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; media-src 'self' blob:; worker-src blob:; font-src 'self' data:; img-src 'self' data: blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+      : "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
   });
   res.end(req.method === "HEAD" ? undefined : resource.body);
   return true;

@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import { createServer as createTLSServer } from "node:https";
 import { readFileSync } from "node:fs";
 import { Api } from "./api.js";
+import { Cameras } from "./cameras.js";
 import { Federation } from "./federation.js";
 import { catalog } from "./nodes.js";
 import { loadConfig, parseListen, usesDriver } from "./config.js";
@@ -114,6 +115,7 @@ async function run(log: Log): Promise<void> {
       followed,
       log,
       {
+        cameras: Cameras.load(),
         health: store,
         layoutPath: cliOptions.config,
         organization,

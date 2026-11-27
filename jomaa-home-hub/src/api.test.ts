@@ -496,7 +496,9 @@ async function joinAs(env: Env, username: string): Promise<string> {
 test("accounts with every scope still can't manage accounts or invites", async () => {
   const env = await setup();
   const session = { url: env.url, token: await joinAs(env, "trusted") };
-  const all = JSON.stringify({ grants: [{ node: catalog.defaultNode, scopes: ["lights", "devices", "manage"] }] });
+  const all = JSON.stringify({
+    grants: [{ node: catalog.defaultNode, scopes: ["lights", "devices", "manage", "cameras"] }],
+  });
   assert.equal(
     (await call(env, "PUT", "/api/accounts/TRUSTED/grants", all)).status,
     200,
@@ -797,7 +799,7 @@ test("only the owner edits unused link grants, and details identify the current 
 
 test("the owner session reports every scope", async () => {
   const body = (await call(e, "GET", "/api/session")).body;
-  assert.deepEqual(body, { owner: true, username: null, scopes: ["lights", "devices", "manage"] });
+  assert.deepEqual(body, { owner: true, username: null, scopes: ["lights", "devices", "manage", "cameras"] });
 });
 
 test("account pages are public", async () => {
@@ -836,6 +838,7 @@ test("the prefetch list names every page with the files it loads, most-clicked f
   const pages = await listed(anon);
   assert.deepEqual(pages.map((page) => page.path).sort(), [
     "/accounts",
+    "/cameras",
     "/home",
     "/join",
     "/lights",

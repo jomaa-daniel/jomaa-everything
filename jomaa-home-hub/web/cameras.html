@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cameras · Jomaa Home</title>
+    <link rel="stylesheet" href="/home/base.css" />
+    <link rel="stylesheet" href="/home/ui.css" />
+    <link rel="stylesheet" href="/cameras/player.css" />
+    <link rel="stylesheet" href="/cameras/style.css" />
+    <script defer src="/cameras/player.js"></script>
+    <script type="module" src="/home/ui.js"></script>
+    <script type="module" src="/cameras/app.js"></script>
+  </head>
+  <body class="tui-page cameras-page">
+    <header><a href="/home">Jomaa Home</a><button id="logout" type="button" hidden>Sign out</button></header>
+    <main>
+      <div class="heading">
+        <h1>Cameras</h1>
+        <button id="refresh" type="button" hidden>Refresh</button>
+      </div>
+      <p class="muted">Live feeds from your home cameras.</p>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <section id="login-section" hidden>
+        <form id="login-form" class="login">
+          <label for="username">Username (leave blank for the hub password)</label
+          ><input id="username" autocomplete="username" autocapitalize="none" /> <label for="password">Password</label
+          ><input id="password" type="password" autocomplete="current-password" required /><button class="primary">
+            Sign in
+          </button>
+        </form>
+      </section>
+      <section id="content" aria-label="Live camera feeds" hidden>
+        <div id="camera-grid" class="camera-grid"></div>
+        <p class="muted">Feeds start muted. Use each player’s controls for sound, pause, and fullscreen.</p>
+        <p id="setup-help" class="muted" hidden>
+          Configure camera sources in the hub’s private environment. <a href="/secrets">Open Secrets</a>
+        </p>
+      </section>
+    </main>
+  </body>
+</html>
