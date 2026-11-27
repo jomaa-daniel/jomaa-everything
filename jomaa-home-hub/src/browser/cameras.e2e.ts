@@ -133,7 +133,7 @@ for (const id of ["camera1", "camera2"]) {
     try {
       const response = await fetch(`http://127.0.0.1:${hls}/${id}/index.m3u8`, { signal: AbortSignal.timeout(2000) });
       if (response.ok) {
-        console.log("Fixture playlist", id, await response.text());
+        console.log("Fixture playlist", id, response.status, response.url, response.redirected, await response.text());
         ready = true;
         break;
       }
@@ -160,7 +160,11 @@ const origin = await serve(
     layoutPath: null,
     secrets: null,
     picos: null,
-    cameras: new Cameras(config, environment),
+    cameras: new Cameras(config, environment, async (url, init) => {
+      const response = await fetch(url, init);
+      console.log("HLS upstream:", String(url), response.status, response.headers.get("location"));
+      return response;
+    }),
   }).handle,
 );
 
@@ -174,8 +178,8 @@ test("two real MediaMTX streams play independently in Video.js and camera access
   page.on("console", (message) => {
     if (message.type() === "error" || message.type() === "warning") console.log("Camera browser:", message.text());
   });
-  page.on("response", (response) => {
-    if (response.status() >= 400) console.log("Camera HTTP:", response.status(), response.url());
+  page.on("response", async (response) => {
+    if (response.status() >= 400) console.log("Camera HTTP:", response.status(), response.url(), await response.text());
   });
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(origin + "/cameras");
