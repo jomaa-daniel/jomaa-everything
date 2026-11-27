@@ -147,7 +147,7 @@ const origin = await serve(
   }).handle,
 );
 
-after(async () => {
+after(() => {
   accounts.close();
 });
 
