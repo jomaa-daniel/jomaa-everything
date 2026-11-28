@@ -1,0 +1,98 @@
+{
+  "hubSettingsFile": "jomaa-home-hub/settings.json",
+  "enabled": true,
+  "container": {
+    "command": [
+      "docker"
+    ],
+    "image": "ghcr.io/blakeblackshear/frigate:0.18.3@sha256:d1a3e0008557bb3f3314d442ecd4ba68e9b16ab7872d64612649f7a6e5156635",
+    "name": "jomaa-frigate",
+    "ports": {
+      "api": {
+        "origin": "http://127.0.0.1:5001",
+        "containerPort": 5000
+      }
+    },
+    "sharedMemory": "256m",
+    "tmpfs": {
+      "/tmp/cache": 536870912
+    },
+    "devices": [],
+    "cpus": 2,
+    "memory": "2g",
+    "stopTimeoutSeconds": 20,
+    "pullTimeoutSeconds": 300
+  },
+  "configDirectory": "~/.local/share/jomaa-frigate/config",
+  "mediaDirectory": "~/.local/share/jomaa-frigate/media",
+  "environmentFile": "jomaa-frigate/run/container.env",
+  "health": {
+    "pollSeconds": 2,
+    "requestTimeoutSeconds": 2
+  },
+  "history": {
+    "lookbackHours": 24,
+    "limit": 60,
+    "motionBucketSeconds": 60,
+    "maxClipSeconds": 120,
+    "maxMediaBytes": 268435456,
+    "requestTimeoutSeconds": 120
+  },
+  "engine": {
+    "mqtt": {
+      "enabled": false
+    },
+    "auth": {
+      "enabled": false
+    },
+    "detectors": {
+      "cpu": {
+        "type": "cpu",
+        "num_threads": 2
+      }
+    },
+    "detect": {
+      "enabled": true,
+      "width": 640,
+      "height": 360,
+      "fps": 3
+    },
+    "objects": {
+      "track": [
+        "person",
+        "cat",
+        "dog",
+        "car"
+      ]
+    },
+    "record": {
+      "enabled": true,
+      "continuous": {
+        "days": 0
+      },
+      "motion": {
+        "days": 2
+      },
+      "alerts": {
+        "retain": {
+          "days": 7,
+          "mode": "motion"
+        }
+      },
+      "detections": {
+        "retain": {
+          "days": 7,
+          "mode": "motion"
+        }
+      }
+    },
+    "snapshots": {
+      "enabled": true,
+      "timestamp": true,
+      "bounding_box": true,
+      "retain": {
+        "default": 7
+      }
+    }
+  }
+}

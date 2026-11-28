@@ -20,3 +20,7 @@ The deployment module installs MediaMTX and runs it as a systemd user service.
 The hub build installs Video.js locally. A hub environment change affects both
 modules' fingerprints, so source changes take effect through the normal signed
 deployment workflow.
+
+[Frigate](../jomaa-frigate/README.md) supplies motion and object detection,
+retained recordings and snapshots on the same Cameras page. The services share
+this component’s camera definitions and private source environment.

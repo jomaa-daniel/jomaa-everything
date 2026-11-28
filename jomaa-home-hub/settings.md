@@ -79,3 +79,6 @@ reruns the deployment workflow.
 `health.goveeStatusTimeoutSeconds` is the shared deadline for the cloud checks in one inventory refresh. Failed checks show unknown status.
 
 `cameraConfigFile` names the shared camera configuration file relative to the release root; see [camera settings](../jomaa-cameras/config.md).
+
+`cameraMonitoringConfigFile` names the Frigate component configuration, relative
+to the release root. The camera API reads its private origin and history limits.

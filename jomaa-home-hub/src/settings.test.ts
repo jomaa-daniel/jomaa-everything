@@ -40,6 +40,7 @@ test("invalid settings name the setting", () => {
         i2c: settings.i2c,
         health: settings.health,
         cameraConfigFile: settings.cameraConfigFile,
+        cameraMonitoringConfigFile: settings.cameraMonitoringConfigFile,
       }),
     ).accounts.sessionsPerAccount,
     1,
@@ -52,6 +53,7 @@ test("invalid settings name the setting", () => {
       i2c: settings.i2c,
       health: settings.health,
       cameraConfigFile: settings.cameraConfigFile,
+      cameraMonitoringConfigFile: settings.cameraMonitoringConfigFile,
     });
   assert.throws(() => parseSettings(broken({ sessionLifetimeDays: 0 })), /accounts\.sessionLifetimeDays/);
   assert.throws(() => parseSettings(broken({ inviteChartDays: 0 })), /accounts\.inviteChartDays/);
@@ -65,6 +67,7 @@ test("invalid settings name the setting", () => {
       i2c: settings.i2c,
       health: settings.health,
       cameraConfigFile: settings.cameraConfigFile,
+      cameraMonitoringConfigFile: settings.cameraMonitoringConfigFile,
     });
   assert.throws(() => parseSettings(badPrefetch({ concurrency: 0 })), /prefetch\.concurrency/);
   assert.throws(() => parseSettings(badPrefetch({ databaseFile: "" })), /prefetch\.databaseFile/);
@@ -76,6 +79,7 @@ test("invalid settings name the setting", () => {
       i2c: settings.i2c,
       health: settings.health,
       cameraConfigFile: settings.cameraConfigFile,
+      cameraMonitoringConfigFile: settings.cameraMonitoringConfigFile,
     });
   assert.throws(() => parseSettings(badSecrets({ envFiles: ["../outside/.env"] })), /secrets\.envFiles/);
   assert.throws(() => parseSettings(badSecrets({ envFiles: ["/etc/.env"] })), /secrets\.envFiles/);

@@ -55,8 +55,97 @@
 .camera-actions {
   padding: 12px;
 }
+#history-section {
+  margin-top: 32px;
+  border-top: 1px solid var(--border-quiet);
+  padding-top: 24px;
+}
+.history-controls,
+.history-playback-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+.history-controls label {
+  display: grid;
+  gap: 6px;
+}
+.history-controls select,
+.history-controls input {
+  max-width: 100%;
+  min-height: 44px;
+}
+.history-playback-heading {
+  align-items: center;
+  justify-content: space-between;
+}
+.history-playback-heading h3 {
+  margin: 0;
+}
+#history-player {
+  background: var(--surface);
+  border: 1px solid var(--border-quiet);
+  padding: 12px;
+  margin-block: 16px;
+}
+#recording-video {
+  margin-top: 12px;
+}
+.activity-list {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.activity-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  border: 1px solid var(--border-quiet);
+  background: var(--surface);
+  padding: 12px;
+}
+.activity-image {
+  display: block;
+  width: 144px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: var(--field);
+}
+.activity-info {
+  flex: 1;
+  min-width: 140px;
+}
+.activity-info h3,
+.activity-info p {
+  margin: 0 0 6px;
+}
+.activity-info h3 {
+  text-transform: capitalize;
+}
+.activity-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+.recording-range {
+  margin-top: 24px;
+}
+.recording-range summary {
+  cursor: pointer;
+  padding-block: 12px;
+}
+.recording-range input[type="number"] {
+  width: 10em;
+}
 @media (max-width: 800px) {
   .camera-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .history-controls label {
+    width: 100%;
   }
 }

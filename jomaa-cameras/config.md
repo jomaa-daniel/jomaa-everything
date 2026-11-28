@@ -72,3 +72,11 @@ The browser loads `/api/cameras/{id}/hls/index.m3u8` and its relative media
 files through the hub. Every request requires the Cameras capability. The
 account's node assignment is controlled by the shared catalog's routing
 policy. Lights-only accounts and nodes cannot access camera media.
+
+`cameras[].monitoring` configures monitoring for this camera.
+`cameras[].monitoring.enabled` allows Frigate to read the same source.
+`cameras[].monitoring.config` contains native Frigate camera overrides, including
+motion masks, object filters, zones, detection settings, and FFmpeg input arguments.
+FFmpeg inputs are generated from `sourceEnv`; overrides cannot supply inputs.
+Document each added native setting here. The monitoring service settings live in
+[the Frigate configuration](../jomaa-frigate/config.md).

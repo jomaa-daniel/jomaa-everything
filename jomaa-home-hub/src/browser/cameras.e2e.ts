@@ -9,6 +9,7 @@ import { after, test } from "node:test";
 import { chromium } from "playwright-core";
 import { Accounts } from "../accounts.js";
 import { Api } from "../api.js";
+import { CameraMonitoring, parseMonitoringConfig } from "../camera-monitoring.js";
 import { Cameras, parseCameraConfig } from "../cameras.js";
 import { Clicks } from "../clicks.js";
 import { Hub } from "../hub.js";
@@ -149,6 +150,89 @@ config.server.hlsAddress = `127.0.0.1:${hls}`;
 const environment = Object.fromEntries(
   config.cameras.map((camera) => [camera.sourceEnv, "rtsp://fixture-source/live"]),
 );
+const clipFile = join(directory, "recording.mp4");
+const imageFile = join(directory, "snapshot.jpg");
+assert.equal(
+  spawnSync("ffmpeg", [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "testsrc2=size=320x180:rate=10",
+    "-t",
+    "2",
+    "-an",
+    "-c:v",
+    "libx264",
+    "-pix_fmt",
+    "yuv420p",
+    "-movflags",
+    "+faststart",
+    clipFile,
+  ]).status,
+  0,
+);
+assert.equal(
+  spawnSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-i", clipFile, "-frames:v", "1", imageFile]).status,
+  0,
+);
+const clipBytes = readFileSync(clipFile);
+const snapshotBytes = readFileSync(imageFile);
+const historyTime = Date.now() / 1000 - 300;
+const event = {
+  id: "fixture-event",
+  camera: "camera1",
+  label: "person",
+  start_time: historyTime,
+  end_time: historyTime + 90,
+  has_snapshot: true,
+  has_clip: true,
+};
+const historyOrigin = await serve((req, res) => {
+  const url = new URL(req.url ?? "/", "http://fixture");
+  if (url.pathname === "/api/events")
+    res
+      .writeHead(200, { "Content-Type": "application/json" })
+      .end(JSON.stringify(url.searchParams.get("cameras") === "camera1" ? [event] : []));
+  else if (url.pathname === "/api/events/fixture-event")
+    res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify(event));
+  else if (url.pathname === "/api/review/activity/motion")
+    res
+      .writeHead(200, { "Content-Type": "application/json" })
+      .end(
+        JSON.stringify(
+          url.searchParams.get("cameras") === "camera1"
+            ? [{ camera: "camera1", start_time: historyTime - 120, motion: 80 }]
+            : [],
+        ),
+      );
+  else if (url.pathname.endsWith("snapshot.jpg"))
+    res.writeHead(200, { "Content-Type": "image/jpeg" }).end(snapshotBytes);
+  else if (url.pathname.endsWith("clip.mp4")) {
+    const range = req.headers.range?.match(/^bytes=(\d+)-(\d*)$/);
+    const start = range ? Number(range[1]) : 0;
+    const end = range?.[2] ? Math.min(Number(range[2]), clipBytes.length - 1) : clipBytes.length - 1;
+    if (start >= clipBytes.length) {
+      res.writeHead(416, { "Content-Range": `bytes */${clipBytes.length}` }).end();
+      return;
+    }
+    res
+      .writeHead(range ? 206 : 200, {
+        "Content-Type": "video/mp4",
+        "Content-Length": String(end - start + 1),
+        "Accept-Ranges": "bytes",
+        ...(range ? { "Content-Range": `bytes ${start}-${end}/${clipBytes.length}` } : {}),
+      })
+      .end(clipBytes.subarray(start, end + 1));
+  } else res.writeHead(404).end();
+});
+const monitoringConfig = parseMonitoringConfig(
+  readFileSync(new URL(settings.cameraMonitoringConfigFile, releaseRoot), "utf8"),
+);
+monitoringConfig.origin = historyOrigin;
+const monitoring = new CameraMonitoring(monitoringConfig, config, environment);
 const accounts = new Accounts(":memory:");
 const password = "camera browser test password";
 await accounts.join(accounts.createInvite().token, "viewer", password);
@@ -160,7 +244,7 @@ const origin = await serve(
     layoutPath: null,
     secrets: null,
     picos: null,
-    cameras: new Cameras(config, environment),
+    cameras: new Cameras(config, environment, fetch, monitoring),
   }).handle,
 );
 
@@ -168,7 +252,7 @@ after(() => {
   accounts.close();
 });
 
-test("two real MediaMTX streams play independently in Video.js and camera access can be revoked", async () => {
+test("live streams, activity filters and recorded video work with revocable camera access", async () => {
   const page = await browser.newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -186,7 +270,27 @@ test("two real MediaMTX streams play independently in Video.js and camera access
     "[...document.querySelectorAll('video.vjs-tech')].every(video => video.currentTime > 0 && video.readyState >= 2)",
   );
   assert.equal(await page.locator("video.vjs-tech").count(), 2);
+  await page.locator(".activity-item").nth(1).waitFor();
   await captureReviewScreenshots(page, "cameras-live");
+  await page.locator("#history-kind").selectOption("object");
+  assert.equal(await page.locator(".activity-item").count(), 1);
+  assert.equal(await page.locator(".activity-item h3").textContent(), "person");
+  await page.locator(".activity-item button").click();
+  await page.waitForFunction("document.querySelector('#history-player video').readyState >= 1");
+  await page.locator("#history-player .vjs-play-control").click();
+  await page.waitForFunction("document.querySelector('#history-player video').currentTime > 0");
+  await captureReviewScreenshots(page, "cameras-recording");
+  await page.locator("#close-recording").click();
+  assert.ok(await page.locator("#history-player").isHidden());
+  await page.locator("#history-kind").selectOption("motion");
+  assert.equal(await page.locator(".activity-item h3").textContent(), "Motion");
+  await page.locator("#history-camera").selectOption("camera2");
+  await page.locator("#history-notice", { hasText: "No recorded activity" }).waitFor();
+  assert.equal(await page.locator(".activity-item").count(), 0);
+  await page.locator("#history-camera").selectOption("camera1");
+  await page.locator(".activity-item").waitFor();
+  await page.locator(".activity-item button").click();
+
   await page.locator(".vjs-play-control").first().click();
   await page.locator(".camera-status", { hasText: "Paused" }).waitFor();
   assert.equal(await page.locator(".camera-status.live").count(), 1);
@@ -195,6 +299,8 @@ test("two real MediaMTX streams play independently in Video.js and camera access
   await page.locator("#refresh").click();
   await page.locator("#login-section").waitFor();
   assert.ok(await page.locator("#content").isHidden());
+  assert.ok(await page.locator("#history-player").isHidden());
+  assert.equal(await page.locator(".activity-item").count(), 0);
   assert.deepEqual(errors, []);
   await page.close();
 });

@@ -3,12 +3,18 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { once } from "node:events";
 import { Fields, parseJson } from "./json.js";
 import { releaseRoot, settings } from "./settings.js";
+import { CameraMonitoring, parseMonitoringConfig } from "./camera-monitoring.js";
 import { catalog } from "./nodes.js";
 
 export interface CameraConfig {
   server: { hlsAddress: string };
   playback: { refreshSeconds: number; requestTimeoutSeconds: number; autoplay: boolean; muted: boolean };
-  cameras: { id: string; name: string; sourceEnv: string }[];
+  cameras: {
+    id: string;
+    name: string;
+    sourceEnv: string;
+    monitoring: { enabled: boolean; config: Record<string, unknown> };
+  }[];
 }
 
 export class CameraError extends Error {
@@ -60,13 +66,22 @@ export function parseCameraConfig(text: string): CameraConfig {
     throw new Error("invalid camera playback settings");
   if (!Array.isArray(root.value("cameras"))) throw new Error("cameras must be a list");
   const cameras = root.list("cameras").map((value) => {
-    const camera = new Fields(value, "camera").only("id", "name", "sourceEnv").required("id", "name", "sourceEnv");
+    const camera = new Fields(value, "camera")
+      .only("id", "name", "sourceEnv", "monitoring")
+      .required("id", "name", "sourceEnv", "monitoring");
     const id = camera.string("id") ?? "";
     const name = camera.string("name") ?? "";
     const sourceEnv = camera.string("sourceEnv") ?? "";
     if (!/^[a-z][a-z0-9_-]*$/.test(id) || !name.trim() || !/^[A-Z][A-Z0-9_]*$/.test(sourceEnv))
       throw new Error("invalid camera id, name or sourceEnv");
-    return { id, name, sourceEnv };
+    const monitoring = new Fields(camera.value("monitoring"), "camera.monitoring")
+      .only("enabled", "config")
+      .required("enabled", "config");
+    const enabled = monitoring.bool("enabled");
+    const overrides = monitoring.value("config");
+    if (enabled === null || !overrides || typeof overrides !== "object" || Array.isArray(overrides))
+      throw new Error("invalid camera monitoring settings");
+    return { id, name, sourceEnv, monitoring: { enabled, config: overrides as Record<string, unknown> } };
   });
   if (
     new Set(cameras.map((camera) => camera.id)).size !== cameras.length ||
@@ -82,15 +97,22 @@ export class Cameras {
     readonly config: CameraConfig,
     private readonly environment: NodeJS.ProcessEnv = process.env,
     private readonly transport: typeof fetch = fetch,
+    readonly monitoring: CameraMonitoring | null = null,
   ) {}
 
   static load(): Cameras {
-    return new Cameras(parseCameraConfig(readFileSync(new URL(settings.cameraConfigFile, releaseRoot), "utf8")));
+    const config = parseCameraConfig(readFileSync(new URL(settings.cameraConfigFile, releaseRoot), "utf8"));
+    const monitoring = new CameraMonitoring(
+      parseMonitoringConfig(readFileSync(new URL(settings.cameraMonitoringConfigFile, releaseRoot), "utf8")),
+      config,
+    );
+    return new Cameras(config, process.env, fetch, monitoring);
   }
 
   inventory() {
     return {
       playback: this.config.playback,
+      monitoring: this.monitoring?.inventory() ?? null,
       cameras: this.config.cameras.map((camera) => ({
         id: camera.id,
         name: camera.name,

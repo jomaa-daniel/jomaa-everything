@@ -216,7 +216,8 @@ test("signatures bind URL, method, body and content type, expire, and refuse rep
   const sent = env.forwarded.at(-1);
   assert.ok(sent);
   const headers = sent.init.headers as Record<string, string>;
-  assert.deepEqual(Object.keys(headers).sort(), ["content-type", delegationHeader].sort());
+  assert.deepEqual(Object.keys(headers).sort(), ["accept-encoding", "content-type", delegationHeader].sort());
+  assert.equal(headers["accept-encoding"], "identity");
   assert.ok(!JSON.stringify(sent.init).includes(bob));
   assert.equal((await fetch(env.remoteURL + "/api/targets/lamp/command", sent.init)).status, 403, "replayed command");
   assert.equal((await fetch(env.remoteURL + "/api/targets/lamp/sync", sent.init)).status, 403, "changed URL");

@@ -1,0 +1,46 @@
+{
+  "name": "frigate",
+  "inputs": [
+    "jomaa-cameras/config.json",
+    "jomaa-home-hub/settings.json",
+    "jomaa-deploy/config.json",
+    "jomaa-deploy/settings.py",
+    "jomaa-deploy/container.py"
+  ],
+  "checks": [
+    [
+      "{python}",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      ".",
+      "-q"
+    ],
+    [
+      "{python}",
+      "smoke.py"
+    ]
+  ],
+  "state": [],
+  "unit": "jomaa-frigate",
+  "origin": "http://127.0.0.1:9997",
+  "command": [
+    "{python}",
+    "{release}/jomaa-frigate/run.py"
+  ],
+  "build": [
+    [
+      "{python}",
+      "{release}/jomaa-frigate/run.py",
+      "--prepare"
+    ]
+  ],
+  "health": {
+    "path": "/healthz",
+    "json": {
+      "ok": true
+    }
+  },
+  "routes": []
+}

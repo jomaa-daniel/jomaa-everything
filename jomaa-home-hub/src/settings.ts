@@ -31,6 +31,7 @@ export interface PrefetchSettings {
 
 export interface Settings {
   cameraConfigFile: string;
+  cameraMonitoringConfigFile: string;
   accounts: AccountSettings;
   prefetch: PrefetchSettings;
   secrets: SecretSettings;
@@ -175,8 +176,8 @@ export function parseDeploySettings(text: string): DeploySettings {
 /** Parses settings.json; throws naming the first missing or invalid setting. */
 export function parseSettings(text: string): Settings {
   const root = new Fields(parseJson(text), "settings.json")
-    .only("accounts", "prefetch", "secrets", "i2c", "health", "cameraConfigFile")
-    .required("accounts", "prefetch", "secrets", "i2c", "health", "cameraConfigFile");
+    .only("accounts", "prefetch", "secrets", "i2c", "health", "cameraConfigFile", "cameraMonitoringConfigFile")
+    .required("accounts", "prefetch", "secrets", "i2c", "health", "cameraConfigFile", "cameraMonitoringConfigFile");
   const health = new Fields(root.value("health"), "settings.json health").only(
     "refreshSeconds",
     "historyLimit",
@@ -206,6 +207,7 @@ export function parseSettings(text: string): Settings {
   if (max < min) throw new Error("accounts.passwordLength.max must be at least accounts.passwordLength.min");
   return {
     cameraConfigFile: releasePath(root.string("cameraConfigFile"), "cameraConfigFile"),
+    cameraMonitoringConfigFile: releasePath(root.string("cameraMonitoringConfigFile"), "cameraMonitoringConfigFile"),
     accounts: {
       databaseFile,
       sessionLifetimeDays: positive(accounts, "sessionLifetimeDays", "accounts"),

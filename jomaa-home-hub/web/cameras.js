@@ -3,16 +3,34 @@ const players = new Map();
 let timer = null;
 let epoch = 0;
 let view = "";
+let recordingPlayer = null;
+let historyEpoch = 0;
+let historyBefore = null;
+let olderBefore = null;
+let historyItems = [];
+let historyBusy = false;
+function closeRecording() {
+  recordingPlayer?.dispose();
+  recordingPlayer = null;
+  $("recording-video").replaceChildren();
+  $("history-player").hidden = true;
+}
 function dispose() {
   for (const { player } of players.values()) player.dispose();
   players.clear();
   view = "";
+  closeRecording();
 }
 function signedOut(message = "Sign in to view cameras.") {
   epoch++;
   clearInterval(timer);
   timer = null;
   dispose();
+  historyEpoch++;
+  historyBusy = false;
+  historyBefore = null;
+  historyItems = [];
+  $("activity-list").replaceChildren();
   $("content").hidden = true;
   $("login-section").hidden = false;
   $("logout").hidden = true;
@@ -101,7 +119,20 @@ async function refresh() {
       $("camera-grid").replaceChildren();
       for (const camera of inventory.cameras) cameraCard(camera, inventory.playback);
       view = signature;
+      $("history-camera").replaceChildren();
+      for (const camera of inventory.cameras) {
+        const option = element("option", camera.name);
+        option.value = camera.id;
+        $("history-camera").append(option);
+      }
+      $("history-section").hidden = !inventory.monitoring?.enabled;
+      if (inventory.monitoring) {
+        $("recording-length").max = inventory.monitoring.maxClipSeconds;
+        $("recording-length").value = inventory.monitoring.maxClipSeconds;
+      }
+      historyBefore = null;
     }
+    if (!$("history-section").hidden && !historyBusy) await refreshHistory();
     if (!timer) timer = setInterval(refresh, inventory.playback.refreshSeconds * 1000);
     notify("");
   } catch (error) {
@@ -133,6 +164,131 @@ $("logout").addEventListener("click", async () => {
   } catch (error) {
     notify(error.message);
   }
+});
+function playRecording(src, title) {
+  closeRecording();
+  $("history-player").hidden = false;
+  $("recording-title").textContent = title;
+  $("recording-notice").textContent = "Loading recording…";
+  const video = element("video");
+  video.className = "video-js vjs-default-skin";
+  video.setAttribute("playsinline", "");
+  video.setAttribute("aria-label", title);
+  $("recording-video").append(video);
+  recordingPlayer = videojs(video, { controls: true, autoplay: false, muted: true, preload: "metadata" });
+  recordingPlayer.on("loadedmetadata", () => {
+    $("recording-notice").textContent = "";
+  });
+  recordingPlayer.on("error", () => {
+    $("recording-notice").textContent =
+      "Recording unavailable. It may have expired or this time may have no retained footage.";
+  });
+  recordingPlayer.src({ src, type: "video/mp4" });
+  $("history-player").scrollIntoView({ block: "nearest" });
+}
+function renderHistory() {
+  $("activity-list").replaceChildren();
+  const kind = $("history-kind").value;
+  const items = historyItems.filter((item) => kind === "all" || item.kind === kind);
+  for (const item of items) {
+    const row = element("li", undefined, "activity-item");
+    if (item.snapshot) {
+      const image = element("img", undefined, "activity-image");
+      image.src = item.snapshot;
+      image.alt = `${item.label} at ${new Date(item.start * 1000).toLocaleString()}`;
+      image.loading = "lazy";
+      image.addEventListener("error", () => {
+        image.hidden = true;
+      });
+      row.append(image);
+    }
+    const info = element("div", undefined, "activity-info");
+    info.append(element("h3", item.label));
+    const date = element("time", new Date(item.start * 1000).toLocaleString());
+    date.dateTime = new Date(item.start * 1000).toISOString();
+    info.append(date);
+    if (item.end === null) info.append(element("p", "In progress", "muted"));
+    const actions = element("div", undefined, "activity-actions");
+    if (item.clip) {
+      const button = element("button", `Play ${Math.ceil(item.clipSeconds)}s clip`);
+      button.type = "button";
+      button.addEventListener("click", () => playRecording(item.clip, `${item.label} · ${date.textContent}`));
+      actions.append(button);
+    }
+    if (item.snapshot) {
+      const link = element("a", "Snapshot");
+      link.href = item.snapshot;
+      link.target = "_blank";
+      link.rel = "noopener";
+      actions.append(link);
+    }
+    row.append(info, actions);
+    $("activity-list").append(row);
+  }
+  if (historyItems.length && !items.length) $("history-notice").textContent = "No matching activity in this page.";
+}
+async function refreshHistory() {
+  const current = ++historyEpoch;
+  const sessionEpoch = epoch;
+  historyBusy = true;
+  try {
+    const query = historyBefore === null ? "" : `?before=${encodeURIComponent(historyBefore)}`;
+    const result = await api(`/api/cameras/${encodeURIComponent($("history-camera").value)}/history${query}`);
+    if (current !== historyEpoch || sessionEpoch !== epoch) return;
+    historyItems = result.items;
+    olderBefore = result.before;
+    $("history-notice").textContent =
+      result.state === "unconfigured"
+        ? "Connect this camera to see motion and recordings."
+        : result.state === "disabled"
+          ? "Motion detection and recording are disabled for this camera."
+          : result.items.length
+            ? "Motion and detected objects. Clips show retained footage; snapshots may expire."
+            : "No recorded activity in this time window.";
+    $("history-older").hidden = result.state !== "ready" || olderBefore === null || olderBefore <= 0;
+    $("history-latest").hidden = historyBefore === null;
+    renderHistory();
+  } catch (error) {
+    if (current !== historyEpoch || sessionEpoch !== epoch) return;
+    if (error.status === 401 || error.status === 403) signedOut(error.message);
+    else {
+      $("history-notice").textContent = error.message;
+      $("activity-list").replaceChildren();
+      historyItems = [];
+      $("history-older").hidden = true;
+    }
+  } finally {
+    if (current === historyEpoch) historyBusy = false;
+  }
+}
+$("history-camera").addEventListener("change", () => {
+  historyBefore = null;
+  closeRecording();
+  refreshHistory();
+});
+$("history-kind").addEventListener("change", renderHistory);
+$("history-older").addEventListener("click", () => {
+  historyBefore = olderBefore;
+  refreshHistory();
+});
+$("history-latest").addEventListener("click", () => {
+  historyBefore = null;
+  refreshHistory();
+});
+$("close-recording").addEventListener("click", closeRecording);
+$("recording-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const start = new Date($("recording-start").value).getTime() / 1000;
+  const duration = Number($("recording-length").value);
+  if (!Number.isFinite(start) || start + duration > Date.now() / 1000) {
+    $("history-notice").textContent = "Choose a recording time in the past.";
+    return;
+  }
+  const camera = encodeURIComponent($("history-camera").value);
+  playRecording(
+    `/api/cameras/${camera}/recordings/${start}/${start + duration}/clip.mp4`,
+    `Recording · ${new Date(start * 1000).toLocaleString()}`,
+  );
 });
 $("refresh").addEventListener("click", refresh);
 window.addEventListener("pagehide", () => {

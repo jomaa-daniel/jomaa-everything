@@ -19,7 +19,7 @@
         <h1>Cameras</h1>
         <button id="refresh" type="button" hidden>Refresh</button>
       </div>
-      <p class="muted">Live feeds from your home cameras.</p>
+      <p class="muted">Live feeds, motion, and recorded activity from your home cameras.</p>
       <p id="notice" role="status" aria-live="polite"></p>
       <section id="login-section" hidden>
         <form id="login-form" class="login">
@@ -36,6 +36,44 @@
         <p id="setup-help" class="muted" hidden>
           Configure camera sources in the hub’s private environment. <a href="/secrets">Open Secrets</a>
         </p>
+        <section id="history-section" aria-labelledby="history-heading" hidden>
+          <h2 id="history-heading">Activity &amp; recordings</h2>
+          <div class="history-controls">
+            <label
+              >Camera
+              <select id="history-camera"></select
+            ></label>
+            <label
+              >Show
+              <select id="history-kind">
+                <option value="all">All activity</option>
+                <option value="object">Objects</option>
+                <option value="motion">Motion</option>
+              </select></label
+            >
+            <button id="history-latest" type="button" hidden>Back to latest</button>
+          </div>
+          <p id="history-notice" class="muted" role="status" aria-live="polite"></p>
+          <div id="history-player" hidden>
+            <div class="history-playback-heading">
+              <h3 id="recording-title">Recording</h3>
+              <button id="close-recording" type="button">Close playback</button>
+            </div>
+            <div id="recording-video" class="camera-video"></div>
+            <p id="recording-notice" role="status" aria-live="polite"></p>
+          </div>
+          <ol id="activity-list" class="activity-list"></ol>
+          <button id="history-older" type="button" hidden>Older activity</button>
+          <details class="recording-range">
+            <summary>Find a recording by time</summary>
+            <form id="recording-form" class="history-controls">
+              <label>Start time <input id="recording-start" type="datetime-local" step="1" required /></label>
+              <label>Clip length (seconds) <input id="recording-length" type="number" min="1" required /></label>
+              <button type="submit">View recording</button>
+            </form>
+            <p class="muted">Times use your device’s timezone. Only retained footage is available.</p>
+          </details>
+        </section>
       </section>
     </main>
   </body>

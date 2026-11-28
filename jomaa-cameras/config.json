@@ -45,7 +45,17 @@
     "hlsSegmentMaxSize": "8M",
     "hlsMuxerCloseAfter": "60s",
     "authInternalUsers": [
-      { "user": "any", "permissions": [{ "action": "read" }, { "action": "metrics" }] }
+      {
+        "user": "any",
+        "permissions": [
+          {
+            "action": "read"
+          },
+          {
+            "action": "metrics"
+          }
+        ]
+      }
     ],
     "pathDefaults": {
       "sourceOnDemand": true,
@@ -60,7 +70,23 @@
     "muted": true
   },
   "cameras": [
-    { "id": "camera1", "name": "Camera 1", "sourceEnv": "CAMERA_1_SOURCE" },
-    { "id": "camera2", "name": "Camera 2", "sourceEnv": "CAMERA_2_SOURCE" }
+    {
+      "id": "camera1",
+      "name": "Camera 1",
+      "sourceEnv": "CAMERA_1_SOURCE",
+      "monitoring": {
+        "enabled": true,
+        "config": {}
+      }
+    },
+    {
+      "id": "camera2",
+      "name": "Camera 2",
+      "sourceEnv": "CAMERA_2_SOURCE",
+      "monitoring": {
+        "enabled": true,
+        "config": {}
+      }
+    }
   ]
 }

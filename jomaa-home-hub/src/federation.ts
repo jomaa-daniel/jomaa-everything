@@ -7,7 +7,7 @@ import { BodyLimitError, requestBody } from "./request-body.js";
 
 export const nodeQuery = "node";
 export const delegationHeader = "x-jomaa-delegation";
-const signatureDomain = "jomaa-node-request-v1:";
+const signatureDomain = "jomaa-node-request-v2:";
 
 export class NodeError extends Error {
   constructor(
@@ -25,6 +25,7 @@ interface Authorization {
   method: string;
   url: string;
   contentType: string;
+  range: string;
   body: string;
   expires: number;
   nonce: string;
@@ -143,6 +144,7 @@ export class Federation {
       claims.method !== req.method ||
       claims.url !== req.url ||
       claims.contentType !== (req.headers["content-type"] ?? "") ||
+      claims.range !== (req.headers.range ?? "") ||
       !Number.isSafeInteger(claims.expires) ||
       claims.expires <= now ||
       claims.expires > now + this.config.transport.delegationLifetimeSeconds * 1000 ||
@@ -165,6 +167,7 @@ export class Federation {
     node: NodeConfig,
     scope: Scope,
     signal: AbortSignal,
+    responseLimit = this.config.transport.maxResponseBytes,
   ): Promise<void> {
     if (this.local.mode !== "gateway" || node.mode !== "node" || !node.hostname)
       throw new NodeError(403, "This node cannot forward requests");
@@ -181,6 +184,7 @@ export class Federation {
       method: req.method ?? "GET",
       url: path,
       contentType,
+      range: req.headers.range ?? "",
       body: hash(body),
       expires: this.now() + this.config.transport.delegationLifetimeSeconds * 1000,
       nonce: randomBytes(16).toString("hex"),
@@ -188,8 +192,10 @@ export class Federation {
     const encoded = Buffer.from(JSON.stringify(claims)).toString("base64url");
     const headers: Record<string, string> = {
       [delegationHeader]: `${encoded}.${mac(key, encoded).toString("base64url")}`,
+      "accept-encoding": "identity",
     };
     if (contentType) headers["content-type"] = contentType;
+    if (claims.range) headers["range"] = claims.range;
     const deadline = AbortSignal.any([signal, AbortSignal.timeout(this.config.transport.requestTimeoutSeconds * 1000)]);
     let response: Response;
     try {
@@ -205,7 +211,8 @@ export class Federation {
         throw new NodeError(502, "Node returned a redirect");
       }
       res.statusCode = response.status;
-      for (const name of ["content-type", "retry-after"]) {
+      for (const name of ["content-type", "retry-after", "content-length", "content-range", "accept-ranges"]) {
+        if (name === "content-length" && response.headers.has("content-encoding")) continue;
         const value = response.headers.get(name);
         if (value !== null) res.setHeader(name, value);
       }
@@ -219,7 +226,7 @@ export class Federation {
           const { done, value: chunk } = await reader.read();
           if (done) break;
           size += chunk.length;
-          if (size > this.config.transport.maxResponseBytes) throw new NodeError(502, "Node response too large");
+          if (size > responseLimit) throw new NodeError(502, "Node response too large");
           if (!res.write(chunk)) await once(res, "drain", { signal: deadline });
         }
       }

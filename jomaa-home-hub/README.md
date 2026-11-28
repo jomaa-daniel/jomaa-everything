@@ -569,3 +569,11 @@ or report intervals.
 ## Cameras
 
 `/cameras` displays the camera slots configured by `cameraConfigFile`. MediaMTX provides the HLS streams and Video.js supplies the players. Each inventory and media request requires the Cameras capability on the account’s assigned node. See [camera configuration](../jomaa-cameras/config.md) for camera source credentials, codec requirements and service settings.
+
+Frigate supplies motion and object activity, snapshots, and retained recording
+clips. The same Cameras grant protects history and media, including byte-range
+playback through another node. `cameraMonitoringConfigFile` supplies the private
+provider origin and request limits. See [monitoring setup](../jomaa-frigate/README.md)
+for the configured container runtime, retention, detection backends, and camera
+overrides. The page filters activity by camera and type, pages through older
+activity, and finds retained footage by local start time.

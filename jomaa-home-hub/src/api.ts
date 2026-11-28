@@ -109,6 +109,7 @@ interface Route {
   pattern: RegExp;
   handler: Handler;
   requires: Requirement;
+  responseLimit: number | undefined;
 }
 
 function access(principal: Principal | null, requires: Requirement): Access {
@@ -168,11 +169,25 @@ export class Api {
     this.#healthHttp = services.health
       ? new HealthHttp(services.health, log.with({ component: "device-health" }), matter, hub, services.organization)
       : null;
-    const route = (method: string, path: string, requires: Requirement, handler: Handler): Route => ({
+    const route = (
+      method: string,
+      path: string,
+      requires: Requirement,
+      handler: Handler,
+      responseLimit?: number,
+    ): Route => ({
       method,
-      pattern: new RegExp("^" + path.replace(/\{\w+\}/g, "([^/]+)") + "$"),
+      pattern: new RegExp(
+        "^" +
+          path
+            .split(/(\{\w+\})/)
+            .map((part) => (/^\{\w+\}$/.test(part) ? "([^/]+)" : part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")))
+            .join("") +
+          "$",
+      ),
       handler: handler.bind(this),
       requires,
+      responseLimit,
     });
     this.#public = [
       route("GET", "/healthz", null, this.#health),
@@ -187,6 +202,22 @@ export class Api {
       route("GET", "/api/session", null, this.#session),
       route("GET", "/api/cameras", "cameras", this.#cameraList),
       route("GET", "/api/cameras/{id}/hls/{file}", "cameras", this.#cameraMedia),
+      route("GET", "/api/cameras/{id}/history", "cameras", this.#cameraHistory),
+      route(
+        "GET",
+        "/api/cameras/{id}/events/{event}/{file}",
+        "cameras",
+        this.#cameraEventMedia,
+        this.cameras?.monitoring?.config.history.maxMediaBytes,
+      ),
+      route("GET", "/api/cameras/{id}/recordings/{start}/snapshot.jpg", "cameras", this.#cameraSnapshot),
+      route(
+        "GET",
+        "/api/cameras/{id}/recordings/{start}/{end}/clip.mp4",
+        "cameras",
+        this.#cameraRecording,
+        this.cameras?.monitoring?.config.history.maxMediaBytes,
+      ),
       route("GET", "/api/nodes", null, this.#nodes),
       route("GET", "/api/picos", "devices", this.#picoInventory),
       route("GET", "/api/picos/catalog", "devices", this.#picoCatalog),
@@ -290,7 +321,7 @@ export class Api {
         const target = this.federation.target(grants, capability, requested[0] ?? null);
         if (!["GET", "HEAD"].includes(req.method ?? "")) requireSameOrigin(req);
         if (target.id !== local.id) {
-          await this.federation.forward(req, res, target, capability, signal);
+          await this.federation.forward(req, res, target, capability, signal, route?.responseLimit);
           return;
         }
       }
@@ -378,6 +409,29 @@ export class Api {
   async #cameraMedia({ req, res, params, signal }: RequestContext): Promise<void> {
     if (!this.cameras) throw new CameraError(503, "Camera streaming is unavailable on this hub");
     await this.cameras.media(req, res, params[0] ?? "", params[1] ?? "", signal);
+  }
+
+  #monitoring() {
+    if (!this.cameras?.monitoring) throw new CameraError(503, "Camera monitoring is unavailable on this hub");
+    return this.cameras.monitoring;
+  }
+
+  async #cameraHistory({ req, res, params, signal }: RequestContext): Promise<void> {
+    const query = new URL(req.url ?? "/", "http://hub").searchParams;
+    res.setHeader("Cache-Control", "no-store");
+    writeJSON(res, 200, await this.#monitoring().history(params[0] ?? "", query.get("before"), signal));
+  }
+
+  async #cameraEventMedia({ req, res, params, signal }: RequestContext): Promise<void> {
+    await this.#monitoring().eventMedia(req, res, params[0] ?? "", params[1] ?? "", params[2] ?? "", signal);
+  }
+
+  async #cameraRecording({ req, res, params, signal }: RequestContext): Promise<void> {
+    await this.#monitoring().recording(req, res, params[0] ?? "", params[1] ?? "", params[2] ?? "", signal);
+  }
+
+  async #cameraSnapshot({ req, res, params, signal }: RequestContext): Promise<void> {
+    await this.#monitoring().snapshot(req, res, params[0] ?? "", params[1] ?? "", signal);
   }
 
   async #health({ res }: RequestContext): Promise<void> {

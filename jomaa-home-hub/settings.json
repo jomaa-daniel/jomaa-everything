@@ -37,5 +37,6 @@
     "goveeStatusConcurrency": 2,
     "goveeStatusTimeoutSeconds": 10
   },
-  "cameraConfigFile": "jomaa-cameras/config.json"
+  "cameraConfigFile": "jomaa-cameras/config.json",
+  "cameraMonitoringConfigFile": "jomaa-frigate/config.json"
 }
