@@ -122,6 +122,9 @@ def main():
                     child.kill()
                     child.wait()
             log.close()
+            subprocess.run([*config["command"], "run", "--rm", "--network=none", "--entrypoint=/bin/sh",
+                            "--mount", f"type=bind,source={folder},target=/fixture", config["image"],
+                            "-c", "rm -rf /fixture/config /fixture/media"], check=True, timeout=30)
 
 
 if __name__ == "__main__":
