@@ -328,8 +328,10 @@ test("live streams, activity filters and recorded video work with revocable came
   await page.locator(".activity-item").waitFor();
   await page.locator(".activity-item button").click();
 
-  await page.locator(".vjs-play-control").first().click();
+  await page.locator('[data-camera="camera1"] .video-js').hover();
+  await page.locator('[data-camera="camera1"] .vjs-play-control').click();
   await page.locator(".camera-status", { hasText: "Paused" }).waitFor();
+  await page.locator('[data-camera="camera2"] .camera-status.live').waitFor();
   assert.equal(await page.locator(".camera-status.live").count(), 1);
   assert.equal((await fetch(origin + "/api/cameras/camera1/hls/index.m3u8")).status, 401);
   accounts.setGrants("viewer", []);

@@ -1,8 +1,6 @@
 {
   "name": "frigate",
   "inputs": [
-    "jomaa-cameras/config.json",
-    "jomaa-home-hub/settings.json",
     "jomaa-deploy/config.json",
     "jomaa-deploy/settings.py",
     "jomaa-deploy/container.py"

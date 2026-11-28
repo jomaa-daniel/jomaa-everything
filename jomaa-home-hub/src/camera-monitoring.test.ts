@@ -217,6 +217,17 @@ test("recording forwarding uses the assigned node, preserves ranges and rejects 
   const origin = await serve(api(new Cameras(f.camera, env, fetch, f.monitoring), accounts, gateway));
   const headers = { Authorization: `Bearer ${accounts.createSession("viewer")}`, Range: "bytes=0-3" };
   const path = `/api/cameras/camera1/recordings/${now - 100}/${now - 10}/clip.mp4`;
+  nodes.transport.maxResponseBytes = catalog.transport.maxResponseBytes;
+  changeRange = false;
+  const inventory = (await (await fetch(origin + "/api/cameras", { headers })).json()) as { node: { id: string } };
+  assert.equal(inventory.node.id, "camera-node");
+  accounts.setGrants("viewer", [{ node: nodes.defaultNode, scopes: ["cameras"] }]);
+  const reassigned = (await (await fetch(origin + "/api/cameras", { headers })).json()) as { node: { id: string } };
+  assert.equal(reassigned.node.id, nodes.defaultNode);
+  accounts.setGrants("viewer", [{ node: "camera-node", scopes: ["cameras"] }]);
+  nodes.transport.maxResponseBytes = 2;
+  changeRange = true;
+  f.calls.length = 0;
   assert.equal((await fetch(origin + path, { headers })).status, 403);
   assert.equal(f.calls.length, 0);
   changeRange = false;

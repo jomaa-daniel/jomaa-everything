@@ -2,6 +2,8 @@ import { $, api, element, notify } from "/home/accounts.js";
 const players = new Map();
 let timer = null;
 let epoch = 0;
+let refreshEpoch = 0;
+let refreshing = false;
 let view = "";
 let recordingPlayer = null;
 let historyEpoch = 0;
@@ -76,12 +78,18 @@ function cameraCard(camera, playback) {
       player.src({ src: camera.stream, type: "application/x-mpegURL" });
       if (playback.autoplay)
         player.play()?.catch(() => {
+          if (player.error()) return;
           status.textContent = "Ready · Press play";
         });
     };
     player.on("playing", () => {
       status.textContent = "Live";
       status.className = "camera-status live";
+    });
+    player.on("waiting", () => {
+      if (player.error() || player.paused()) return;
+      status.textContent = "Buffering…";
+      status.className = "camera-status";
     });
     player.on("pause", () => {
       if (player.error()) return;
@@ -100,15 +108,17 @@ function cameraCard(camera, playback) {
 }
 async function refresh() {
   const current = epoch;
+  const request = ++refreshEpoch;
+  refreshing = true;
   try {
     const session = await api("/api/session");
-    if (current !== epoch) return;
+    if (current !== epoch || request !== refreshEpoch) return;
     if (!session.scopes.includes("cameras")) {
       signedOut("Your account does not have access to Cameras. Ask the hub owner to grant it.");
       return;
     }
     const inventory = await api("/api/cameras");
-    if (current !== epoch) return;
+    if (current !== epoch || request !== refreshEpoch) return;
     playbackSettings = inventory.playback;
     $("login-section").hidden = true;
     $("content").hidden = false;
@@ -118,6 +128,10 @@ async function refresh() {
     const signature = JSON.stringify(inventory);
     if (signature !== view) {
       dispose();
+      historyEpoch++;
+      historyBusy = false;
+      historyItems = [];
+      $("activity-list").replaceChildren();
       $("camera-grid").replaceChildren();
       for (const camera of inventory.cameras) cameraCard(camera, inventory.playback);
       view = signature;
@@ -135,12 +149,17 @@ async function refresh() {
       historyBefore = null;
     }
     if (!$("history-section").hidden && !historyBusy) await refreshHistory();
-    if (!timer) timer = setInterval(refresh, inventory.playback.refreshSeconds * 1000);
+    if (!timer)
+      timer = setInterval(() => {
+        if (!refreshing) refresh();
+      }, inventory.playback.refreshSeconds * 1000);
     notify("");
   } catch (error) {
-    if (current !== epoch) return;
+    if (current !== epoch || request !== refreshEpoch) return;
     if (error.status === 401 || error.status === 403) signedOut(error.message);
     else notify(error.message);
+  } finally {
+    if (request === refreshEpoch) refreshing = false;
   }
 }
 $("login-form").addEventListener("submit", async (event) => {

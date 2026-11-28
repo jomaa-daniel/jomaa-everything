@@ -3,6 +3,8 @@ import copy
 import json
 import tempfile
 import subprocess
+import importlib.util
+import sys
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -11,6 +13,12 @@ import run
 import container
 
 HERE = Path(__file__).resolve().parent
+SPEC = importlib.util.spec_from_file_location("frigate_deployment_test", HERE / "deploy_module.py")
+assert SPEC is not None and SPEC.loader is not None
+DEPLOYMENT = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = DEPLOYMENT
+SPEC.loader.exec_module(DEPLOYMENT)
+Frigate = DEPLOYMENT.Frigate
 
 
 def keys(value, prefix=""):
@@ -22,6 +30,21 @@ def keys(value, prefix=""):
 
 
 class FrigateTest(unittest.TestCase):
+    def test_deployment_follows_the_configured_camera_settings_pointer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = copy.deepcopy(run.CONFIG)
+            config["hubSettingsFile"] = "fixtures/hub-settings.json"
+            (root / "jomaa-frigate").mkdir()
+            (root / "fixtures").mkdir()
+            (root / "jomaa-frigate/config.json").write_text(json.dumps(config))
+            (root / config["hubSettingsFile"]).write_text(json.dumps({"cameraConfigFile": "fixtures/cameras.json"}))
+            declaration = json.loads((HERE / "deploy.json").read_text())
+            module = Frigate("jomaa-frigate", declaration, root)
+            self.assertIn("fixtures/hub-settings.json", module.inputs)
+            self.assertIn("fixtures/cameras.json", module.inputs)
+            self.assertNotIn("jomaa-cameras/config.json", module.inputs)
+
     def test_every_setting_is_documented(self):
         doc = (HERE / "config.md").read_text()
         for key in keys(run.CONFIG):

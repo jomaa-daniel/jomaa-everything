@@ -402,7 +402,10 @@ export class Api {
   #cameraList({ res }: RequestContext): Promise<void> {
     if (!this.cameras) throw new CameraError(503, "Camera streaming is unavailable on this hub");
     res.setHeader("Cache-Control", "no-store");
-    writeJSON(res, 200, this.cameras.inventory());
+    writeJSON(res, 200, {
+      ...this.cameras.inventory(),
+      node: { id: this.federation.local.id, name: this.federation.local.name },
+    });
     return Promise.resolve();
   }
 
