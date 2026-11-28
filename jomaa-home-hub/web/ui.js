@@ -192,6 +192,13 @@ function navigate(event) {
 
 document.addEventListener("keydown", navigate);
 document.addEventListener("focusin", (event) => {
+  const bar = document.querySelector(".command-bar");
+  if (
+    bar &&
+    !bar.contains(event.target) &&
+    event.target.getBoundingClientRect().bottom > bar.getBoundingClientRect().top
+  )
+    event.target.scrollIntoView({ block: "center", inline: "nearest" });
   const root = groupFor(event.target) || event.target.closest("form, section, header") || document;
   lastFocus = {
     element: event.target,

@@ -268,7 +268,7 @@ async function waitForVideo(page: Page, selector: string, ready: number, moving:
 }
 
 test("live streams, activity filters and recorded video work with revocable camera access", async () => {
-  const page = await browser.newPage();
+  const page = await browser.newPage({ timezoneId: "America/Detroit" });
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(origin + "/cameras");
@@ -284,17 +284,41 @@ test("live streams, activity filters and recorded video work with revocable came
   await waitForVideo(page, "video.vjs-tech", 2, true);
   assert.equal(await page.locator("video.vjs-tech").count(), 2);
   await page.locator(".activity-item").nth(1).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Reconnect Camera 1", exact: true }).count(), 1);
+  assert.equal(await page.getByRole("button", { name: "Reconnect Camera 2", exact: true }).count(), 1);
+  assert.equal(await page.getByRole("img", { name: /^person at /i }).count(), 1);
+  assert.ok((await page.getByRole("button", { name: /Fullscreen/ }).count()) >= 2);
   await captureReviewScreenshots(page, "cameras-live");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const reconnect = page.getByRole("button", { name: "Reconnect Camera 2", exact: true });
+  await reconnect.focus();
+  const buttonBox = await reconnect.boundingBox();
+  const footerBox = await page.locator(".command-bar").boundingBox();
+  assert.ok(buttonBox && footerBox && buttonBox.y + buttonBox.height < footerBox.y);
+  await reconnect.click();
+  await page.locator(".camera-status.live").nth(1).waitFor();
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.locator("#history-kind").selectOption("object");
   assert.equal(await page.locator(".activity-item").count(), 1);
   assert.equal(await page.locator(".activity-item h3").textContent(), "person");
   await page.locator(".activity-item button").click();
   await waitForVideo(page, "#history-player video", 1, false);
-  await page.locator("#history-player .vjs-play-control").click();
   await waitForVideo(page, "#history-player video", 2, true);
   await captureReviewScreenshots(page, "cameras-recording");
   await page.locator("#close-recording").click();
   assert.ok(await page.locator("#history-player").isHidden());
+  await page.locator(".recording-range summary").click();
+  const localTime = await page.evaluate((timestamp) => {
+    const date = new Date(timestamp * 1000);
+    const pad = (value: number) => String(value).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  }, historyTime);
+  await page.locator("#recording-start").fill(localTime);
+  await page.locator("#recording-length").fill("10");
+  await page.locator("#recording-form button").click();
+  await waitForVideo(page, "#history-player video", 2, true);
+  assert.match((await page.locator("#recording-title").textContent()) ?? "", /^Recording/);
+  await page.locator("#close-recording").click();
   await page.locator("#history-kind").selectOption("motion");
   assert.equal(await page.locator(".activity-item h3").textContent(), "Motion");
   await page.locator("#history-camera").selectOption("camera2");

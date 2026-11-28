@@ -9,6 +9,7 @@ let historyBefore = null;
 let olderBefore = null;
 let historyItems = [];
 let historyBusy = false;
+let playbackSettings = null;
 function closeRecording() {
   recordingPlayer?.dispose();
   recordingPlayer = null;
@@ -108,6 +109,7 @@ async function refresh() {
     }
     const inventory = await api("/api/cameras");
     if (current !== epoch) return;
+    playbackSettings = inventory.playback;
     $("login-section").hidden = true;
     $("content").hidden = false;
     $("logout").hidden = false;
@@ -175,7 +177,13 @@ function playRecording(src, title) {
   video.setAttribute("playsinline", "");
   video.setAttribute("aria-label", title);
   $("recording-video").append(video);
-  recordingPlayer = videojs(video, { controls: true, autoplay: false, muted: true, preload: "metadata" });
+  const player = videojs(video, {
+    controls: true,
+    autoplay: false,
+    muted: playbackSettings.muted,
+    preload: "metadata",
+  });
+  recordingPlayer = player;
   recordingPlayer.on("loadedmetadata", () => {
     $("recording-notice").textContent = "";
   });
@@ -184,7 +192,11 @@ function playRecording(src, title) {
       "Recording unavailable. It may have expired or this time may have no retained footage.";
   });
   recordingPlayer.src({ src, type: "video/mp4" });
-  $("history-player").scrollIntoView({ block: "nearest" });
+  player.play()?.catch(() => {
+    if (recordingPlayer === player && !player.error())
+      $("recording-notice").textContent = "Press play to start the recording.";
+  });
+  $("history-player").scrollIntoView({ block: "center" });
 }
 function renderHistory() {
   $("activity-list").replaceChildren();

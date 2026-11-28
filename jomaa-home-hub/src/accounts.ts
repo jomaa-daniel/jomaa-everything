@@ -13,7 +13,7 @@ export const scopes = [
     description: "View device details, logs, and pairing at /manage.",
   },
   { id: "manage", name: "Device organization", description: "Edit types, groups, and assignments at /manage." },
-  { id: "cameras", name: "Cameras", description: "View live cameras at /cameras." },
+  { id: "cameras", name: "Cameras", description: "View live video, activity, snapshots, and recordings at /cameras." },
 ] as const;
 
 export type Scope = (typeof scopes)[number]["id"];
