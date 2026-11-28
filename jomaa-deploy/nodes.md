@@ -55,8 +55,10 @@ node. Clients can list their nodes and routing policies at `/api/nodes`.
 Cloudflare DNS selects a tunnel by hostname. The gateway authenticates the
 profile, authorizes the selected capability and sends a signed request through
 the destination's tunnel. Signatures bind issuer, destination, scope, method,
-URL, content type, body hash, expiry and a single-use request ID. Cookies,
-account bearer tokens and browser headers do not travel to the node. Nodes
+URL, content type, byte range, body hash, expiry and a single-use request ID.
+Only content type and the signed byte range are forwarded from the browser.
+Cookies and account bearer tokens stay on the gateway. Media responses preserve
+range headers and use the route’s configured response limit. Nodes
 authorize using route metadata and their own allowlists before any page,
 device report or handler runs. Owner routes stay on the gateway.
 
