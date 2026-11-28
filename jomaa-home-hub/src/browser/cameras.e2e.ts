@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { createServer, type AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
-import { chromium } from "playwright-core";
+import { chromium, type Page } from "playwright-core";
 import { Accounts } from "../accounts.js";
 import { Api } from "../api.js";
 import { CameraMonitoring, parseMonitoringConfig } from "../camera-monitoring.js";
@@ -252,6 +252,21 @@ after(() => {
   accounts.close();
 });
 
+async function waitForVideo(page: Page, selector: string, ready: number, moving: boolean) {
+  for (let attempt = 0; attempt < 150; attempt++) {
+    const states = await page.locator(selector).evaluateAll((elements) =>
+      elements.map((element) => {
+        const video = element as unknown as { currentTime: number; readyState: number };
+        return { currentTime: video.currentTime, readyState: video.readyState };
+      }),
+    );
+    if (states.length > 0 && states.every((state) => state.readyState >= ready && (!moving || state.currentTime > 0)))
+      return;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.fail(`Video must become ready: ${selector}`);
+}
+
 test("live streams, activity filters and recorded video work with revocable camera access", async () => {
   const page = await browser.newPage();
   const errors: string[] = [];
@@ -266,9 +281,7 @@ test("live streams, activity filters and recorded video work with revocable came
     await captureReviewScreenshots(page, "cameras-failure");
     throw error;
   }
-  await page.waitForFunction(
-    "[...document.querySelectorAll('video.vjs-tech')].every(video => video.currentTime > 0 && video.readyState >= 2)",
-  );
+  await waitForVideo(page, "video.vjs-tech", 2, true);
   assert.equal(await page.locator("video.vjs-tech").count(), 2);
   await page.locator(".activity-item").nth(1).waitFor();
   await captureReviewScreenshots(page, "cameras-live");
@@ -276,9 +289,9 @@ test("live streams, activity filters and recorded video work with revocable came
   assert.equal(await page.locator(".activity-item").count(), 1);
   assert.equal(await page.locator(".activity-item h3").textContent(), "person");
   await page.locator(".activity-item button").click();
-  await page.waitForFunction("document.querySelector('#history-player video').readyState >= 1");
+  await waitForVideo(page, "#history-player video", 1, false);
   await page.locator("#history-player .vjs-play-control").click();
-  await page.waitForFunction("document.querySelector('#history-player video').currentTime > 0");
+  await waitForVideo(page, "#history-player video", 2, true);
   await captureReviewScreenshots(page, "cameras-recording");
   await page.locator("#close-recording").click();
   assert.ok(await page.locator("#history-player").isHidden());
